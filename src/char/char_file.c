@@ -111,6 +111,8 @@ char_file_write(uint8_t *buf, size_t len, void *priv)
         buf += write_count;
         len -= write_count;
     }
+    if (ret > 0)
+        fflush(dev->file_out);
     return ret;
 }
 
@@ -119,7 +121,18 @@ char_file_status(void *priv)
 {
     char_file_t *dev = (char_file_t *) priv;
 
-    return CHAR_LPT_ERROR | CHAR_LPT_SELECT | (dev->file_in ? (CHAR_COM_DSR | CHAR_COM_DCD) : CHAR_RX_DISCONNECTED) | (dev->file_out ? (CHAR_LPT_ACK | CHAR_COM_CTS) : (CHAR_LPT_PAPEROUT | CHAR_TX_DISCONNECTED));
+    uint32_t status = CHAR_LPT_ERROR | CHAR_LPT_SELECT;
+    if (dev->file_in || dev->file_out)
+        status |= CHAR_COM_DSR | CHAR_COM_DCD;
+    else
+        status |= CHAR_RX_DISCONNECTED;
+
+    if (dev->file_out)
+        status |= CHAR_LPT_ACK | CHAR_COM_CTS;
+    else
+        status |= CHAR_LPT_PAPEROUT | CHAR_TX_DISCONNECTED;
+
+    return status;
 }
 
 static void

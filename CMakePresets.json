@@ -126,8 +126,64 @@
                 "CMAKE_INSTALL_PREFIX": "${sourceDir}/out/install/${presetName}"
             },
             "inherits": "regular"
+        },
+        {
+            "name": "new_dynarec",
+            "displayName": "New Dynarec Regular",
+            "description": "Release build with the new dynamic recompiler (codegen_new)",
+            "cacheVariables": {
+                "NEW_DYNAREC": true
+            },
+            "inherits": "regular"
+        },
+        {
+            "name": "new_dynarec_dev_debug",
+            "displayName": "New Dynarec Development Debug",
+            "description": "Development debug build with the new dynamic recompiler (codegen_new)",
+            "cacheVariables": {
+                "NEW_DYNAREC": true
+            },
+            "inherits": "dev_debug"
+        },
+        {
+            "name": "new_dynarec_debug",
+            "displayName": "New Dynarec Debug",
+            "description": "Debug build with the new dynamic recompiler (codegen_new)",
+            "cacheVariables": {
+                "NEW_DYNAREC": true
+            },
+            "inherits": "debug"
         }
     ],
-    "buildPresets": [],
+    "buildPresets": [
+        {
+            "name": "regular",
+            "configurePreset": "regular"
+        },
+        {
+            "name": "debug",
+            "configurePreset": "debug"
+        },
+        {
+            "name": "dev_debug",
+            "configurePreset": "dev_debug"
+        },
+        {
+            "name": "development",
+            "configurePreset": "development"
+        },
+        {
+            "name": "new_dynarec",
+            "configurePreset": "new_dynarec"
+        },
+        {
+            "name": "new_dynarec_dev_debug",
+            "configurePreset": "new_dynarec_dev_debug"
+        },
+        {
+            "name": "new_dynarec_debug",
+            "configurePreset": "new_dynarec_debug"
+        }
+    ],
     "testPresets": []
 }

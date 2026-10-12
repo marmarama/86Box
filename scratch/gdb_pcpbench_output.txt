@@ -1,0 +1,32 @@
+[Thread 0x7fffebfff6c0 (LWP 2826418) exited]
+[Thread 0x7ffff0d596c0 (LWP 2826417) exited]
+[Thread 0x7ffff155a6c0 (LWP 2826416) exited]
+[Thread 0x7ffff1d5b6c0 (LWP 2826415) exited]
+
+Thread 1 "qt_thread" received signal SIGINT, Interrupt.
+0x00007ffff591b79d in __GI___poll (fds=0x555563ac39a0, nfds=1, timeout=51)
+    at ../sysdeps/unix/sysv/linux/poll.c:29
+warning: 29	../sysdeps/unix/sysv/linux/poll.c: No such file or directory
+(gdb) thread 18
+[Switching to thread 18 (Thread 0x7fffb7ff76c0 (LWP 2826448))]
+#0  0x00007fffd0dffa58 in ?? ()
+(gdb) printf "Thread 18 Host RIP: %p\n", $rip
+Thread 18 Host RIP: 0x7fffd0dffa58
+(gdb) python
+>rip = int(gdb.parse_and_eval('$rip'))
+>print(f'Looking for codeblock containing RIP: {hex(rip)}')
+>found = -1
+>for i in range(65536):
+>    cb = gdb.parse_and_eval(f'codeblock[{i}]')
+>    if cb['valid']:
+>        base = int(cb['data'])
+>        if base <= rip < base + 8192:
+><b["pc"]}, phys={cb["phys"]}, ins={int(cb["ins"])}')
+>            found = i
+>            break
+>if found >= 0:
+>    offset = rip - base
+>    print(f'RIP offset in block: {offset} (0x{offset:x})')
+>    gdb.execute(f'disassemble {hex(base)}, {hex(base + offset + 64)}')
+>end
+Looking for codeblock containing RIP: 0x7fffd0dffa58

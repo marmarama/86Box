@@ -1,0 +1,34 @@
+[General]
+vid_renderer = qt_software
+
+[Machine]
+machine = se440bx2
+cpu_family = i686_pentium2
+cpu_speed = 400000000
+cpu_multi = 4
+cpu_use_dynarec = 1
+fpu_type = internal
+fpu_softfloat = 0
+mem_size = 131072
+
+[Video]
+gfxcard = s3_trio64vplus
+
+[Input devices]
+mouse_type = none
+
+[Ports (COM & LPT)]
+serial1_device = file
+
+[File (COM 1)]
+path = benchmark_results.log
+append = 0
+
+[Storage controllers]
+hdc = internal
+
+[Hard disks]
+hdd_01_fn = dos_bench.img
+hdd_01_parameters = 63, 16, 1024, 0, ide
+hdd_01_ide_channel = 0:0
+hdd_01_speed = ramdisk

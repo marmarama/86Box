@@ -1,5 +1,11 @@
 #define JMP_LEN_BYTES 5
 
+static inline uint8_t
+rex_byte(int w, int r, int x, int b)
+{
+    return 0x40 | ((!!w) << 3) | (((r & 8) >> 1)) | (((x & 8) >> 2)) | (((b & 8) >> 3));
+}
+
 static inline void
 codegen_addbyte(UNUSED(codeblock_t *block), uint8_t val)
 {

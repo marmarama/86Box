@@ -1,5 +1,6 @@
 #if defined __amd64__ || defined _M_X64
 
+#    include <inttypes.h>
 #    include <stdlib.h>
 #    include <stdint.h>
 #    include <86box/86box.h>
@@ -45,12 +46,15 @@ void *codegen_gpf_rout;
 void *codegen_exit_rout;
 
 host_reg_def_t codegen_host_reg_list[CODEGEN_HOST_REGS] = {
-  /*Note: while EAX and EDX are normally volatile registers under x86
-  calling conventions, the recompiler will explicitly save and restore
-  them across funcion calls*/
-    {REG_EAX,  0},
-    { REG_EBX, 0},
-    { REG_EDX, 0}
+    /* Note: while EAX and EDX are normally volatile registers under x86
+       calling conventions, the recompiler will explicitly save and restore
+       them across function calls */
+    { REG_EAX, 0 },
+    { REG_EBX, 0 },
+    { REG_EDX, 0 },
+    { REG_R13, HOST_REG_FLAG_NO_BH },
+    { REG_R14, HOST_REG_FLAG_NO_BH },
+    { REG_R15, HOST_REG_FLAG_NO_BH }
 };
 
 /* The Windows x64 frame: 0x38 bytes of block temporaries as before, then
@@ -307,9 +311,9 @@ codegen_backend_init(void)
     codeblock_hash = plat_mmap(HASH_SIZE * sizeof(codeblock_t *), 0, &large_hash);
 
     if (large_block)
-        pclog("Allocated %llu bytes of large pages for codeblock pointers\n", BLOCK_SIZE * sizeof(codeblock_t));
+        pclog("Allocated %" PRIu64 " bytes of large pages for codeblock pointers\n", (uint64_t) (BLOCK_SIZE * sizeof(codeblock_t)));
     if (large_hash)
-        pclog("Allocated %llu bytes of large pages for codeblock hashes\n", HASH_SIZE * sizeof(codeblock_t *));
+        pclog("Allocated %" PRIu64 " bytes of large pages for codeblock hashes\n", (uint64_t) (HASH_SIZE * sizeof(codeblock_t *)));
 
     for (c = 0; c < BLOCK_SIZE; c++)
         codeblock[c].valid = 0;
