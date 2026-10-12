@@ -43,6 +43,7 @@ if(DYNAREC)
         codegen_ops_mov.c
         codegen_ops_shift.c
         codegen_ops_stack.c
+        codegen_ops_string.c
         codegen_reg.c
     )
 

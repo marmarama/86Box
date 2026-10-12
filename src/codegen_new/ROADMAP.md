@@ -146,8 +146,14 @@ However, the x86-64 backend in `codegen_new` was ported without general REX pref
    - Implemented `ropXADD_8`, `ropXADD_16`, `ropXADD_32` for `0F C0` and `0F C1` supporting ModR/M registers (including `dest == src` handling) and memory effective address destinations, updating status flags via `FLAGS_ADD8/16/32`.
    - CPU capability validation checks against illegal execution on 386 falling back to interpreter `#UD`.
    - Registered `0F B0`, `0F B1`, `0F C0`, `0F C1` across 16-bit and 32-bit sections of `recomp_opcodes_0f` and `recomp_opcodes_0f_no_mmx` in `src/codegen_new/codegen_ops.c`.
-6. **REP-prefixed String Operations**:
-   - Recompile `REP MOVS`, `REP STOS`, `REP LODS` with loop unrolling or host `REP MOVSB/D` primitives.
+6. **[x] String Operations (`MOVS`, `STOS`, `LODS`) & REP Prefixes**:
+   - Implemented non-REP and REP string operations (`MOVSB/W/D`, `STOSB/W/D`, `LODSB/W/D`) in `src/codegen_new/codegen_ops_string.c` and `src/codegen_new/codegen_ops_string.h`.
+   - Handled both 16-bit and 32-bit address sizing (`(E)SI`, `(E)DI`, `(E)CX`) and operand sizing (8, 16, and 32-bit).
+   - Source segment properly obeys `op_ea_seg` overrides, and destination segment strictly targets `ES`.
+   - Accurate segment limit checks (`CHECK_SEG_LIMITS`) and segment write checks (`codegen_check_seg_write`).
+   - Dynamic Direction Flag (`DF`) pointer adjustments using IR branch structures.
+   - REP loop iteration model with initial zero count bypass, count decrement, and re-entry via `codegen_exit_rout` to preserve hardware interrupt responsiveness and cycle accounting.
+   - Populated opcodes `0xA4`, `0xA5`, `0xAA`, `0xAB`, `0xAC`, `0xAD` in `recomp_opcodes` and defined `recomp_opcodes_REPE` dispatch in `src/codegen_new/codegen_ops.c` and `src/codegen_new/codegen.c`.
 
 ---
 
