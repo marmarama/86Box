@@ -130,9 +130,12 @@ However, the x86-64 backend in `codegen_new` was ported without general REX pref
    - Implemented `ropSETcc` in `src/codegen_new/codegen_ops_misc.c` supporting all 16 conditions, ModR/M register (`r8`) and memory effective address destinations.
    - Wired entries `0F 90`–`9F` across 16-bit and 32-bit sections of `recomp_opcodes_0f` and `recomp_opcodes_0f_no_mmx` in `src/codegen_new/codegen_ops.c`.
    - Validated across full DOS benchmark suite (Quake 153.4 FPS, Doom 6224.17 FPS / 12 realtics, PCPBench 60.2 FPS, Dhrystone 416,125 Ops/sec).
-3. **Bit Operations**:
-   - `BT`, `BTS`, `BTR`, `BTC` (`0F A3`, `AB`, `B3`, `BB`).
-   - `BSF` / `BSR` (`0F BC`, `BD`): map directly to host `BSF` / `BSR` (or `TZCNT` / `LZCNT`).
+3. **[x] Bit Operations (`BT`, `BTS`, `BTR`, `BTC`, `0F BA`, `BSF`, `BSR`)**:
+   - Implemented `ropBT_16/32`, `ropBTS_16/32`, `ropBTR_16/32`, `ropBTC_16/32` with register bit offsets (`0F A3`, `0F AB`, `0F B3`, `0F BB`) in `src/codegen_new/codegen_ops_misc.c`.
+   - Handled signed memory effective address adjustment for register bit offsets (`(int32_t >> 5) * 4` for 32-bit and `(int16_t >> 4) * 2` for 16-bit).
+   - Implemented `ropBA_16/32` for `0F BA` Group 8 immediate bit offset variants (`/4` BT, `/5` BTS, `/6` BTR, `/7` BTC).
+   - Implemented `ropBSF_16/32` and `ropBSR_16/32` (`0F BC`, `0F BD`) with fast native `__builtin_ctz` and `__builtin_clz` JIT wrappers, properly preserving the destination register when the source operand is zero.
+   - Registered all opcodes across `recomp_opcodes_0f` and `recomp_opcodes_0f_no_mmx` in `src/codegen_new/codegen_ops.c`. Validated across full DOS benchmark suite.
 4. **Byte Swap (`BSWAP`, 0F C8–CF)**:
    - Map directly to host `BSWAP`.
 5. **Atomic Operations**:

@@ -720,3 +720,302 @@ ropSETcc(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, u
 
     return op_pc + 1;
 }
+
+enum {
+    BT_OP_BT  = 0,
+    BT_OP_BTS = 1,
+    BT_OP_BTR = 2,
+    BT_OP_BTC = 3
+};
+
+static uint32_t
+ropBT_common(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc, int bt_op, int is_imm)
+{
+    /* Check CPU support: if illegal on this CPU, fall back to interpreter #UD handler */
+    if (x86_dynarec_opcodes_0f[opcode | op_32] == x86_dynarec_opcodes_0f[0x0b])
+        return 0;
+
+    int is_op32 = !!(op_32 & 0x100);
+    int is_ea32 = !!(op_32 & 0x200);
+    int is_mem  = ((fetchdat & 0xc0) != 0xc0);
+    x86seg *target_seg = NULL;
+    int val_reg;
+    uint8_t imm = 0;
+
+    codegen_mark_code_present(block, cs + op_pc, 1);
+
+    if (is_mem) {
+        uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
+        target_seg = codegen_generate_ea(ir, op_ea_seg, fetchdat, op_ssegs, &op_pc, op_32, 0);
+
+        if (!is_imm) {
+            int bit_reg_idx = (fetchdat >> 3) & 7;
+            if (is_op32) {
+                uop_SAR_IMM(ir, IREG_temp1, IREG_32(bit_reg_idx), 5);
+                uop_SHL_IMM(ir, IREG_temp1, IREG_temp1, 2);
+                uop_ADD(ir, IREG_eaaddr, IREG_eaaddr, IREG_temp1);
+            } else {
+                uop_MOVSX(ir, IREG_temp1, IREG_16(bit_reg_idx));
+                uop_SAR_IMM(ir, IREG_temp1, IREG_temp1, 4);
+                uop_SHL_IMM(ir, IREG_temp1, IREG_temp1, 1);
+                uop_ADD(ir, IREG_eaaddr, IREG_eaaddr, IREG_temp1);
+            }
+            if (!is_ea32)
+                uop_MOVZX(ir, IREG_eaaddr, IREG_eaaddr_W);
+        }
+
+        if (bt_op == BT_OP_BT)
+            codegen_check_seg_read(block, ir, target_seg);
+        else
+            codegen_check_seg_write(block, ir, target_seg);
+
+        CHECK_SEG_LIMITS(block, ir, target_seg, IREG_eaaddr, is_op32 ? 3 : 1);
+
+        val_reg = is_op32 ? IREG_temp0 : IREG_temp0_W;
+        uop_MEM_LOAD_REG(ir, val_reg, ireg_seg_base(target_seg), IREG_eaaddr);
+    } else {
+        val_reg = is_op32 ? IREG_32(fetchdat & 7) : IREG_16(fetchdat & 7);
+    }
+
+    if (is_imm) {
+        imm = fastreadb(cs + op_pc + 1);
+        codegen_mark_code_present(block, cs + op_pc + 1, 1);
+    }
+
+    uop_CALL_FUNC(ir, jit_flags_rebuild);
+
+    if (is_imm) {
+        int bit_idx = imm & (is_op32 ? 31 : 15);
+        if (is_op32) {
+            uop_SHR_IMM(ir, IREG_temp2, val_reg, bit_idx);
+            uop_AND_IMM(ir, IREG_temp2, IREG_temp2, 1);
+            uop_AND_IMM(ir, IREG_flags, IREG_flags, ~C_FLAG);
+            uop_OR(ir, IREG_flags, IREG_flags, IREG_temp2);
+
+            if (bt_op == BT_OP_BTS)
+                uop_OR_IMM(ir, val_reg, val_reg, (1u << bit_idx));
+            else if (bt_op == BT_OP_BTR)
+                uop_AND_IMM(ir, val_reg, val_reg, ~(1u << bit_idx));
+            else if (bt_op == BT_OP_BTC)
+                uop_XOR_IMM(ir, val_reg, val_reg, (1u << bit_idx));
+        } else {
+            uop_SHR_IMM(ir, IREG_temp2_W, val_reg, bit_idx);
+            uop_AND_IMM(ir, IREG_temp2_W, IREG_temp2_W, 1);
+            uop_MOVZX(ir, IREG_temp2, IREG_temp2_W);
+            uop_AND_IMM(ir, IREG_flags, IREG_flags, ~C_FLAG);
+            uop_OR(ir, IREG_flags, IREG_flags, IREG_temp2);
+
+            if (bt_op == BT_OP_BTS)
+                uop_OR_IMM(ir, val_reg, val_reg, (1u << bit_idx));
+            else if (bt_op == BT_OP_BTR)
+                uop_AND_IMM(ir, val_reg, val_reg, (~(1u << bit_idx)) & 0xffffu);
+            else if (bt_op == BT_OP_BTC)
+                uop_XOR_IMM(ir, val_reg, val_reg, (1u << bit_idx));
+        }
+    } else {
+        int bit_reg_idx = (fetchdat >> 3) & 7;
+        if (is_op32) {
+            uop_AND_IMM(ir, IREG_temp2, IREG_32(bit_reg_idx), 31);
+            uop_SHR(ir, IREG_temp3, val_reg, IREG_temp2);
+            uop_AND_IMM(ir, IREG_temp3, IREG_temp3, 1);
+            uop_AND_IMM(ir, IREG_flags, IREG_flags, ~C_FLAG);
+            uop_OR(ir, IREG_flags, IREG_flags, IREG_temp3);
+
+            if (bt_op != BT_OP_BT) {
+                uop_MOV_IMM(ir, IREG_temp1, 1);
+                uop_SHL(ir, IREG_temp1, IREG_temp1, IREG_temp2);
+                if (bt_op == BT_OP_BTS)
+                    uop_OR(ir, val_reg, val_reg, IREG_temp1);
+                else if (bt_op == BT_OP_BTR) {
+                    uop_XOR_IMM(ir, IREG_temp1, IREG_temp1, 0xffffffffu);
+                    uop_AND(ir, val_reg, val_reg, IREG_temp1);
+                } else if (bt_op == BT_OP_BTC)
+                    uop_XOR(ir, val_reg, val_reg, IREG_temp1);
+            }
+        } else {
+            uop_AND_IMM(ir, IREG_temp2, IREG_16(bit_reg_idx), 15);
+            uop_SHR(ir, IREG_temp3_W, val_reg, IREG_temp2);
+            uop_AND_IMM(ir, IREG_temp3_W, IREG_temp3_W, 1);
+            uop_MOVZX(ir, IREG_temp3, IREG_temp3_W);
+            uop_AND_IMM(ir, IREG_flags, IREG_flags, ~C_FLAG);
+            uop_OR(ir, IREG_flags, IREG_flags, IREG_temp3);
+
+            if (bt_op != BT_OP_BT) {
+                uop_MOV_IMM(ir, IREG_temp1_W, 1);
+                uop_SHL(ir, IREG_temp1_W, IREG_temp1_W, IREG_temp2);
+                if (bt_op == BT_OP_BTS)
+                    uop_OR(ir, val_reg, val_reg, IREG_temp1_W);
+                else if (bt_op == BT_OP_BTR) {
+                    uop_XOR_IMM(ir, IREG_temp1_W, IREG_temp1_W, 0xffffu);
+                    uop_AND(ir, val_reg, val_reg, IREG_temp1_W);
+                } else if (bt_op == BT_OP_BTC)
+                    uop_XOR(ir, val_reg, val_reg, IREG_temp1_W);
+            }
+        }
+    }
+
+    if (is_mem && bt_op != BT_OP_BT) {
+        uop_MEM_STORE_REG(ir, ireg_seg_base(target_seg), IREG_eaaddr, val_reg);
+    }
+
+    codegen_flags_changed = 0;
+    return is_imm ? (op_pc + 2) : (op_pc + 1);
+}
+
+uint32_t
+ropBT_16(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
+{
+    return ropBT_common(block, ir, opcode, fetchdat, op_32, op_pc, BT_OP_BT, 0);
+}
+
+uint32_t
+ropBT_32(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
+{
+    return ropBT_common(block, ir, opcode, fetchdat, op_32, op_pc, BT_OP_BT, 0);
+}
+
+uint32_t
+ropBTS_16(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
+{
+    return ropBT_common(block, ir, opcode, fetchdat, op_32, op_pc, BT_OP_BTS, 0);
+}
+
+uint32_t
+ropBTS_32(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
+{
+    return ropBT_common(block, ir, opcode, fetchdat, op_32, op_pc, BT_OP_BTS, 0);
+}
+
+uint32_t
+ropBTR_16(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
+{
+    return ropBT_common(block, ir, opcode, fetchdat, op_32, op_pc, BT_OP_BTR, 0);
+}
+
+uint32_t
+ropBTR_32(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
+{
+    return ropBT_common(block, ir, opcode, fetchdat, op_32, op_pc, BT_OP_BTR, 0);
+}
+
+uint32_t
+ropBTC_16(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
+{
+    return ropBT_common(block, ir, opcode, fetchdat, op_32, op_pc, BT_OP_BTC, 0);
+}
+
+uint32_t
+ropBTC_32(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
+{
+    return ropBT_common(block, ir, opcode, fetchdat, op_32, op_pc, BT_OP_BTC, 0);
+}
+
+uint32_t
+ropBA_16(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
+{
+    int bt_op;
+    switch (fetchdat & 0x38) {
+        case 0x20: bt_op = BT_OP_BT;  break;
+        case 0x28: bt_op = BT_OP_BTS; break;
+        case 0x30: bt_op = BT_OP_BTR; break;
+        case 0x38: bt_op = BT_OP_BTC; break;
+        default:   return 0; /* Illegal opcode */
+    }
+    return ropBT_common(block, ir, opcode, fetchdat, op_32, op_pc, bt_op, 1);
+}
+
+uint32_t
+ropBA_32(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
+{
+    int bt_op;
+    switch (fetchdat & 0x38) {
+        case 0x20: bt_op = BT_OP_BT;  break;
+        case 0x28: bt_op = BT_OP_BTS; break;
+        case 0x30: bt_op = BT_OP_BTR; break;
+        case 0x38: bt_op = BT_OP_BTC; break;
+        default:   return 0; /* Illegal opcode */
+    }
+    return ropBT_common(block, ir, opcode, fetchdat, op_32, op_pc, bt_op, 1);
+}
+
+static uint32_t
+ropBS_common(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc, int is_bsr)
+{
+    /* Check CPU support: if illegal on this CPU, fall back to interpreter #UD handler */
+    if (x86_dynarec_opcodes_0f[opcode | op_32] == x86_dynarec_opcodes_0f[0x0b])
+        return 0;
+
+    int is_op32  = !!(op_32 & 0x100);
+    int dest_reg = (fetchdat >> 3) & 7;
+    int src_reg;
+
+    codegen_mark_code_present(block, cs + op_pc, 1);
+
+    if ((fetchdat & 0xc0) == 0xc0) {
+        src_reg = is_op32 ? IREG_32(fetchdat & 7) : IREG_16(fetchdat & 7);
+    } else {
+        x86seg *target_seg;
+
+        uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
+        target_seg = codegen_generate_ea(ir, op_ea_seg, fetchdat, op_ssegs, &op_pc, op_32, 0);
+        codegen_check_seg_read(block, ir, target_seg);
+        CHECK_SEG_LIMITS(block, ir, target_seg, IREG_eaaddr, is_op32 ? 3 : 1);
+
+        src_reg = is_op32 ? IREG_temp0 : IREG_temp0_W;
+        uop_MEM_LOAD_REG(ir, src_reg, ireg_seg_base(target_seg), IREG_eaaddr);
+    }
+
+    uop_CALL_FUNC(ir, jit_flags_rebuild);
+    int jump_zero = uop_CMP_IMM_JZ_DEST(ir, src_reg, 0);
+
+    /* Non-zero path */
+    uop_AND_IMM(ir, IREG_flags, IREG_flags, ~Z_FLAG);
+    if (is_op32)
+        uop_MOV(ir, IREG_flags_res, src_reg);
+    else
+        uop_MOVZX(ir, IREG_flags_res, src_reg);
+
+    uop_CALL_FUNC_RESULT(ir, IREG_temp0, is_bsr ? jit_bsr : jit_bsf);
+
+    if (is_op32)
+        uop_MOV(ir, IREG_32(dest_reg), IREG_temp0);
+    else
+        uop_MOV(ir, IREG_16(dest_reg), IREG_temp0_W);
+
+    int jump_skip = uop_JMP_DEST(ir);
+
+    /* Zero path */
+    uop_set_jump_dest(ir, jump_zero);
+    uop_OR_IMM(ir, IREG_flags, IREG_flags, Z_FLAG);
+
+    /* End */
+    uop_set_jump_dest(ir, jump_skip);
+
+    codegen_flags_changed = 0;
+    return op_pc + 1;
+}
+
+uint32_t
+ropBSF_16(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
+{
+    return ropBS_common(block, ir, opcode, fetchdat, op_32, op_pc, 0);
+}
+
+uint32_t
+ropBSF_32(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
+{
+    return ropBS_common(block, ir, opcode, fetchdat, op_32, op_pc, 0);
+}
+
+uint32_t
+ropBSR_16(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
+{
+    return ropBS_common(block, ir, opcode, fetchdat, op_32, op_pc, 1);
+}
+
+uint32_t
+ropBSR_32(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
+{
+    return ropBS_common(block, ir, opcode, fetchdat, op_32, op_pc, 1);
+}
+

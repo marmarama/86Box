@@ -154,4 +154,18 @@ jit_cond_NLE(void)
     return (((NF_SET() ? 1 : 0) == (VF_SET() ? 1 : 0)) && !ZF_SET()) ? 1 : 0;
 }
 
+/* --- bit scan helpers --- */
+
+static JIT_WRAPPER uint32_t
+jit_bsf(void)
+{
+    return (uint32_t) __builtin_ctz(cpu_state.flags_res);
+}
+
+static JIT_WRAPPER uint32_t
+jit_bsr(void)
+{
+    return (uint32_t) (31 - __builtin_clz(cpu_state.flags_res));
+}
+
 #endif /* CODEGEN_OPS_JIT_WRAPPERS_H */
