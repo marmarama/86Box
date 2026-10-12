@@ -71,4 +71,87 @@ jit_ZF_SET(void)
     return ZF_SET();
 }
 
+/* --- condition test functions (void → int) --- */
+
+static JIT_WRAPPER int
+jit_cond_O(void)
+{
+    return VF_SET() ? 1 : 0;
+}
+static JIT_WRAPPER int
+jit_cond_NO(void)
+{
+    return !VF_SET() ? 1 : 0;
+}
+static JIT_WRAPPER int
+jit_cond_B(void)
+{
+    return CF_SET() ? 1 : 0;
+}
+static JIT_WRAPPER int
+jit_cond_NB(void)
+{
+    return !CF_SET() ? 1 : 0;
+}
+static JIT_WRAPPER int
+jit_cond_E(void)
+{
+    return ZF_SET() ? 1 : 0;
+}
+static JIT_WRAPPER int
+jit_cond_NE(void)
+{
+    return !ZF_SET() ? 1 : 0;
+}
+static JIT_WRAPPER int
+jit_cond_BE(void)
+{
+    return (CF_SET() || ZF_SET()) ? 1 : 0;
+}
+static JIT_WRAPPER int
+jit_cond_NBE(void)
+{
+    return (!CF_SET() && !ZF_SET()) ? 1 : 0;
+}
+static JIT_WRAPPER int
+jit_cond_S(void)
+{
+    return NF_SET() ? 1 : 0;
+}
+static JIT_WRAPPER int
+jit_cond_NS(void)
+{
+    return !NF_SET() ? 1 : 0;
+}
+static JIT_WRAPPER int
+jit_cond_P(void)
+{
+    return PF_SET() ? 1 : 0;
+}
+static JIT_WRAPPER int
+jit_cond_NP(void)
+{
+    return !PF_SET() ? 1 : 0;
+}
+static JIT_WRAPPER int
+jit_cond_L(void)
+{
+    return ((NF_SET() ? 1 : 0) != (VF_SET() ? 1 : 0)) ? 1 : 0;
+}
+static JIT_WRAPPER int
+jit_cond_NL(void)
+{
+    return ((NF_SET() ? 1 : 0) == (VF_SET() ? 1 : 0)) ? 1 : 0;
+}
+static JIT_WRAPPER int
+jit_cond_LE(void)
+{
+    return (((NF_SET() ? 1 : 0) != (VF_SET() ? 1 : 0)) || ZF_SET()) ? 1 : 0;
+}
+static JIT_WRAPPER int
+jit_cond_NLE(void)
+{
+    return (((NF_SET() ? 1 : 0) == (VF_SET() ? 1 : 0)) && !ZF_SET()) ? 1 : 0;
+}
+
 #endif /* CODEGEN_OPS_JIT_WRAPPERS_H */
