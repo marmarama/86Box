@@ -13,6 +13,7 @@
 #    include "codegen_backend.h"
 #    include "codegen_backend_x86-64_defs.h"
 #    include "codegen_backend_x86-64_ops.h"
+#    include "codegen_backend_x86-64_ops_helpers.h"
 #    include "codegen_backend_x86-64_ops_sse.h"
 #    include "codegen_reg.h"
 #    include "x86.h"
@@ -46,12 +47,14 @@ void *codegen_gpf_rout;
 void *codegen_exit_rout;
 
 host_reg_def_t codegen_host_reg_list[CODEGEN_HOST_REGS] = {
-    /* Note: while EAX and EDX are normally volatile registers under x86
+    /* Note: while EAX, EDX, R10, R11 are normally volatile registers under x86
        calling conventions, the recompiler will explicitly save and restore
-       them across function calls */
+       them across memory helper calls on the slow path */
     { REG_EAX, 0 },
     { REG_EBX, 0 },
     { REG_EDX, 0 },
+    { REG_R10, HOST_REG_FLAG_NO_BH },
+    { REG_R11, HOST_REG_FLAG_NO_BH },
     { REG_R13, HOST_REG_FLAG_NO_BH },
     { REG_R14, HOST_REG_FLAG_NO_BH },
     { REG_R15, HOST_REG_FLAG_NO_BH }
@@ -137,12 +140,15 @@ build_load_routine(codeblock_t *block, int size, int is_float)
         *misaligned_offset = (uint8_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) misaligned_offset) - 1;
     host_x86_PUSH(block, REG_RAX);
     host_x86_PUSH(block, REG_RDX);
+    host_x86_PUSH(block, REG_R10);
+    host_x86_PUSH(block, REG_R11);
 #    if _WIN64
     host_x86_SUB64_REG_IMM(block, REG_RSP, 0x28);
     // host_x86_MOV32_REG_REG(block, REG_ECX, uop->imm_data);
 #    else
-    /* Align RSP to 16: entry RSP%16=8 (after CALL from JIT block), two PUSHes
-       leave it at 8; subtract 8 more to satisfy the SysV ABI before calling C. */
+    /* Align RSP to 16: entry RSP%16=8 (after CALL from JIT block), four PUSHes
+       (RAX, RDX, R10, R11) subtract 32 (multiple of 16), so RSP%16 is still 8;
+       subtract 8 more to satisfy the SysV ABI before calling C. */
     host_x86_SUB64_REG_IMM(block, REG_RSP, 0x8);
     host_x86_MOV32_REG_REG(block, REG_EDI, REG_ECX);
 #    endif
@@ -168,6 +174,8 @@ build_load_routine(codeblock_t *block, int size, int is_float)
 #    else
     host_x86_ADD64_REG_IMM(block, REG_RSP, 0x8);
 #    endif
+    host_x86_POP(block, REG_R11);
+    host_x86_POP(block, REG_R10);
     host_x86_POP(block, REG_RDX);
     host_x86_POP(block, REG_RAX);
     host_x86_MOVZX_REG_ABS_32_8(block, REG_ESI, &cpu_state.abrt);
@@ -231,6 +239,8 @@ build_store_routine(codeblock_t *block, int size, int is_float)
         *misaligned_offset = (uint8_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) misaligned_offset) - 1;
     host_x86_PUSH(block, REG_RAX);
     host_x86_PUSH(block, REG_RDX);
+    host_x86_PUSH(block, REG_R10);
+    host_x86_PUSH(block, REG_R11);
 #    if _WIN64
     host_x86_SUB64_REG_IMM(block, REG_RSP, 0x28);
     if (size == 4 && is_float)
@@ -241,6 +251,9 @@ build_store_routine(codeblock_t *block, int size, int is_float)
         host_x86_MOV32_REG_REG(block, REG_EDX, REG_ECX); // data
     host_x86_MOV32_REG_REG(block, REG_ECX, REG_EDI);     // address
 #    else
+    /* Align RSP to 16: entry RSP%16=8 (after CALL from JIT block), four PUSHes
+       (RAX, RDX, R10, R11) subtract 32 (multiple of 16), so RSP%16 is still 8;
+       subtract 8 more to satisfy the SysV ABI before calling C. */
     host_x86_SUB64_REG_IMM(block, REG_RSP, 0x8);
     // host_x86_MOV32_REG_REG(block, REG_EDI, REG_ECX);  //address
     if (size == 4 && is_float)
@@ -263,6 +276,8 @@ build_store_routine(codeblock_t *block, int size, int is_float)
 #    else
     host_x86_ADD64_REG_IMM(block, REG_RSP, 0x8);
 #    endif
+    host_x86_POP(block, REG_R11);
+    host_x86_POP(block, REG_R10);
     host_x86_POP(block, REG_RDX);
     host_x86_POP(block, REG_RAX);
     host_x86_MOVZX_REG_ABS_32_8(block, REG_ESI, &cpu_state.abrt);
@@ -272,30 +287,30 @@ build_store_routine(codeblock_t *block, int size, int is_float)
 static void
 build_loadstore_routines(codeblock_t *block)
 {
-    codegen_mem_load_byte = &codeblock[block_current].data[block_pos];
+    codegen_mem_load_byte = &block_write_data[block_pos];
     build_load_routine(block, 1, 0);
-    codegen_mem_load_word = &codeblock[block_current].data[block_pos];
+    codegen_mem_load_word = &block_write_data[block_pos];
     build_load_routine(block, 2, 0);
-    codegen_mem_load_long = &codeblock[block_current].data[block_pos];
+    codegen_mem_load_long = &block_write_data[block_pos];
     build_load_routine(block, 4, 0);
-    codegen_mem_load_quad = &codeblock[block_current].data[block_pos];
+    codegen_mem_load_quad = &block_write_data[block_pos];
     build_load_routine(block, 8, 0);
-    codegen_mem_load_single = &codeblock[block_current].data[block_pos];
+    codegen_mem_load_single = &block_write_data[block_pos];
     build_load_routine(block, 4, 1);
-    codegen_mem_load_double = &codeblock[block_current].data[block_pos];
+    codegen_mem_load_double = &block_write_data[block_pos];
     build_load_routine(block, 8, 1);
 
-    codegen_mem_store_byte = &codeblock[block_current].data[block_pos];
+    codegen_mem_store_byte = &block_write_data[block_pos];
     build_store_routine(block, 1, 0);
-    codegen_mem_store_word = &codeblock[block_current].data[block_pos];
+    codegen_mem_store_word = &block_write_data[block_pos];
     build_store_routine(block, 2, 0);
-    codegen_mem_store_long = &codeblock[block_current].data[block_pos];
+    codegen_mem_store_long = &block_write_data[block_pos];
     build_store_routine(block, 4, 0);
-    codegen_mem_store_quad = &codeblock[block_current].data[block_pos];
+    codegen_mem_store_quad = &block_write_data[block_pos];
     build_store_routine(block, 8, 0);
-    codegen_mem_store_single = &codeblock[block_current].data[block_pos];
+    codegen_mem_store_single = &block_write_data[block_pos];
     build_store_routine(block, 4, 1);
-    codegen_mem_store_double = &codeblock[block_current].data[block_pos];
+    codegen_mem_store_double = &block_write_data[block_pos];
     build_store_routine(block, 8, 1);
 }
 
@@ -326,7 +341,8 @@ codegen_backend_init(void)
     block_write_data                        = codeblock[block_current].data;
     build_loadstore_routines(&codeblock[block_current]);
 
-    codegen_gpf_rout = &codeblock[block_current].data[block_pos];
+    codegen_alloc_bytes(block, 80);
+    codegen_gpf_rout = &block_write_data[block_pos];
 #    if _WIN64
     host_x86_XOR32_REG_REG(block, REG_ECX, REG_ECX);
     host_x86_XOR32_REG_REG(block, REG_EDX, REG_EDX);
@@ -335,7 +351,7 @@ codegen_backend_init(void)
     host_x86_XOR32_REG_REG(block, REG_ESI, REG_ESI);
 #    endif
     host_x86_CALL(block, (void *) x86gpf);
-    codegen_exit_rout = &codeblock[block_current].data[block_pos];
+    codegen_exit_rout = &block_write_data[block_pos];
 #ifdef _WIN64
     /* XMM6 and XMM7 hold guest FPU/MMX values in blocks, and the Windows
        x64 ABI makes them the caller's: put back what the caller had. */

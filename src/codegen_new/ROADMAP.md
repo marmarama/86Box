@@ -105,9 +105,11 @@ However, the x86-64 backend in `codegen_new` was ported without general REX pref
 3. **[x] Expand `CODEGEN_HOST_REGS` (3 $\rightarrow$ 6 Regs)**:
    - Expanded `CODEGEN_HOST_REGS` to 6 (`REG_EAX`, `REG_EBX`, `REG_EDX`, `REG_R13`, `REG_R14`, `REG_R15`) in `src/codegen_new/codegen_backend_x86-64_defs.h` and `codegen_host_reg_list`.
    - Stack frame, prologue, epilogue, and exit routines wired to preserve and restore `R13`–`R15`.
-4. **[ ] Expand `CODEGEN_HOST_REGS` to 8–10 Regs**:
-   - Add scratch registers `REG_R8`, `REG_R9`, `REG_R10`, `REG_R11` to `codegen_host_reg_list`.
-   - Update helper call routines to spill/reload scratch registers across C runtime calls.
+4. **[x] Expand `CODEGEN_HOST_REGS` to 8 Regs**:
+   - Expanded `CODEGEN_HOST_REGS` to 8 (`REG_EAX`, `REG_EBX`, `REG_EDX`, `REG_R10`, `REG_R11`, `REG_R13`, `REG_R14`, `REG_R15`) in `src/codegen_new/codegen_backend_x86-64_defs.h` and `codegen_host_reg_list`.
+   - Updated memory helper slow paths to spill/reload caller-saved scratch registers `R10` and `R11` across C helper calls while maintaining 16-byte stack alignment.
+   - Fixed chained block allocator pointer resolution in `build_loadstore_routines` and `codegen_backend_init` to reference `block_write_data` instead of static `codeblock[0].data`.
+   - **Benchmark Results**: Quake 1 demo1 at 153.30 FPS (+2.9% vs baseline), Doom parity at 6224.17 FPS (12 realtics), PCPBench at 60.20 FPS, Dhrystone at 416,125 Ops/sec, and host wall-clock execution time reduced from 116.43s to 105.88s (-9.1% execution speedup).
 5. **[ ] Expand Vector Registers**:
    - Support `XMM8` through `XMM15` in `src/codegen_new/codegen_backend_x86-64_ops_sse.c` with REX prefixes, increasing `CODEGEN_HOST_FP_REGS` from 7 to 15.
 
