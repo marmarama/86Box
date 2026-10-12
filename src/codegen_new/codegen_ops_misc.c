@@ -751,12 +751,12 @@ ropBT_common(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchda
         if (!is_imm) {
             int bit_reg_idx = (fetchdat >> 3) & 7;
             if (is_op32) {
-                uop_SAR_IMM(ir, IREG_temp1, IREG_32(bit_reg_idx), 5);
+                uop_SHR_IMM(ir, IREG_temp1, IREG_32(bit_reg_idx), 5);
                 uop_SHL_IMM(ir, IREG_temp1, IREG_temp1, 2);
                 uop_ADD(ir, IREG_eaaddr, IREG_eaaddr, IREG_temp1);
             } else {
-                uop_MOVSX(ir, IREG_temp1, IREG_16(bit_reg_idx));
-                uop_SAR_IMM(ir, IREG_temp1, IREG_temp1, 4);
+                uop_MOVZX(ir, IREG_temp1, IREG_16(bit_reg_idx));
+                uop_SHR_IMM(ir, IREG_temp1, IREG_temp1, 4);
                 uop_SHL_IMM(ir, IREG_temp1, IREG_temp1, 1);
                 uop_ADD(ir, IREG_eaaddr, IREG_eaaddr, IREG_temp1);
             }
@@ -788,9 +788,9 @@ ropBT_common(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchda
         int bit_idx = imm & (is_op32 ? 31 : 15);
         if (is_op32) {
             uop_SHR_IMM(ir, IREG_temp2, val_reg, bit_idx);
-            uop_AND_IMM(ir, IREG_temp2, IREG_temp2, 1);
+            uop_AND_IMM(ir, IREG_temp2_W, IREG_temp2_W, 1);
             uop_AND_IMM(ir, IREG_flags, IREG_flags, ~C_FLAG);
-            uop_OR(ir, IREG_flags, IREG_flags, IREG_temp2);
+            uop_OR(ir, IREG_flags, IREG_flags, IREG_temp2_W);
 
             if (bt_op == BT_OP_BTS)
                 uop_OR_IMM(ir, val_reg, val_reg, (1u << bit_idx));
@@ -801,9 +801,8 @@ ropBT_common(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchda
         } else {
             uop_SHR_IMM(ir, IREG_temp2_W, val_reg, bit_idx);
             uop_AND_IMM(ir, IREG_temp2_W, IREG_temp2_W, 1);
-            uop_MOVZX(ir, IREG_temp2, IREG_temp2_W);
             uop_AND_IMM(ir, IREG_flags, IREG_flags, ~C_FLAG);
-            uop_OR(ir, IREG_flags, IREG_flags, IREG_temp2);
+            uop_OR(ir, IREG_flags, IREG_flags, IREG_temp2_W);
 
             if (bt_op == BT_OP_BTS)
                 uop_OR_IMM(ir, val_reg, val_reg, (1u << bit_idx));
@@ -817,9 +816,9 @@ ropBT_common(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchda
         if (is_op32) {
             uop_AND_IMM(ir, IREG_temp2, IREG_32(bit_reg_idx), 31);
             uop_SHR(ir, IREG_temp3, val_reg, IREG_temp2);
-            uop_AND_IMM(ir, IREG_temp3, IREG_temp3, 1);
+            uop_AND_IMM(ir, IREG_temp3_W, IREG_temp3_W, 1);
             uop_AND_IMM(ir, IREG_flags, IREG_flags, ~C_FLAG);
-            uop_OR(ir, IREG_flags, IREG_flags, IREG_temp3);
+            uop_OR(ir, IREG_flags, IREG_flags, IREG_temp3_W);
 
             if (bt_op != BT_OP_BT) {
                 uop_MOV_IMM(ir, IREG_temp1, 1);
@@ -833,16 +832,15 @@ ropBT_common(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchda
                     uop_XOR(ir, val_reg, val_reg, IREG_temp1);
             }
         } else {
-            uop_AND_IMM(ir, IREG_temp2, IREG_16(bit_reg_idx), 15);
-            uop_SHR(ir, IREG_temp3_W, val_reg, IREG_temp2);
+            uop_AND_IMM(ir, IREG_temp2_W, IREG_16(bit_reg_idx), 15);
+            uop_SHR(ir, IREG_temp3_W, val_reg, IREG_temp2_W);
             uop_AND_IMM(ir, IREG_temp3_W, IREG_temp3_W, 1);
-            uop_MOVZX(ir, IREG_temp3, IREG_temp3_W);
             uop_AND_IMM(ir, IREG_flags, IREG_flags, ~C_FLAG);
-            uop_OR(ir, IREG_flags, IREG_flags, IREG_temp3);
+            uop_OR(ir, IREG_flags, IREG_flags, IREG_temp3_W);
 
             if (bt_op != BT_OP_BT) {
                 uop_MOV_IMM(ir, IREG_temp1_W, 1);
-                uop_SHL(ir, IREG_temp1_W, IREG_temp1_W, IREG_temp2);
+                uop_SHL(ir, IREG_temp1_W, IREG_temp1_W, IREG_temp2_W);
                 if (bt_op == BT_OP_BTS)
                     uop_OR(ir, val_reg, val_reg, IREG_temp1_W);
                 else if (bt_op == BT_OP_BTR) {
