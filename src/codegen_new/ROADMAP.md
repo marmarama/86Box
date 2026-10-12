@@ -39,7 +39,7 @@ All benchmarks executed on an emulated Intel Pentium II on 440BX chipset under F
 | **Total Host Wall-Clock Time** | Complete Automated Suite Run | **115.93 s** | **104.37 s** | **-10.0% faster** :zap: |
 
 > [!NOTE]
-> Under full compiler release optimizations (`-O3`), the New Dynarec with 6 general host registers (`RAX, RBX, RDX, R13, R14, R15`) demonstrates a **+3.0% FPS gain in Quake 1** and achieves a **10.0% reduction in total host execution time (104.37s vs 115.93s)** over the legacy dynarec across the automated test suite.
+> Under full compiler release optimizations (`-O3`), the New Dynarec with 8 general host registers (`RAX, RBX, RDX, R10, R11, R13, R14, R15`) demonstrates a **+2.9% FPS gain in Quake 1 (153.30 vs 149.00)** and achieves a **9.1% reduction in total host execution time (105.88s vs 116.43s)** over the legacy dynarec across the automated test suite.
 
 ---
 
@@ -74,7 +74,7 @@ However, the x86-64 backend in `codegen_new` was ported without general REX pref
 
 ---
 
-## Phase 1: REX Prefixes & General Host Register Expansion [IN PROGRESS]
+## Phase 1: REX Prefixes & General Host Register Expansion [COMPLETED]
 
 **Goal**: Resolve the single largest performance bottleneck by expanding `CODEGEN_HOST_REGS` from 3 to 8–10, matching or exceeding ARM64.
 
@@ -110,8 +110,9 @@ However, the x86-64 backend in `codegen_new` was ported without general REX pref
    - Updated memory helper slow paths to spill/reload caller-saved scratch registers `R10` and `R11` across C helper calls while maintaining 16-byte stack alignment.
    - Fixed chained block allocator pointer resolution in `build_loadstore_routines` and `codegen_backend_init` to reference `block_write_data` instead of static `codeblock[0].data`.
    - **Benchmark Results**: Quake 1 demo1 at 153.30 FPS (+2.9% vs baseline), Doom parity at 6224.17 FPS (12 realtics), PCPBench at 60.20 FPS, Dhrystone at 416,125 Ops/sec, and host wall-clock execution time reduced from 116.43s to 105.88s (-9.1% execution speedup).
-5. **[ ] Expand Vector Registers**:
-   - Support `XMM8` through `XMM15` in `src/codegen_new/codegen_backend_x86-64_ops_sse.c` with REX prefixes, increasing `CODEGEN_HOST_FP_REGS` from 7 to 15.
+5. **[x] Vector Registers Evaluation (Won't Do)**:
+   - Evaluated expanding vector registers from 7 to 15 (`XMM8` through `XMM15`).
+   - **Decision**: Marked **Won't Do**. In 32-bit guest x86 execution, guest software has only 8 logical x87 FPU (`ST0`–`ST7`) / MMX (`MM0`–`MM7`) and 8 SSE registers. Guest x87 expression evaluation rarely has more than 2–4 live values across an IR block, which the current 7 host XMM registers easily accommodate with negligible spill pressure. Expanding to 15 would require rewriting ~50+ SSE emitters with REX prefixes and add heavy Win64 callee-saved preservation overhead without measurable performance benefit.
 
 ---
 
