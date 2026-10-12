@@ -140,8 +140,12 @@ However, the x86-64 backend in `codegen_new` was ported without general REX pref
    - Implemented `UOP_BSWAP` (`dest_reg = bswap(src_reg_a)`) across intermediate representation and backend instruction selection.
    - Implemented native `BSWAP` emission on x86-64 (`host_x86_BSWAP32_REG`, with REX.B support for high registers `R8`–`R15`), ARM64 (`REV Wd, Wn`), and LoongArch64 (`revb.2w`).
    - Implemented `ropBSWAP` and wired `0F C8`–`CF` across both 16-bit and 32-bit sections of `recomp_opcodes_0f` and `recomp_opcodes_0f_no_mmx` in `src/codegen_new/codegen_ops.c`.
-5. **Atomic Operations**:
-   - `CMPXCHG` (`0F B0`, `B1`), `XADD` (`0F C0`, `C1`).
+5. **[x] Atomic Operations (`CMPXCHG`, `XADD`)**:
+   - Implemented `ropCMPXCHG_8`, `ropCMPXCHG_16`, `ropCMPXCHG_32` for `0F B0` and `0F B1` supporting ModR/M registers and memory operands.
+   - Handled upfront segment write permissions, segment limit checks, `FLAGS_SUB8/16/32` flag setting, and IR conditional branch paths (`uop_CMP_IMM_JNZ_DEST` / `uop_JMP_DEST`).
+   - Implemented `ropXADD_8`, `ropXADD_16`, `ropXADD_32` for `0F C0` and `0F C1` supporting ModR/M registers (including `dest == src` handling) and memory effective address destinations, updating status flags via `FLAGS_ADD8/16/32`.
+   - CPU capability validation checks against illegal execution on 386 falling back to interpreter `#UD`.
+   - Registered `0F B0`, `0F B1`, `0F C0`, `0F C1` across 16-bit and 32-bit sections of `recomp_opcodes_0f` and `recomp_opcodes_0f_no_mmx` in `src/codegen_new/codegen_ops.c`.
 6. **REP-prefixed String Operations**:
    - Recompile `REP MOVS`, `REP STOS`, `REP LODS` with loop unrolling or host `REP MOVSB/D` primitives.
 
