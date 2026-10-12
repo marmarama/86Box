@@ -82,6 +82,7 @@
 /*Register formats with only two operands.*/
 #    define OPCODE_EXT_W_H           0x00005800
 #    define OPCODE_EXT_W_B           0x00005c00
+#    define OPCODE_REVB_2W           0x000c3800
 #    define OPCODE_BSTRINS_W         0x00600000
 #    define OPCODE_BSTRPICK_W        0x00608000
 #    define OPCODE_BSTRINS_D         0x00800000
@@ -584,6 +585,12 @@ host_loong64_ROTR_D_IMM(codeblock_t *block, int dst_reg, int src_reg, int shift)
     if (shift < 1 || shift > 63)
         fatal("host_loong64_ROTR_D_IMM - shift %i out of range\n", shift);
     codegen_addlong(block, OPCODE_ROTRI_D | Rd(dst_reg) | Rj(src_reg) | UIMM10_6(shift));
+}
+
+void
+host_loong64_REVB_2W(codeblock_t *block, int dst_reg, int src_reg)
+{
+    codegen_addlong(block, OPCODE_REVB_2W | Rd(dst_reg) | Rj(src_reg));
 }
 
 /*Loads / stores.*/

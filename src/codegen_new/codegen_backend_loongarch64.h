@@ -138,6 +138,7 @@ void host_loong64_ROTR_W_REG(codeblock_t *block, int dst_reg, int src_reg, int s
 void host_loong64_ROTR_D_REG(codeblock_t *block, int dst_reg, int src_reg, int shift_reg);
 void host_loong64_ROTR_W_IMM(codeblock_t *block, int dst_reg, int src_reg, int shift);
 void host_loong64_ROTR_D_IMM(codeblock_t *block, int dst_reg, int src_reg, int shift);
+void host_loong64_REVB_2W(codeblock_t *block, int dst_reg, int src_reg);
 
 /*slt/sltu/slti/sltui (no flags reg - compare results are materialised in a
   register for the conditional-jump uops).*/

@@ -1012,3 +1012,15 @@ ropBSR_32(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, 
     return ropBS_common(block, ir, opcode, fetchdat, op_32, op_pc, 1);
 }
 
+uint32_t
+ropBSWAP(UNUSED(codeblock_t *block), ir_data_t *ir, uint8_t opcode, UNUSED(uint32_t fetchdat), uint32_t op_32, uint32_t op_pc)
+{
+    /* Check CPU support: if illegal on this CPU, fall back to interpreter #UD handler */
+    if (x86_dynarec_opcodes_0f[opcode | op_32] == x86_dynarec_opcodes_0f[0x0b])
+        return 0;
+
+    int reg = opcode & 7;
+    uop_BSWAP(ir, IREG_32(reg), IREG_32(reg));
+    return op_pc;
+}
+

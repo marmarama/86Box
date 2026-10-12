@@ -179,6 +179,7 @@
 #    define OPCODE_NOP                (0xd503201f)
 #    define OPCODE_ORR_V              (0x0ea01c00)
 #    define OPCODE_RET                (0xd65f0000)
+#    define OPCODE_REV                (0x5ac00800)
 #    define OPCODE_ROR                (0x1ac02c00)
 #    define OPCODE_SADDLP_V2S_4H      (0x0e602800)
 #    define OPCODE_SCVTF_D_Q          (0x9e620000)
@@ -1295,6 +1296,12 @@ void
 host_arm64_RET(codeblock_t *block, int reg)
 {
     codegen_addlong(block, OPCODE_RET | Rn(reg));
+}
+
+void
+host_arm64_REV(codeblock_t *block, int dst_reg, int src_reg)
+{
+    codegen_addlong(block, OPCODE_REV | Rd(dst_reg) | Rn(src_reg));
 }
 
 void

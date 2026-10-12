@@ -136,8 +136,10 @@ However, the x86-64 backend in `codegen_new` was ported without general REX pref
    - Implemented `ropBA_16/32` for `0F BA` Group 8 immediate bit offset variants (`/4` BT, `/5` BTS, `/6` BTR, `/7` BTC).
    - Implemented `ropBSF_16/32` and `ropBSR_16/32` (`0F BC`, `0F BD`) with fast native `__builtin_ctz` and `__builtin_clz` JIT wrappers, properly preserving the destination register when the source operand is zero.
    - Registered all opcodes across `recomp_opcodes_0f` and `recomp_opcodes_0f_no_mmx` in `src/codegen_new/codegen_ops.c`. Validated across full DOS benchmark suite.
-4. **Byte Swap (`BSWAP`, 0F C8–CF)**:
-   - Map directly to host `BSWAP`.
+4. **[x] Byte Swap (`BSWAP`, 0F C8–CF)**:
+   - Implemented `UOP_BSWAP` (`dest_reg = bswap(src_reg_a)`) across intermediate representation and backend instruction selection.
+   - Implemented native `BSWAP` emission on x86-64 (`host_x86_BSWAP32_REG`, with REX.B support for high registers `R8`–`R15`), ARM64 (`REV Wd, Wn`), and LoongArch64 (`revb.2w`).
+   - Implemented `ropBSWAP` and wired `0F C8`–`CF` across both 16-bit and 32-bit sections of `recomp_opcodes_0f` and `recomp_opcodes_0f_no_mmx` in `src/codegen_new/codegen_ops.c`.
 5. **Atomic Operations**:
    - `CMPXCHG` (`0F B0`, `B1`), `XADD` (`0F C0`, `C1`).
 6. **REP-prefixed String Operations**:

@@ -2251,6 +2251,20 @@ codegen_MMX_HELPER2(codeblock_t *block, uop_t *uop)
     return 0;
 }
 
+static int
+codegen_BSWAP(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg  = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_reg   = HOST_REG_GET(uop->src_reg_a_real);
+    int dest_size = IREG_GET_SIZE(uop->dest_reg_a_real);
+    int src_size  = IREG_GET_SIZE(uop->src_reg_a_real);
+
+    if (REG_IS_L(dest_size) && REG_IS_L(src_size)) {
+        host_loong64_REVB_2W(block, dest_reg, src_reg);
+    }
+    return 0;
+}
+
 const uOpFn uop_handlers[UOP_MAX] = {
     /*Any uop without a handler below lands here and fatal()s in both
       debug and release builds.*/
@@ -2410,6 +2424,8 @@ const uOpFn uop_handlers[UOP_MAX] = {
     [UOP_MEM_STORE_IMM_32 & UOP_MASK] = codegen_MEM_STORE_IMM_32,
 
     [UOP_NOP_BARRIER & UOP_MASK] = codegen_NOP,
+
+    [UOP_BSWAP & UOP_MASK]       = codegen_BSWAP,
 
 #ifdef DEBUG_EXTRA
     [UOP_LOG_INSTR & UOP_MASK] = codegen_LOG_INSTR,

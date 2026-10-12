@@ -102,7 +102,7 @@ RecompOpFn recomp_opcodes_0f[512] = {
 /*a0*/  ropPUSH_FS_16,  ropPOP_FS_16,   NULL,           ropBT_16,       ropSHLD_16_imm, NULL,           NULL,           NULL,           ropPUSH_GS_16,  ropPOP_GS_16,   NULL,           ropBTS_16,      ropSHRD_16_imm, NULL,           NULL,           NULL,
 /*b0*/  NULL,           NULL,           ropLSS_16,      ropBTR_16,      ropLFS_16,      ropLGS_16,      ropMOVZX_16_8,  NULL,           NULL,           NULL,           ropBA_16,       ropBTC_16,      ropBSF_16,      ropBSR_16,      ropMOVSX_16_8,  NULL,
 
-/*c0*/  NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,
+/*c0*/  NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,
 /*d0*/  NULL,           NULL,           NULL,           NULL,           NULL,           ropPMULLW,      NULL,           NULL,           ropPSUBUSB,     ropPSUBUSW,     NULL,           ropPAND,        ropPADDUSB,     ropPADDUSW,     NULL,           ropPANDN,
 /*e0*/  NULL,           NULL,           NULL,           NULL,           NULL,           ropPMULHW,      NULL,           NULL,           ropPSUBSB,      ropPSUBSW,      NULL,           ropPOR,         ropPADDSB,      ropPADDSW,      NULL,           ropPXOR,
 #if defined __ARM_EABI__ || defined _ARM_ || defined _M_ARM || defined __aarch64__ || defined _M_ARM64
@@ -128,7 +128,7 @@ RecompOpFn recomp_opcodes_0f[512] = {
 /*a0*/  ropPUSH_FS_32,  ropPOP_FS_32,   NULL,           ropBT_32,       ropSHLD_32_imm, NULL,           NULL,           NULL,           ropPUSH_GS_32,  ropPOP_GS_32,   NULL,           ropBTS_32,      ropSHRD_32_imm, NULL,           NULL,           NULL,
 /*b0*/  NULL,           NULL,           ropLSS_32,      ropBTR_32,      ropLFS_32,      ropLGS_32,      ropMOVZX_32_8,  ropMOVZX_32_16, NULL,           NULL,           ropBA_32,       ropBTC_32,      ropBSF_32,      ropBSR_32,      ropMOVSX_32_8,  ropMOVSX_32_16,
 
-/*c0*/  NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,
+/*c0*/  NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,
 /*d0*/  NULL,           NULL,           NULL,           NULL,           NULL,           ropPMULLW,      NULL,           NULL,           ropPSUBUSB,     ropPSUBUSW,     NULL,           ropPAND,        ropPADDUSB,     ropPADDUSW,     NULL,           ropPANDN,
 /*e0*/  NULL,           NULL,           NULL,           NULL,           NULL,           ropPMULHW,      NULL,           NULL,           ropPSUBSB,      ropPSUBSW,      NULL,           ropPOR,         ropPADDSB,      ropPADDSW,      NULL,           ropPXOR,
 #if defined __ARM_EABI__ || defined _ARM_ || defined _M_ARM || defined __aarch64__ || defined _M_ARM64
@@ -158,7 +158,7 @@ RecompOpFn recomp_opcodes_0f_no_mmx[512] = {
 /*a0*/  ropPUSH_FS_16,  ropPOP_FS_16,   NULL,           ropBT_16,       ropSHLD_16_imm, NULL,           NULL,           NULL,           ropPUSH_GS_16,  ropPOP_GS_16,   NULL,           ropBTS_16,      ropSHRD_16_imm, NULL,           NULL,           NULL,
 /*b0*/  NULL,           NULL,           ropLSS_16,      ropBTR_16,      ropLFS_16,      ropLGS_16,      ropMOVZX_16_8,  NULL,           NULL,           NULL,           ropBA_16,       ropBTC_16,      ropBSF_16,      ropBSR_16,      ropMOVSX_16_8,  NULL,
 
-/*c0*/  NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,
+/*c0*/  NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,
 /*d0*/  NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,
 /*e0*/  NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,
 /*f0*/  NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,
@@ -180,7 +180,7 @@ RecompOpFn recomp_opcodes_0f_no_mmx[512] = {
 /*a0*/  ropPUSH_FS_32,  ropPOP_FS_32,   NULL,           ropBT_32,       ropSHLD_32_imm, NULL,           NULL,           NULL,           ropPUSH_GS_32,  ropPOP_GS_32,   NULL,           ropBTS_32,      ropSHRD_32_imm, NULL,           NULL,           NULL,
 /*b0*/  NULL,           NULL,           ropLSS_32,      ropBTR_32,      ropLFS_32,      ropLGS_32,      ropMOVZX_32_8,  ropMOVZX_32_16, NULL,           NULL,           ropBA_32,       ropBTC_32,      ropBSF_32,      ropBSR_32,      ropMOVSX_32_8,  ropMOVSX_32_16,
 
-/*c0*/  NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,
+/*c0*/  NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,
 /*d0*/  NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,
 /*e0*/  NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,
 /*f0*/  NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,

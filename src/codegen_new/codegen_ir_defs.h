@@ -341,8 +341,10 @@
 #define UOP_PMULHRW (UOP_TYPE_PARAMS_REGS | 0xc7)
 /*UOP_PAVGUSB - (packed byte) dest_reg = (src_reg_a + src_reg_b + 1) >> 1*/
 #define UOP_PAVGUSB (UOP_TYPE_PARAMS_REGS | 0xc8)
+/*UOP_BSWAP - dest_reg = bswap(src_reg_a)*/
+#define UOP_BSWAP (UOP_TYPE_PARAMS_REGS | 0xce)
 
-#define UOP_MAX     0xce
+#define UOP_MAX     0xcf
 
 #define UOP_INVALID 0xff
 
@@ -813,6 +815,7 @@ extern int codegen_fp_enter(void);
 #define uop_MEM_STORE_DOUBLE(ir, seg_reg, addr_reg, src_reg)             uop_gen_reg_src3_imm(UOP_MEM_STORE_DOUBLE, ir, seg_reg, addr_reg, src_reg, 0)
 
 #define uop_MOV(ir, dst_reg, src_reg)                                    uop_gen_reg_dst_src1(UOP_MOV, ir, dst_reg, src_reg)
+#define uop_BSWAP(ir, dst_reg, src_reg)                                  uop_gen_reg_dst_src1(UOP_BSWAP, ir, dst_reg, src_reg)
 #define uop_MOV_IMM(ir, reg, imm)                                        uop_gen_reg_dst_imm(UOP_MOV_IMM, ir, reg, imm)
 #define uop_MOV_PTR(ir, reg, p)                                          uop_gen_reg_dst_pointer(UOP_MOV_PTR, ir, reg, p)
 #define uop_MOV_REG_PTR(ir, reg, p)                                      uop_gen_reg_dst_pointer(UOP_MOV_REG_PTR, ir, reg, p)

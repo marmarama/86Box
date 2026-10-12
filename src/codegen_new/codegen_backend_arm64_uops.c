@@ -3125,6 +3125,24 @@ codegen_XOR_IMM(codeblock_t *block, uop_t *uop)
     return 0;
 }
 
+static int
+codegen_BSWAP(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg  = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_reg   = HOST_REG_GET(uop->src_reg_a_real);
+    int dest_size = IREG_GET_SIZE(uop->dest_reg_a_real);
+    int src_size  = IREG_GET_SIZE(uop->src_reg_a_real);
+
+    if (REG_IS_L(dest_size) && REG_IS_L(src_size)) {
+        host_arm64_REV(block, dest_reg, src_reg);
+    }
+#    ifdef RECOMPILER_DEBUG
+    else
+        fatal("BSWAP %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
+#    endif
+    return 0;
+}
+
 const uOpFn uop_handlers[UOP_MAX] = {
     [UOP_CALL_FUNC & UOP_MASK] = codegen_CALL_FUNC,
     [UOP_CALL_FUNC_RESULT &
@@ -3610,7 +3628,11 @@ const uOpFn uop_handlers[UOP_MAX] = {
 
     [UOP_NOP_BARRIER &
         UOP_MASK]
-    = codegen_NOP
+    = codegen_NOP,
+
+    [UOP_BSWAP &
+        UOP_MASK]
+    = codegen_BSWAP
 };
 
 void

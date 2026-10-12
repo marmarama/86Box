@@ -1843,4 +1843,13 @@ host_x86_XOR32_REG_REG(codeblock_t *block, int dst_reg, int src_reg)
     codegen_addbyte2(block, 0x31, 0xc0 | (dst_reg & 7) | ((src_reg & 7) << 3)); /*XOR dst_reg, src_reg*/
 }
 
+void
+host_x86_BSWAP32_REG(codeblock_t *block, int reg)
+{
+    codegen_alloc_bytes(block, 3);
+    if (reg & 8)
+        codegen_addbyte(block, rex_byte(0, 0, 0, reg));
+    codegen_addbyte2(block, 0x0f, 0xc8 | (reg & 7));
+}
+
 #endif
