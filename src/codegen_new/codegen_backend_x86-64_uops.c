@@ -613,6 +613,14 @@ codegen_CMP_JZ_DEST(codeblock_t *block, uop_t *uop)
 }
 
 static int
+codegen_JMP_DEST(codeblock_t *block, uop_t *uop)
+{
+    uop->p = host_x86_JMP_long(block);
+
+    return 0;
+}
+
+static int
 codegen_FABS(codeblock_t *block, uop_t *uop)
 {
     int dest_reg   = HOST_REG_GET(uop->dest_reg_a_real);
@@ -3133,6 +3141,10 @@ const uOpFn uop_handlers[UOP_MAX] = {
     [UOP_CMP_IMM_JZ_DEST &
         UOP_MASK]
     = codegen_CMP_IMM_JZ_DEST,
+
+    [UOP_JMP_DEST &
+        UOP_MASK]
+    = codegen_JMP_DEST,
 
     [UOP_TEST_JNS_DEST &
         UOP_MASK]

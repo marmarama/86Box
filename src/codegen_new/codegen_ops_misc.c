@@ -966,6 +966,7 @@ ropBS_common(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchda
     }
 
     uop_CALL_FUNC(ir, jit_flags_rebuild);
+    uop_OR_IMM(ir, IREG_flags, IREG_flags, Z_FLAG);
     int jump_zero = uop_CMP_IMM_JZ_DEST(ir, src_reg, 0);
 
     /* Non-zero path */
@@ -982,14 +983,8 @@ ropBS_common(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchda
     else
         uop_MOV(ir, IREG_16(dest_reg), IREG_temp0_W);
 
-    int jump_skip = uop_JMP_DEST(ir);
-
-    /* Zero path */
+    /* Zero path destination (ZF is set, dest_reg unmodified) */
     uop_set_jump_dest(ir, jump_zero);
-    uop_OR_IMM(ir, IREG_flags, IREG_flags, Z_FLAG);
-
-    /* End */
-    uop_set_jump_dest(ir, jump_skip);
 
     codegen_flags_changed = 0;
     return op_pc + 1;

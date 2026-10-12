@@ -625,6 +625,13 @@ codegen_CMP_JZ_DEST(codeblock_t *block, uop_t *uop)
 }
 
 static int
+codegen_JMP_DEST(codeblock_t *block, uop_t *uop)
+{
+    uop->p = host_loong64_B_(block);
+    return 0;
+}
+
+static int
 codegen_TEST_JNS_DEST(codeblock_t *block, uop_t *uop)
 {
     int src_reg  = HOST_REG_GET(uop->src_reg_a_real);
@@ -2366,6 +2373,7 @@ const uOpFn uop_handlers[UOP_MAX] = {
     [UOP_MOV_INT_DOUBLE_64 & UOP_MASK] = codegen_MOV_INT_DOUBLE_64,
 
     [UOP_CMP_IMM_JZ_DEST & UOP_MASK]    = codegen_CMP_IMM_JZ_DEST,
+    [UOP_JMP_DEST & UOP_MASK]           = codegen_JMP_DEST,
     [UOP_CMP_IMM_JNZ_DEST & UOP_MASK]   = codegen_CMP_IMM_JNZ_DEST,
     [UOP_CMP_JB & UOP_MASK]             = codegen_CMP_JB,
     [UOP_CMP_JNBE & UOP_MASK]           = codegen_CMP_JNBE,

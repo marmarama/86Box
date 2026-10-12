@@ -42,6 +42,7 @@ uint32_t *host_arm64_BNE_(codeblock_t *block);
 uint32_t *host_arm64_BPL_(codeblock_t *block);
 uint32_t *host_arm64_BVC_(codeblock_t *block);
 uint32_t *host_arm64_BVS_(codeblock_t *block);
+uint32_t *host_arm64_B_(codeblock_t *block);
 
 void host_arm64_branch_set_offset(uint32_t *opcode, void *dest);
 

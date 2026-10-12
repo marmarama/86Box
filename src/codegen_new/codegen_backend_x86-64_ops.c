@@ -476,6 +476,14 @@ host_x86_JZ_long(codeblock_t *block)
     codegen_addlong(block, 0);
     return (uint32_t *) &block_write_data[block_pos - 4];
 }
+uint32_t *
+host_x86_JMP_long(codeblock_t *block)
+{
+    codegen_alloc_bytes(block, 5);
+    codegen_addbyte(block, 0xe9); /*JMP rel32*/
+    codegen_addlong(block, 0);
+    return (uint32_t *) &block_write_data[block_pos - 4];
+}
 
 void
 host_x86_LAHF(codeblock_t *block)

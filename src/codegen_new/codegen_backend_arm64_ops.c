@@ -608,6 +608,13 @@ host_arm64_BVS_(codeblock_t *block)
     codegen_addlong(block, OPCODE_B);
     return (uint32_t *) &block_write_data[block_pos - 4];
 }
+uint32_t *
+host_arm64_B_(codeblock_t *block)
+{
+    codegen_alloc(block, 4);
+    codegen_addlong(block, OPCODE_B);
+    return (uint32_t *) &block_write_data[block_pos - 4];
+}
 
 void
 host_arm64_branch_set_offset(uint32_t *opcode, void *dest)
