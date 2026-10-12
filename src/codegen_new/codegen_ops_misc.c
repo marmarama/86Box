@@ -17,6 +17,7 @@
 #include "codegen_ops_helpers.h"
 #include "codegen_ops_jit_wrappers.h"
 #include "codegen_ops_misc.h"
+#include "codegen_ops_branch.h"
 
 uint32_t
 ropLEA_16(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
@@ -679,4 +680,43 @@ uint32_t
 ropSTI(UNUSED(codeblock_t *block), ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
 {
     return ropCLI_STI(ir, opcode, fetchdat, op_32, op_pc, 1);
+}
+
+uint32_t
+ropSETcc(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
+{
+    int cond = opcode & 0x0f;
+    int jump_skip;
+
+    /* Check CPU support: if illegal on this CPU, fall back to interpreter #UD handler */
+    if (x86_dynarec_opcodes_0f[opcode | op_32] == x86_dynarec_opcodes_0f[0x0b])
+        return 0;
+
+    codegen_mark_code_present(block, cs + op_pc, 1);
+    if ((fetchdat & 0xc0) == 0xc0) {
+        int dest_reg = fetchdat & 7;
+
+        uop_MOV_IMM(ir, IREG_8(dest_reg), 0);
+        jump_skip = codegen_cond_jump_false(ir, cond);
+        uop_MOV_IMM(ir, IREG_8(dest_reg), 1);
+        if (jump_skip != -1)
+            uop_set_jump_dest(ir, jump_skip);
+    } else {
+        x86seg *target_seg;
+
+        uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
+        target_seg = codegen_generate_ea(ir, op_ea_seg, fetchdat, op_ssegs, &op_pc, op_32, 0);
+        codegen_check_seg_write(block, ir, target_seg);
+        CHECK_SEG_LIMITS(block, ir, target_seg, IREG_eaaddr, 0);
+
+        uop_MOV_IMM(ir, IREG_temp0_B, 0);
+        jump_skip = codegen_cond_jump_false(ir, cond);
+        uop_MOV_IMM(ir, IREG_temp0_B, 1);
+        if (jump_skip != -1)
+            uop_set_jump_dest(ir, jump_skip);
+
+        uop_MEM_STORE_REG(ir, ireg_seg_base(target_seg), IREG_eaaddr, IREG_temp0_B);
+    }
+
+    return op_pc + 1;
 }

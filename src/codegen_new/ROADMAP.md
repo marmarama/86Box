@@ -126,8 +126,10 @@ However, the x86-64 backend in `codegen_new` was ported without general REX pref
    - Implemented `ropCMOVcc_16` and `ropCMOVcc_32` supporting all 16 conditions, ModR/M register-to-register moves, and memory load effective address operands in `src/codegen_new/codegen_ops_mov.c`.
    - Implemented unified `codegen_cond_jump_false` in `src/codegen_new/codegen_ops_branch.c` evaluating fast-path arithmetic/logic status flags directly with native conditional jumps and falling back to JIT helper functions.
    - Registered `0F 40`–`4F` across `recomp_opcodes_0f` and `recomp_opcodes_0f_no_mmx` in `src/codegen_new/codegen_ops.c`. Validated across full DOS benchmark suite (Quake 153.4 FPS, Doom 6224.17 FPS / 12 realtics, PCPBench 60.2 FPS, Dhrystone 416,125 Ops/sec).
-2. **Set Byte on Condition (`SETcc`, 0F 90–9F)**:
-   - Emits host `SETcc` directly into target byte registers.
+2. **[x] Set Byte on Condition (`SETcc`, 0F 90–9F)**:
+   - Implemented `ropSETcc` in `src/codegen_new/codegen_ops_misc.c` supporting all 16 conditions, ModR/M register (`r8`) and memory effective address destinations.
+   - Wired entries `0F 90`–`9F` across 16-bit and 32-bit sections of `recomp_opcodes_0f` and `recomp_opcodes_0f_no_mmx` in `src/codegen_new/codegen_ops.c`.
+   - Validated across full DOS benchmark suite (Quake 153.4 FPS, Doom 6224.17 FPS / 12 realtics, PCPBench 60.2 FPS, Dhrystone 416,125 Ops/sec).
 3. **Bit Operations**:
    - `BT`, `BTS`, `BTR`, `BTC` (`0F A3`, `AB`, `B3`, `BB`).
    - `BSF` / `BSR` (`0F BC`, `BD`): map directly to host `BSF` / `BSR` (or `TZCNT` / `LZCNT`).
