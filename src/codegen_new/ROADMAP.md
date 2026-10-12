@@ -28,18 +28,18 @@ graph TD
 
 ### Head-to-Head Benchmark Results
 
-All benchmarks executed on an emulated Intel Pentium II on 440BX chipset under FreeDOS, comparing the legacy single-pass dynarec (`build/regular`, compiled with `-O3`) against the new IR-based dynarec (`build/new_dynarec_dev_debug`, compiled with `-g -O0`):
+All benchmarks executed on an emulated Intel Pentium II on 440BX chipset under FreeDOS, comparing the legacy single-pass dynarec (`build/regular`, compiled with `-O3`) against the new IR-based dynarec (`build/new_dynarec`, compiled with `-O3`):
 
-| Benchmark Suite / Workload | Stress Target | Old Dynarec (`codegen` - Release) | New Dynarec (`codegen_new` Phase 1 - Debug) | Relative Delta |
+| Benchmark Suite / Workload | Stress Target | Old Dynarec (`codegen` - Release `-O3`) | New Dynarec (`codegen_new` Phase 1 - Release `-O3`) | Relative Delta |
 | :--- | :--- | :--- | :--- | :--- |
-| **Quake 1 (`demo1`)** | 32-bit FPU & Software Rasterizer | **149.20 FPS** (6.5s) | **153.30 FPS** (6.3s) | **+2.7%** :rocket: |
+| **Quake 1 (`demo1`)** | 32-bit FPU & Software Rasterizer | **149.00 FPS** (6.5s) | **153.40 FPS** (6.3s) | **+3.0%** :rocket: |
 | **Doom (`demo3` nodraw)** | 32-bit Integer ALU & Reg Pressure | **6224.17 FPS** (12 realtics) | **6224.17 FPS** (12 realtics) | **0.0%** (parity) |
 | **PCPBench (Mode 100 VESA 640x400)** | VESA LFB & Mixed 3D Geometry | **60.40 FPS** | **60.20 FPS** | **-0.3%** |
-| **Dhrystone 2.1 (Watcom Dos4GW)** | Pure 32-bit DPMI Integer Compute | **419,397 Ops/sec** (238.7 VAX MIPS) | **416,125 Ops/sec** (236.8 VAX MIPS) | **-0.8%** |
-| **Total Host Wall-Clock Time** | Complete Automated Suite Run | **121.95 s** | **118.42 s** | **-2.9% faster** :zap: |
+| **Dhrystone 2.1 (Watcom Dos4GW)** | Pure 32-bit DPMI Integer Compute | **418,848 Ops/sec** (238.4 VAX MIPS) | **416,125 Ops/sec** (236.8 VAX MIPS) | **-0.7%** |
+| **Total Host Wall-Clock Time** | Complete Automated Suite Run | **115.93 s** | **104.37 s** | **-10.0% faster** :zap: |
 
 > [!NOTE]
-> Even with the New Dynarec compiled in unoptimized debug mode (`-g -O0`), expanding allocatable host registers to 6 (`RAX, RBX, RDX, R13, R14, R15`) reduces register spill/reload cycles sufficiently to match or outperform the release-optimized legacy dynarec (`-O3`).
+> Under full compiler release optimizations (`-O3`), the New Dynarec with 6 general host registers (`RAX, RBX, RDX, R13, R14, R15`) demonstrates a **+3.0% FPS gain in Quake 1** and achieves a **10.0% reduction in total host execution time (104.37s vs 115.93s)** over the legacy dynarec across the automated test suite.
 
 ---
 

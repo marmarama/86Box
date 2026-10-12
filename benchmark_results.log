@@ -49,8 +49,8 @@ Compiler        Watcom C/C++ 10.5 Dos4GW
 Optimisation       No optimisation
 Register option not selected
 
-       10000 runs   0.06 seconds 
-      100000 runs   0.27 seconds 
+       10000 runs   0.05 seconds 
+      100000 runs   0.28 seconds 
       200000 runs   0.49 seconds 
       400000 runs   0.93 seconds 
       800000 runs   1.92 seconds 

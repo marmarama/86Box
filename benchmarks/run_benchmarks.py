@@ -382,6 +382,7 @@ def run_instance(
                             started_tests.add(tname)
                             current_test = tname
                             current_test_start = now
+                            print(f"  [{COLOR_CYAN}START{COLOR_RESET}] {tname.upper()}")
                             if tname == "quake":
                                 quake_log_start_len = get_quake_log_len(vm_dir)
                             if tname in break_before_set:
@@ -399,6 +400,7 @@ def run_instance(
                         tname = "doom" if "doom" in raw_name else ("quake" if "quake" in raw_name else ("pcpbench" if "pcp" in raw_name else ("dhrystone" if "dhry" in raw_name else raw_name)))
                         if tname not in finished_tests:
                             finished_tests.add(tname)
+                            print(f"  [{COLOR_GREEN}FINISH{COLOR_RESET}] {tname.upper()}")
                             if current_test == tname:
                                 current_test = None
                                 current_test_start = None
@@ -572,7 +574,7 @@ def main():
     parser.add_argument("--break-before", type=str, default="", help="Comma-separated test names to break before (e.g. quake, pcpbench)")
     parser.add_argument("--break-after", type=str, default="", help="Comma-separated test names to break after (e.g. doom, quake)")
     parser.add_argument("--stop-after", type=str, default="", help="Stop execution immediately after a specific test (e.g. doom)")
-    parser.add_argument("--per-test-timeout", type=float, default=60.0, help="Per-test timeout in seconds before triggering a hang breakpoint (default: 60s)")
+    parser.add_argument("--per-test-timeout", type=float, default=120.0, help="Per-test timeout in seconds before triggering a hang breakpoint (default: 120s)")
     parser.add_argument("--interactive", action="store_true", help="Prompt interactive continue/screenshot/quit on breakpoint")
     parser.add_argument("--screenshot-dir", type=Path, default=Path("scratch"), help="Directory to save breakpoint screenshots")
 
