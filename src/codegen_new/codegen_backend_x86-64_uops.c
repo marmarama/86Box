@@ -1142,6 +1142,68 @@ codegen_MEM_LOAD_DOUBLE(codeblock_t *block, uop_t *uop)
     return 0;
 }
 
+static void
+codegen_mem_store_fastpath(codeblock_t *block, int src_size)
+{
+    uint32_t *misaligned_offset = NULL;
+    uint32_t *branch_offset;
+    uint32_t *done_offset;
+    intptr_t  write_offset = (intptr_t) writelookup2 - (intptr_t) readlookup2;
+
+    /* Ensure entire inlined store sequence fits contiguously in the current block */
+    codegen_alloc_bytes(block, 64);
+
+    if (REG_IS_W(src_size)) {
+        host_x86_TEST32_REG_IMM(block, REG_ESI, 1);
+        misaligned_offset = host_x86_JNZ_long(block);
+    } else if (REG_IS_L(src_size)) {
+        host_x86_TEST32_REG_IMM(block, REG_ESI, 3);
+        misaligned_offset = host_x86_JNZ_long(block);
+    }
+
+    host_x86_MOV32_REG_REG(block, REG_EDI, REG_ESI);
+    host_x86_SHR32_IMM(block, REG_EDI, 12);
+    if (write_offset >= INT32_MIN && write_offset <= INT32_MAX) {
+        host_x86_MOV64_REG_BASE_INDEX_SHIFT_OFFSET(block, REG_RDI, REG_R12, REG_RDI, 3, (int32_t) write_offset);
+    } else {
+        host_x86_MOV64_REG_IMM(block, REG_R8, (uint64_t) (uintptr_t) writelookup2);
+        host_x86_MOV64_REG_BASE_INDEX_SHIFT(block, REG_RDI, REG_R8, REG_RDI, 3);
+    }
+
+    host_x86_CMP64_REG_IMM(block, REG_RDI, (uint32_t) -1);
+    branch_offset = host_x86_JZ_long(block);
+
+    if (REG_IS_B(src_size)) {
+        host_x86_MOV8_BASE_INDEX_REG(block, REG_RDI, REG_RSI, REG_ECX);
+    } else if (REG_IS_W(src_size)) {
+        host_x86_MOV16_BASE_INDEX_REG(block, REG_RDI, REG_RSI, REG_ECX);
+    } else {
+        host_x86_MOV32_BASE_INDEX_REG(block, REG_RDI, REG_RSI, REG_ECX);
+    }
+
+    done_offset = host_x86_JMP_long(block);
+
+    /* Slow path */
+    *branch_offset = (uint32_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) branch_offset) - 4;
+    if (misaligned_offset) {
+        *misaligned_offset = (uint32_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) misaligned_offset) - 4;
+    }
+
+    if (REG_IS_B(src_size)) {
+        host_x86_CALL(block, codegen_mem_store_byte);
+    } else if (REG_IS_W(src_size)) {
+        host_x86_CALL(block, codegen_mem_store_word);
+    } else {
+        host_x86_CALL(block, codegen_mem_store_long);
+    }
+
+    host_x86_TEST32_REG(block, REG_ESI, REG_ESI);
+    host_x86_JNZ(block, codegen_exit_rout);
+
+    /* Done */
+    *done_offset = (uint32_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) done_offset) - 4;
+}
+
 static int
 codegen_MEM_STORE_ABS(codeblock_t *block, uop_t *uop)
 {
@@ -1152,20 +1214,12 @@ codegen_MEM_STORE_ABS(codeblock_t *block, uop_t *uop)
     host_x86_LEA_REG_IMM(block, REG_ESI, seg_reg, uop->imm_data);
     if (REG_IS_B(src_size)) {
         host_x86_MOV8_REG_REG(block, REG_ECX, src_reg);
-        host_x86_CALL(block, codegen_mem_store_byte);
     } else if (REG_IS_W(src_size)) {
         host_x86_MOV16_REG_REG(block, REG_ECX, src_reg);
-        host_x86_CALL(block, codegen_mem_store_word);
     } else if (REG_IS_L(src_size)) {
         host_x86_MOV32_REG_REG(block, REG_ECX, src_reg);
-        host_x86_CALL(block, codegen_mem_store_long);
     }
-#    ifdef RECOMPILER_DEBUG
-    else
-        fatal("MEM_STORE_ABS - %02x\n", uop->src_reg_b_real);
-#    endif
-    host_x86_TEST32_REG(block, REG_ESI, REG_ESI);
-    host_x86_JNZ(block, codegen_exit_rout);
+    codegen_mem_store_fastpath(block, src_size);
 
     return 0;
 }
@@ -1178,9 +1232,7 @@ codegen_MEM_STORE_IMM_8(codeblock_t *block, uop_t *uop)
 
     host_x86_LEA_REG_REG(block, REG_ESI, seg_reg, addr_reg);
     host_x86_MOV8_REG_IMM(block, REG_ECX, uop->imm_data);
-    host_x86_CALL(block, codegen_mem_store_byte);
-    host_x86_TEST32_REG(block, REG_ESI, REG_ESI);
-    host_x86_JNZ(block, codegen_exit_rout);
+    codegen_mem_store_fastpath(block, IREG_SIZE_B);
 
     return 0;
 }
@@ -1192,9 +1244,7 @@ codegen_MEM_STORE_IMM_16(codeblock_t *block, uop_t *uop)
 
     host_x86_LEA_REG_REG(block, REG_ESI, seg_reg, addr_reg);
     host_x86_MOV16_REG_IMM(block, REG_ECX, uop->imm_data);
-    host_x86_CALL(block, codegen_mem_store_word);
-    host_x86_TEST32_REG(block, REG_ESI, REG_ESI);
-    host_x86_JNZ(block, codegen_exit_rout);
+    codegen_mem_store_fastpath(block, IREG_SIZE_W);
 
     return 0;
 }
@@ -1206,9 +1256,7 @@ codegen_MEM_STORE_IMM_32(codeblock_t *block, uop_t *uop)
 
     host_x86_LEA_REG_REG(block, REG_ESI, seg_reg, addr_reg);
     host_x86_MOV32_REG_IMM(block, REG_ECX, uop->imm_data);
-    host_x86_CALL(block, codegen_mem_store_long);
-    host_x86_TEST32_REG(block, REG_ESI, REG_ESI);
-    host_x86_JNZ(block, codegen_exit_rout);
+    codegen_mem_store_fastpath(block, IREG_SIZE_L);
 
     return 0;
 }
@@ -1224,25 +1272,21 @@ codegen_MEM_STORE_REG(codeblock_t *block, uop_t *uop)
     host_x86_LEA_REG_REG(block, REG_ESI, seg_reg, addr_reg);
     if (uop->imm_data)
         host_x86_ADD32_REG_IMM(block, REG_ESI, uop->imm_data);
-    if (REG_IS_B(src_size)) {
-        host_x86_MOV8_REG_REG(block, REG_ECX, src_reg);
-        host_x86_CALL(block, codegen_mem_store_byte);
-    } else if (REG_IS_W(src_size)) {
-        host_x86_MOV16_REG_REG(block, REG_ECX, src_reg);
-        host_x86_CALL(block, codegen_mem_store_word);
-    } else if (REG_IS_L(src_size)) {
-        host_x86_MOV32_REG_REG(block, REG_ECX, src_reg);
-        host_x86_CALL(block, codegen_mem_store_long);
-    } else if (REG_IS_Q(src_size)) {
+    if (REG_IS_Q(src_size)) {
         host_x86_MOVQ_XREG_XREG(block, REG_XMM_TEMP, src_reg);
         host_x86_CALL(block, codegen_mem_store_quad);
+        host_x86_TEST32_REG(block, REG_ESI, REG_ESI);
+        host_x86_JNZ(block, codegen_exit_rout);
+    } else {
+        if (REG_IS_B(src_size)) {
+            host_x86_MOV8_REG_REG(block, REG_ECX, src_reg);
+        } else if (REG_IS_W(src_size)) {
+            host_x86_MOV16_REG_REG(block, REG_ECX, src_reg);
+        } else if (REG_IS_L(src_size)) {
+            host_x86_MOV32_REG_REG(block, REG_ECX, src_reg);
+        }
+        codegen_mem_store_fastpath(block, src_size);
     }
-#    ifdef RECOMPILER_DEBUG
-    else
-        fatal("MEM_STORE_REG - %02x\n", uop->src_reg_b_real);
-#    endif
-    host_x86_TEST32_REG(block, REG_ESI, REG_ESI);
-    host_x86_JNZ(block, codegen_exit_rout);
 
     return 0;
 }
