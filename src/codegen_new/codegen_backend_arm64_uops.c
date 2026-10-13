@@ -842,6 +842,16 @@ codegen_JMP(codeblock_t *block, uop_t *uop)
 }
 
 static int
+codegen_EXIT_BLOCK(codeblock_t *block, uop_t *uop)
+{
+    host_arm64_MOV_IMM(block, REG_TEMP, uop->pc, 32);
+    host_arm64_STR_IMM(block, REG_TEMP, REG_CPUSTATE, (uintptr_t) &cpu_state.pc - (uintptr_t) &cpu_state);
+    host_arm64_B(block, codegen_exit_rout);
+
+    return 0;
+}
+
+static int
 codegen_LOAD_FUNC_ARG0(codeblock_t *block, uop_t *uop)
 {
     int src_reg  = HOST_REG_GET(uop->src_reg_a_real);
@@ -3155,6 +3165,9 @@ const uOpFn uop_handlers[UOP_MAX] = {
     [UOP_JMP &
         UOP_MASK]
     = codegen_JMP,
+    [UOP_EXIT_BLOCK &
+        UOP_MASK]
+    = codegen_EXIT_BLOCK,
 
     [UOP_LOAD_SEG &
         UOP_MASK]

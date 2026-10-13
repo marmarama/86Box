@@ -296,6 +296,38 @@ host_x86_CMP64_REG_IMM(codeblock_t *block, int dst_reg, uint64_t imm_data)
 }
 
 void
+host_x86_CMP32_BASE_OFFSET_IMM(codeblock_t *block, int base_reg, int offset, int32_t imm_data)
+{
+    if (offset >= -128 && offset <= 127) {
+        if (imm_data >= -128 && imm_data <= 127) {
+            codegen_alloc_bytes(block, 5);
+            if (base_reg & 8)
+                codegen_addbyte(block, rex_byte(0, 0, 0, base_reg));
+            if ((base_reg & 7) == 4) {
+                codegen_addbyte4(block, 0x83, 0x40 | RM_OP_CMP | (base_reg & 7), 0x24, offset);
+                codegen_addbyte(block, imm_data & 0xff);
+            } else {
+                codegen_addbyte3(block, 0x83, 0x40 | RM_OP_CMP | (base_reg & 7), offset);
+                codegen_addbyte(block, imm_data & 0xff);
+            }
+        } else {
+            codegen_alloc_bytes(block, 8);
+            if (base_reg & 8)
+                codegen_addbyte(block, rex_byte(0, 0, 0, base_reg));
+            if ((base_reg & 7) == 4) {
+                codegen_addbyte4(block, 0x81, 0x40 | RM_OP_CMP | (base_reg & 7), 0x24, offset);
+                codegen_addlong(block, imm_data);
+            } else {
+                codegen_addbyte3(block, 0x81, 0x40 | RM_OP_CMP | (base_reg & 7), offset);
+                codegen_addlong(block, imm_data);
+            }
+        }
+    } else {
+        fatal("CMP32_BASE_OFFSET_IMM - offset %i\n", offset);
+    }
+}
+
+void
 host_x86_CMP8_REG_REG(codeblock_t *block, int src_reg_a, int src_reg_b)
 {
     codegen_alloc_bytes(block, 3);

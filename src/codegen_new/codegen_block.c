@@ -1,5 +1,6 @@
 #include <inttypes.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <86box/86box.h>
@@ -255,6 +256,9 @@ codegen_reset(void)
         codeblock[c].valid = 0;
         block_free_list_add(&codeblock[c]);
     }
+
+    cpu_state.last_block_nr = 0;
+    cpu_state.last_exit_idx = 0;
 }
 
 void
@@ -366,6 +370,141 @@ remove_from_block_list(codeblock_t *block, UNUSED(uint32_t pc))
     }
 }
 
+static inline codeblock_link_t *
+get_link_by_id(uint32_t link_id)
+{
+    if (link_id == LINK_NONE)
+        return NULL;
+    uint32_t val = link_id - 1;
+    uint16_t block_nr = val >> 1;
+    int exit_idx = val & 1;
+    return &codeblock[block_nr].links[exit_idx];
+}
+
+static inline uint32_t
+encode_link_id(uint16_t block_nr, int exit_idx)
+{
+    return (((uint32_t) block_nr << 1) | (exit_idx & 1)) + 1;
+}
+
+static void
+codegen_remove_from_incoming_list(codeblock_t *dst_block, uint16_t src_block_nr, int exit_idx)
+{
+    codeblock_t *src_block = &codeblock[src_block_nr];
+    codeblock_link_t *link = &src_block->links[exit_idx];
+    uint32_t link_id = encode_link_id(src_block_nr, exit_idx);
+
+    if (link->prev_link != LINK_NONE) {
+        codeblock_link_t *prev = get_link_by_id(link->prev_link);
+        if (prev)
+            prev->next_link = link->next_link;
+    } else {
+        if (dst_block->first_incoming_link == link_id)
+            dst_block->first_incoming_link = link->next_link;
+    }
+
+    if (link->next_link != LINK_NONE) {
+        codeblock_link_t *next = get_link_by_id(link->next_link);
+        if (next)
+            next->prev_link = link->prev_link;
+    }
+
+    link->prev_link = LINK_NONE;
+    link->next_link = LINK_NONE;
+}
+
+void
+codegen_link_exit(codeblock_t *src_block, int exit_idx, codeblock_t *dst_block)
+{
+    if (!src_block || !dst_block || exit_idx < 0 || exit_idx >= CODEBLOCK_MAX_EXITS)
+        return;
+
+    codeblock_link_t *link = &src_block->links[exit_idx];
+
+    /* If the exit was never emitted or does not support patching, do nothing. */
+    if (!link->jmp_disp_ptr || !link->unlinked_target)
+        return;
+
+    /* If destination is not compiled yet or direct entry point is invalid, do nothing. */
+    if (!(dst_block->flags & CODEBLOCK_WAS_RECOMPILED) || !dst_block->data)
+        return;
+
+    /* If already linked to a block, remove it from old destination's list first. */
+    if (link->target_block != BLOCK_INVALID) {
+        codeblock_t *old_dst = &codeblock[link->target_block];
+        codegen_remove_from_incoming_list(old_dst, get_block_nr(src_block), exit_idx);
+        link->target_block = BLOCK_INVALID;
+    }
+
+    /* Compute target host code address. */
+    uint8_t *target_code = &dst_block->data[dst_block->direct_entry_pos];
+
+    /* Patch displacement: rel32 relative to end of the 5-byte JMP instruction. */
+    *link->jmp_disp_ptr = (uint32_t) (target_code - ((uint8_t *) link->jmp_disp_ptr + 4));
+
+    /* Record target block. */
+    uint16_t src_block_nr = get_block_nr(src_block);
+    link->target_block = get_block_nr(dst_block);
+
+    /* Insert link into destination block's incoming link list. */
+    uint32_t link_id = encode_link_id(src_block_nr, exit_idx);
+    link->prev_link = LINK_NONE;
+    link->next_link = dst_block->first_incoming_link;
+    if (dst_block->first_incoming_link != LINK_NONE) {
+        codeblock_link_t *first = get_link_by_id(dst_block->first_incoming_link);
+        if (first)
+            first->prev_link = link_id;
+    }
+    dst_block->first_incoming_link = link_id;
+}
+
+void
+codegen_unlink_block(codeblock_t *block)
+{
+    if (!block)
+        return;
+
+    if (cpu_state.last_block_nr == get_block_nr(block))
+        cpu_state.last_block_nr = 0;
+
+    /* 1. Unpatch all incoming links pointing to this block back to their unlinked targets. */
+    while (block->first_incoming_link != LINK_NONE) {
+        uint32_t link_id = block->first_incoming_link;
+        uint32_t val = link_id - 1;
+        uint16_t pred_block_nr = val >> 1;
+        int pred_exit_idx = val & 1;
+        codeblock_t *pred_block = &codeblock[pred_block_nr];
+        codeblock_link_t *link = &pred_block->links[pred_exit_idx];
+
+        if (link->jmp_disp_ptr && link->unlinked_target) {
+            *link->jmp_disp_ptr = (uint32_t) ((uint8_t *) link->unlinked_target - ((uint8_t *) link->jmp_disp_ptr + 4));
+        }
+        link->target_block = BLOCK_INVALID;
+
+        block->first_incoming_link = link->next_link;
+        link->prev_link = LINK_NONE;
+        link->next_link = LINK_NONE;
+    }
+
+    /* 2. Remove all outgoing links from their destinations' incoming lists. */
+    for (int i = 0; i < CODEBLOCK_MAX_EXITS; i++) {
+        if (block->links[i].target_block != BLOCK_INVALID) {
+            codeblock_t *dst_block = &codeblock[block->links[i].target_block];
+            codegen_remove_from_incoming_list(dst_block, get_block_nr(block), i);
+            block->links[i].target_block = BLOCK_INVALID;
+        }
+        if (block->links[i].jmp_disp_ptr && block->links[i].unlinked_target) {
+            *block->links[i].jmp_disp_ptr = (uint32_t) ((uint8_t *) block->links[i].unlinked_target - ((uint8_t *) block->links[i].jmp_disp_ptr + 4));
+        }
+        block->links[i].jmp_disp_ptr = NULL;
+        block->links[i].unlinked_target = NULL;
+        block->links[i].target_pc = BLOCK_PC_INVALID;
+        block->links[i].prev_link = LINK_NONE;
+        block->links[i].next_link = LINK_NONE;
+    }
+    block->exit_type = BLOCK_EXIT_NONE;
+}
+
 static void
 invalidate_block(codeblock_t *block)
 {
@@ -377,6 +516,7 @@ invalidate_block(codeblock_t *block)
     if (!block->valid)
         fatal("Invalidating deleted block\n");
 #endif
+    codegen_unlink_block(block);
     remove_from_block_list(block, old_pc);
     block_dirty_list_add(block);
     if (block->head_mem_block)
@@ -396,6 +536,7 @@ delete_block(codeblock_t *block)
     if (!block->valid)
         fatal("Deleting deleted block\n");
 #endif
+    codegen_unlink_block(block);
     block->valid = 0;
 
     codeblock_tree_delete(block);
@@ -419,6 +560,7 @@ delete_dirty_block(codeblock_t *block)
     if (!block->valid)
         fatal("Deleting deleted block\n");
 #endif
+    codegen_unlink_block(block);
     block->valid = 0;
 
     codeblock_tree_delete(block);
@@ -567,6 +709,8 @@ codegen_block_start_recompile(codeblock_t *block)
     if (block->pc != cs + cpu_state.pc || (block->flags & CODEBLOCK_WAS_RECOMPILED))
         fatal("Recompile to used block!\n");
 #endif
+
+    codegen_unlink_block(block);
 
     if (block->head_mem_block) {
         codegen_allocator_free(block->head_mem_block);
@@ -789,6 +933,9 @@ codegen_block_end_recompile(codeblock_t *block)
         block->flags &= ~CODEBLOCK_STATIC_TOP;
 
     codegen_accumulate_flush(ir_data);
+    if (block->exit_type == BLOCK_EXIT_DIRECT_1) {
+        uop_EXIT_BLOCK(ir_data, 0, block->links[0].target_pc);
+    }
     codegen_ir_compile(ir_data, block);
 }
 

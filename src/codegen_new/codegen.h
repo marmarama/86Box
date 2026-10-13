@@ -30,6 +30,22 @@
   same page).
 */
 
+#define CODEBLOCK_MAX_EXITS 2
+#define LINK_NONE            0
+
+#define BLOCK_EXIT_NONE      0
+#define BLOCK_EXIT_DIRECT_1  1
+#define BLOCK_EXIT_COND_2    2
+
+typedef struct codeblock_link_t {
+    uint32_t  target_pc;          /* Guest PC of target (or BLOCK_PC_INVALID) */
+    uint32_t *jmp_disp_ptr;      /* Pointer to 32-bit displacement in host JMP */
+    void     *unlinked_target;   /* Pointer to unlinked stub code */
+    uint16_t  target_block;      /* Block index of target, or BLOCK_INVALID */
+    uint32_t  prev_link;         /* Previous in target's incoming link list (encoded) */
+    uint32_t  next_link;         /* Next in target's incoming link list (encoded) */
+} codeblock_link_t;
+
 typedef struct codeblock_t {
     uint32_t pc;
     uint32_t _cs;
@@ -50,6 +66,12 @@ typedef struct codeblock_t {
     uint16_t dirty_list_last_epoch;
 #endif
     int      valid;
+
+    /* Direct block chaining data */
+    uint16_t direct_entry_pos;
+    uint8_t  exit_type;
+    codeblock_link_t links[CODEBLOCK_MAX_EXITS];
+    uint32_t first_incoming_link;
 
     /*Pointers for codeblock tree, used to search for blocks when hash lookup
       fails.*/
@@ -389,6 +411,9 @@ void codegen_generate_reset(void);
 
 int  codegen_get_instruction_uop(codeblock_t *block, uint32_t pc, int *first_instruction, int *TOP);
 void codegen_set_loop_start(struct ir_data_t *ir, int first_instruction);
+
+void codegen_link_exit(codeblock_t *src_block, int exit_idx, codeblock_t *dst_block);
+void codegen_unlink_block(codeblock_t *block);
 
 #ifdef DEBUG_EXTRA
 extern uint32_t instr_counts[256 * 256];

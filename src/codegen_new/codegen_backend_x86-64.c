@@ -414,6 +414,7 @@ codegen_backend_prologue(codeblock_t *block)
 #endif
     host_x86_MOV64_REG_IMM(block, REG_RBP, ((uintptr_t) &cpu_state) + 128);
     host_x86_MOV64_REG_IMM(block, REG_R12, (uint64_t) (uintptr_t) readlookup2);
+    block->direct_entry_pos = block_pos;
     if (block->flags & CODEBLOCK_HAS_FPU) {
         host_x86_MOV32_REG_ABS(block, REG_EAX, &cpu_state.TOP);
         host_x86_SUB32_REG_IMM(block, REG_EAX, block->TOP);

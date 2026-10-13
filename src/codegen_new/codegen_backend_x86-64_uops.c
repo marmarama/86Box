@@ -1,6 +1,7 @@
 #if defined __amd64__ || defined _M_X64
 
 #    include <stdint.h>
+#    include <stdio.h>
 #    include <86box/86box.h>
 #    include "cpu.h"
 #    include <86box/mem.h>
@@ -886,6 +887,54 @@ static int
 codegen_JMP(codeblock_t *block, uop_t *uop)
 {
     host_x86_JMP(block, uop->p);
+
+    return 0;
+}
+
+static int
+codegen_EXIT_BLOCK(codeblock_t *block, uop_t *uop)
+{
+    int      exit_idx  = uop->imm_data;
+    uint32_t target_pc = uop->pc;
+
+    block->links[exit_idx].target_pc = target_pc;
+
+    codegen_alloc_bytes(block, 80);
+
+    /* 1. Cycle check:
+          cmp dword ptr [rbp + (offsetof(cpu_state_t, _cycles) - 128)], 0
+          jle .Lexit_cycles
+    */
+    int cycles_disp = (int) offsetof(cpu_state_t, _cycles) - 128;
+    host_x86_CMP32_BASE_OFFSET_IMM(block, REG_RBP, cycles_disp, 0);
+    uint32_t *jle_disp = host_x86_JLE_long(block);
+
+    /* 2. Direct branch instruction (patched to target_block->direct_entry_pos when linked):
+          jmp rel32
+    */
+    block->links[exit_idx].jmp_disp_ptr = host_x86_JMP_long(block);
+
+    /* 3. Unlinked stub:
+          When unlinked, the branch jumps here.
+    */
+    uint8_t *unlinked_stub = &block_write_data[block_pos];
+    block->links[exit_idx].unlinked_target = unlinked_stub;
+
+    /* Patch initial displacement to point to unlinked_stub: */
+    *block->links[exit_idx].jmp_disp_ptr = (uint32_t) (unlinked_stub - ((uint8_t *) block->links[exit_idx].jmp_disp_ptr + 4));
+
+    host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, pc) - 128, target_pc);
+    host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, last_block_nr) - 128, get_block_nr(block));
+    host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, last_exit_idx) - 128, exit_idx);
+    host_x86_JMP(block, codegen_exit_rout);
+
+    /* 4. Exit due to cycle expiry: */
+    uint8_t *exit_cycles_stub = &block_write_data[block_pos];
+    *jle_disp = (uint32_t) (exit_cycles_stub - ((uint8_t *) jle_disp + 4));
+
+    host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, pc) - 128, target_pc);
+    host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, last_block_nr) - 128, 0);
+    host_x86_JMP(block, codegen_exit_rout);
 
     return 0;
 }
@@ -3014,6 +3063,9 @@ const uOpFn uop_handlers[UOP_MAX] = {
     [UOP_JMP &
         UOP_MASK]
     = codegen_JMP,
+    [UOP_EXIT_BLOCK &
+        UOP_MASK]
+    = codegen_EXIT_BLOCK,
 
     [UOP_LOAD_SEG &
         UOP_MASK]

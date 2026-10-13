@@ -479,6 +479,26 @@ block_ended:
     cpu_end_block_after_ins = 0;
 }
 
+#ifdef USE_NEW_DYNAREC
+static inline void
+dynarec_link_previous_block(codeblock_t *dst_block)
+{
+    if (cpu_state.last_block_nr) {
+        codeblock_t *src_block = &codeblock[cpu_state.last_block_nr];
+        int exit_idx = cpu_state.last_exit_idx;
+        cpu_state.last_block_nr = 0;
+        if (src_block->valid &&
+            src_block->_cs == dst_block->_cs &&
+            src_block->links[exit_idx].target_pc == cpu_state.pc &&
+            !((src_block->status ^ dst_block->status) & (CPU_STATUS_FLAGS | CPU_STATUS_MASK)) &&
+            (!(dst_block->flags & CODEBLOCK_STATIC_TOP) || (dst_block->TOP == (cpu_state.TOP & 7))) &&
+            !(dst_block->flags & CODEBLOCK_IN_DIRTY_LIST)) {
+            codegen_link_exit(src_block, exit_idx, dst_block);
+        }
+    }
+}
+#endif
+
 #if defined(__linux__) && !defined(__clang__) && defined(USE_NEW_DYNAREC)
 static inline void __attribute__((optimize("O2")))
 #else
@@ -500,6 +520,9 @@ exec386_dynarec_dyn(void)
        fetched through the device's read handlers, and nothing tracks writes
        there, so it is interpreted every time rather than kept in a block. */
     if (!cpu_state.abrt && (_mem_exec[phys_addr >> MEM_GRANULARITY_BITS] == NULL)) {
+#ifdef USE_NEW_DYNAREC
+        cpu_state.last_block_nr = 0;
+#endif
         exec386_dynarec_int();
         return;
     }
@@ -680,6 +703,8 @@ exec386_dynarec_dyn(void)
 
 #    ifndef USE_NEW_DYNAREC
         codeblock_hash[hash] = block;
+#    else
+        dynarec_link_previous_block(block);
 #    endif
         inrecomp = 1;
         code();
@@ -787,8 +812,12 @@ exec386_dynarec_dyn(void)
 
         cpu_end_block_after_ins = 0;
 
-        if ((!cpu_state.abrt || (cpu_state.abrt & ABRT_EXPECTED)) && !new_ne && !x86_was_reset && !cpu_fetch_device)
+        if ((!cpu_state.abrt || (cpu_state.abrt & ABRT_EXPECTED)) && !new_ne && !x86_was_reset && !cpu_fetch_device) {
             codegen_block_end_recompile(block);
+#    ifdef USE_NEW_DYNAREC
+            dynarec_link_previous_block(block);
+#    endif
+        }
 
         if (x86_was_reset)
             codegen_reset();
@@ -800,6 +829,9 @@ exec386_dynarec_dyn(void)
         }
 #    endif
     } else if (!cpu_state.abrt) {
+#    ifdef USE_NEW_DYNAREC
+        cpu_state.last_block_nr = 0;
+#    endif
         /* Mark block but do not recompile */
 #    ifdef USE_NEW_DYNAREC
         start_pc                 = cs + cpu_state.pc;
@@ -902,8 +934,10 @@ exec386_dynarec_dyn(void)
             codegen_reset();
     }
 #    ifdef USE_NEW_DYNAREC
-    else
+    else {
+        cpu_state.last_block_nr = 0;
         cpu_state.oldpc = cpu_state.pc;
+    }
 #    endif
 
 }

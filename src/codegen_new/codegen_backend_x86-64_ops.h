@@ -20,6 +20,7 @@ void host_x86_CALL(codeblock_t *block, void *p);
 void host_x86_CMP16_REG_IMM(codeblock_t *block, int dst_reg, uint16_t imm_data);
 void host_x86_CMP32_REG_IMM(codeblock_t *block, int dst_reg, uint32_t imm_data);
 void host_x86_CMP64_REG_IMM(codeblock_t *block, int dst_reg, uint64_t imm_data);
+void host_x86_CMP32_BASE_OFFSET_IMM(codeblock_t *block, int base_reg, int offset, int32_t imm_data);
 
 void host_x86_CMP8_REG_REG(codeblock_t *block, int src_reg_a, int src_reg_b);
 void host_x86_CMP16_REG_REG(codeblock_t *block, int src_reg_a, int src_reg_b);

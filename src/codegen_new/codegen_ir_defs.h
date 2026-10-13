@@ -55,6 +55,7 @@
 #define UOP_JMP_DEST       (UOP_TYPE_PARAMS_IMM | UOP_TYPE_PARAMS_POINTER | 0x17 | UOP_TYPE_ORDER_BARRIER | UOP_TYPE_JUMP)
 #define UOP_NOP_BARRIER    (UOP_TYPE_BARRIER | 0x18)
 #define UOP_STORE_P_IMM_16 (UOP_TYPE_PARAMS_IMM | 0x19)
+#define UOP_EXIT_BLOCK     (UOP_TYPE_PARAMS_IMM | 0x1a | UOP_TYPE_BARRIER)
 
 #ifdef DEBUG_EXTRA
 /*UOP_LOG_INSTR - log non-recompiled instruction in imm_data*/
@@ -797,6 +798,15 @@ extern int codegen_fp_enter(void);
 
 #define uop_JMP(ir, p)                                                   uop_gen_pointer(UOP_JMP, ir, p)
 #define uop_JMP_DEST(ir)                                                 uop_gen(UOP_JMP_DEST, ir)
+
+static inline void
+uop_EXIT_BLOCK(ir_data_t *ir, int exit_idx, uint32_t target_pc)
+{
+    uop_t *uop = uop_alloc(ir, UOP_EXIT_BLOCK);
+    uop->type = UOP_EXIT_BLOCK;
+    uop->imm_data = exit_idx;
+    uop->pc = target_pc;
+}
 
 #define uop_LOAD_SEG(ir, p, src_reg)                                     uop_gen_reg_src_pointer(UOP_LOAD_SEG, ir, src_reg, p)
 

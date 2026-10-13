@@ -374,6 +374,9 @@ typedef struct {
 #endif
     int _in_smm;
 
+    uint32_t last_block_nr;
+    uint32_t last_exit_idx;
+
     uint16_t npxs;
     uint16_t npxc;
 

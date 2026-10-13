@@ -295,6 +295,16 @@ codegen_JMP(codeblock_t *block, uop_t *uop)
     return 0;
 }
 
+static int
+codegen_EXIT_BLOCK(codeblock_t *block, uop_t *uop)
+{
+    host_loong64_MOV_IMM(block, REG_TEMP, uop->pc);
+    host_loong64_STR_W_IMM(block, REG_TEMP, REG_CPUSTATE, (uintptr_t) &cpu_state.pc - (uintptr_t) &cpu_state);
+    host_loong64_B(block, codegen_exit_rout);
+
+    return 0;
+}
+
 /*Compare helpers - LA64 has no flags register, so every conditional uop
   canonicalises its operands (32-bit values may be held zero-extended or
   sign-extended) and materialises the condition in a register before
@@ -2275,6 +2285,7 @@ const uOpFn uop_handlers[UOP_MAX] = {
     [UOP_CALL_INSTRUCTION_FUNC & UOP_MASK] = codegen_CALL_INSTRUCTION_FUNC,
 
     [UOP_JMP & UOP_MASK] = codegen_JMP,
+    [UOP_EXIT_BLOCK & UOP_MASK] = codegen_EXIT_BLOCK,
 
     [UOP_LOAD_SEG & UOP_MASK] = codegen_LOAD_SEG,
 
