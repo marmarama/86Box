@@ -170,17 +170,18 @@ However, the x86-64 backend in `codegen_new` was ported without general REX pref
    - Eliminated the 10-byte `MOV64_REG_IMM` from every guest store in `build_store_routine` by indexing via `[R12 + RSI*8 + (writelookup2 - readlookup2)]`.
    - Replaced obsolete `CODEBLOCK_NO_IMMEDIATES` uses of `R12` with standard 64-bit absolute loads in `codegen_backend_x86-64_ops.c`.
    - Verified 100% benchmark suite passing (Quake 159.3 FPS, Doom 6224.17 FPS, PCPBench 62.2 FPS, Dhrystone 434,783 Ops/sec) and stable Windows 98 guest boot to desktop.
-2. **[ ] Inlined Aligned Fast-Path**:
-   - For aligned memory accesses (`size == 1, 2, 4`), inline the TLB check directly into the block:
-     ```assembly
-     MOV  ECX, ESI
-     SHR  ESI, 12
-     MOV  RDI, [readlookup_base + RSI*8]
-     CMP  RDI, -1
-     JZ   .slow_path_trampoline
-     MOV  dest, [RDI + RCX]
-     ```
-   - Only call the out-of-line helper on page faults or MMIO (`RDI == -1`) and misaligned reads crossing pages.
+2. **[x] Inlined Aligned Fast-Path**:
+   - Inlined the memory read TLB check and direct host RAM read in `codegen_MEM_LOAD_ABS` and `codegen_MEM_LOAD_REG` in `src/codegen_new/codegen_backend_x86-64_uops.c`:
+     - Natural alignment check (`TEST ESI, size - 1`) branching to the helper on misaligned reads.
+     - Direct page pointer lookup in `readlookup2` via `[R12 + RDI*8]`.
+     - Valid page check (`CMP RDI, -1`) branching to the out-of-line helper on MMIO or unmapped pages.
+     - Direct memory read `MOVZX / MOV ECX, [RDI + RSI]` into scratch register `ECX`, avoiding `CALL`, `RET`, stack manipulations, and `abrt` checks.
+   - Inlined the memory write TLB check and direct host RAM write in `codegen_MEM_STORE_ABS`, `codegen_MEM_STORE_REG`, `codegen_MEM_STORE_IMM_8`, `codegen_MEM_STORE_IMM_16`, and `codegen_MEM_STORE_IMM_32`:
+     - Direct page lookup in `writelookup2` via `[R12 + RDI*8 + write_offset]`.
+     - Direct memory write `MOV8/16/32_BASE_INDEX_REG` (`[RDI + RSI] = ECX`).
+   - Guarded all inlined sequences against block-split fragmentation with `codegen_alloc_bytes(block, 64)`.
+   - Verified 100% benchmark suite passing (Quake 159.3 FPS, Doom 6,224.17 FPS / 12 realtics, PCPBench 62.2 FPS, Dhrystone 434,783 Ops/sec / 247.46 VAX MIPS) in 114.37s.
+   - Verified stable normal Windows 98 guest boot to full desktop with active shell and taskbar.
 
 ---
 
