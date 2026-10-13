@@ -4,10 +4,10 @@ This document outlines a phased plan to modernize and optimize the x86-64 backen
 
 ```mermaid
 graph TD
-    P0["Phase 0: Quick Wins & Prologue Cleanup [DONE]"] --> P1["Phase 1: REX Prefixes & Register Expansion (3 -> 6 Regs [DONE] / 8-10 Regs [IN PROGRESS])"]
-    P1 --> P2["Phase 2: Missing Opcode Recompilation (CMOV, SETcc, etc.)"]
-    P2 --> P3["Phase 3: Memory Load/Store Fast-Path Inlining"]
-    P3 --> P4["Phase 4: Direct Block Chaining / Direct Linking"]
+    P0["Phase 0: Quick Wins & Prologue Cleanup [DONE]"] --> P1["Phase 1: REX Prefixes & Register Expansion (8 Regs) [DONE]"]
+    P1 --> P2["Phase 2: Missing Opcode Recompilation (CMOV, SETcc, String, etc.) [DONE]"]
+    P2 --> P3["Phase 3: Memory Load/Store Fast-Path Inlining [DONE]"]
+    P3 --> P4["Phase 4: Direct Block Chaining (Block Linking) [IN PROGRESS]"]
     P4 --> P5["Phase 5: Native EFLAGS & IR Middle-End Optimization"]
 ```
 
@@ -17,11 +17,19 @@ graph TD
 
 ### Status Summary
 - **Phase 0**: **COMPLETED**. Dead prologue/epilogue stack traffic eliminated, bounds check redundancies streamlined, conditionalized FPU preservation.
-- **Phase 1 (General Host Registers)**: **FIRST MILESTONE COMPLETED (3 $\rightarrow$ 6 Regs)**.
-  - General allocatable host registers expanded from 3 (`EAX, EBX, EDX`) to 6 (`RAX, RBX, RDX, R13, R14, R15`).
+- **Phase 1 (General Host Registers)**: **COMPLETED (8 Regs)**.
+  - General allocatable host registers expanded from 3 to 8 (`RAX, RBX, RDX, R10, R11, R13, R14, R15`).
   - Generalized REX prefix generation (`rex_byte`, `host_x86_rex_emit`) implemented across instruction emitters.
   - Register allocator updated with bit 3 preservation (`HOST_REG_GET & 15`).
-  - Next step: Expand to 8–10 host registers (`R8`–`R11` scratch allocation) and vector registers (`XMM8`–`XMM15`).
+- **Phase 2 (Missing Opcode Recompilation)**: **COMPLETED**.
+  - Conditional moves (`CMOVcc`, 0F 40–4F), Set byte on condition (`SETcc`, 0F 90–9F), Bit tests/scans (`BT/BTS/BTR/BTC`, `BSF/BSR`), Byte swap (`BSWAP`), Atomic operations (`CMPXCHG`, `XADD`), and String operations (`MOVS`, `STOS`, `LODS`, `SCAS`, `CMPS` with `REP/REPE/REPNE`). Verified full DOS benchmark suite and stable Windows 98 guest boot to desktop.
+- **Phase 3 (Memory Load/Store Fast-Path Inlining)**: **COMPLETED**.
+  - Host register `R12` pinned to `readlookup2` base, inlined TLB check and direct host RAM read/write fast paths across all integer load and store uOps.
+- **Phase 4 (Direct Block Chaining)**: **IN PROGRESS (Unconditional Jumps Working)**.
+  - Core link structures (`codeblock_link_t`, `first_incoming_link`, `links[2]`), ID encoding, and incoming doubly-linked lists implemented.
+  - Safe unlinking (`codegen_unlink_block`) on block invalidation, deletion, dirty list flush, and recompilation fully wired.
+  - Cycle check (`CMP [RBP + cycles], 0` / `JLE .Lexit_cycles`) and unlinked stub generation implemented in `codegen_EXIT_BLOCK` with `UOP_TYPE_BARRIER` register writeback.
+  - Unconditional jumps (`JMP rel8/16/32`) now chain directly between blocks in native host machine code without returning to C dispatcher. Verified with clean 60 Hz BIOS POST.
 - **Automated Full-System Benchmark Suite**: **COMPLETED & OPERATIONAL** ([`benchmarks/run_benchmarks.py`](file:///home/marm/src/86Box/benchmarks/run_benchmarks.py)).
   - End-to-end headless execution across 4 guest benchmark workloads with real-time serial telemetry and disk log harvesting.
   - Breakpoint and inspection support (`--break-before`, `--break-after`, `--stop-after`, `--per-test-timeout`, `--interactive`).
@@ -185,26 +193,53 @@ However, the x86-64 backend in `codegen_new` was ported without general REX pref
 
 ---
 
-## Phase 4: Direct Block Chaining (Block Linking)
+## Phase 4: Direct Block Chaining (Block Linking) [IN PROGRESS]
 
-**Goal**: Avoid returning to the C dispatcher on every basic block exit.
+**Goal**: Avoid returning to the C dispatcher on basic block exits by chaining directly across JIT-compiled code blocks.
 
-### Design
-1. **Direct Jumps (`JMP imm`, `CALL imm`, end of block)**:
-   - When block A ends with an unconditional jump to address $P$:
-     - Check if block B for target address $P$ (with matching CPU status) already exists.
-     - If yes: patch the terminal jump in block A to `JMP &blockB->data[BLOCK_START]`.
-     - If no: point the jump to a resolution stub that triggers compilation of target $P$ and patches the branch.
-2. **Conditional Branches (`Jcc imm`)**:
-   - Block emits two branch exits (taken and fallthrough).
-   - Both can be patched independently as target blocks are compiled.
-3. **Cycle Counter and Interrupt Exit**:
-   - Before taking a chained jump, decrement accumulated block cycles:
+### Architecture & Implementation
+1. **Link Data Structures & Graph Tracking**:
+   - Each `codeblock_t` tracks up to `CODEBLOCK_MAX_EXITS` (2) outgoing links:
+     - `target_block`: target block number (`BLOCK_INVALID` when unlinked).
+     - `target_pc`: guest destination IP.
+     - `jmp_disp_ptr`: pointer to the 32-bit relative displacement in the emitted JMP instruction.
+     - `unlinked_target`: host code pointer to the block's fallback unlinked exit stub.
+     - `prev_link`, `next_link`: encoded link IDs forming a doubly-linked list of incoming links at the target block.
+   - `first_incoming_link`: head of the incoming link list on each block.
+
+2. **Cycle Counter and Interrupt Exit (`codegen_EXIT_BLOCK`)**:
+   - Cycle check emitted before taking a chained direct jump:
      ```assembly
-     SUB dword [RBP + cycles_offset], block_cycles
-     JLE .exit_to_dispatcher
+     cmp dword ptr [rbp + cycles_disp], 0
+     jle .Lexit_cycles
+     jmp rel32 (target or unlinked stub)
      ```
-   - Exit immediately if an external interrupt is pending.
+   - On cycle expiry (`jle .Lexit_cycles`), updates `cpu_state.pc = target_pc`, clears `last_block_nr = 0`, and exits to C via `codegen_exit_rout`.
+   - On unlinked branch, updates `cpu_state.pc = target_pc`, sets `last_block_nr` and `last_exit_idx`, and exits to C via `codegen_exit_rout` to trigger compilation and linking of the destination.
+   - Guarded with `UOP_TYPE_BARRIER` to guarantee that all dirty registers and `cpu_state._cycles` are written back to memory before any exit jump executes.
+
+3. **Dynamic Linking & Unlinking**:
+   - `dynarec_link_previous_block(dst_block)` checks matching `_cs`, matching CPU status flags, valid source block, and matching target PC, then calls `codegen_link_exit`.
+   - `codegen_link_exit` atomically patches `jmp rel32` displacement to `&dst_block->data[dst_block->direct_entry_pos]` and registers the link in the destination's incoming link list.
+   - `codegen_unlink_block` unpatches all incoming links back to their respective unlinked stubs whenever a block is invalidated, deleted, recompiling, or in dirty list flushing.
+
+### Progress & Checklist
+1. **[x] Direct Block Chaining Core Infrastructure**:
+   - Implemented link data structures (`codeblock_link_t`), link ID encoding, incoming link list traversal, and unlinking.
+   - Implemented `UOP_EXIT_BLOCK` intermediate representation uop with `UOP_TYPE_BARRIER` register writeback.
+   - Implemented x86-64 backend emitter `codegen_EXIT_BLOCK` with cycle counter check, unlinked stub, and cycle expiry exit.
+   - Implemented fallback stubs for ARM64 and LoongArch64 backends.
+2. **[x] Unconditional Jumps (`JMP rel8/16/32`)**:
+   - Enabled `BLOCK_EXIT_DIRECT_1` on `ropJMP_r8`, `ropJMP_r16`, and `ropJMP_r32` in `src/codegen_new/codegen_ops_jump.c`.
+   - Emits terminal `uop_EXIT_BLOCK` in `codegen_block_end_recompile`.
+   - Verified active direct block linking and clean 60 Hz BIOS POST without returning to C dispatcher.
+3. **[ ] Conditional Branches (`Jcc rel8/16/32`, `JCXZ`, `LOOP*`)**:
+   - Support `BLOCK_EXIT_COND_2` with 2 exits (exit 0: taken branch, exit 1: fallthrough).
+   - Emit taken branch exit stub and fallthrough exit stub.
+4. **[ ] Direct Calls (`CALL rel16/32`)**:
+   - Chain direct calls into target block after pushing return address to guest stack.
+5. **[ ] Full Benchmark Suite & Performance Verification**:
+   - Run complete automated test suite (`Quake`, `Doom`, `PCPBench`, `Dhrystone`) to measure execution speedup and dispatch overhead reduction.
 
 ---
 
