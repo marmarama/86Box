@@ -146,14 +146,16 @@ However, the x86-64 backend in `codegen_new` was ported without general REX pref
    - Implemented `ropXADD_8`, `ropXADD_16`, `ropXADD_32` for `0F C0` and `0F C1` supporting ModR/M registers (including `dest == src` handling) and memory effective address destinations, updating status flags via `FLAGS_ADD8/16/32`.
    - CPU capability validation checks against illegal execution on 386 falling back to interpreter `#UD`.
    - Registered `0F B0`, `0F B1`, `0F C0`, `0F C1` across 16-bit and 32-bit sections of `recomp_opcodes_0f` and `recomp_opcodes_0f_no_mmx` in `src/codegen_new/codegen_ops.c`.
-6. **[x] String Operations (`MOVS`, `STOS`, `LODS`) & REP Prefixes**:
-   - Implemented non-REP and REP string operations (`MOVSB/W/D`, `STOSB/W/D`, `LODSB/W/D`) in `src/codegen_new/codegen_ops_string.c` and `src/codegen_new/codegen_ops_string.h`.
+6. **[x] String Operations (`MOVS`, `STOS`, `LODS`, `SCAS`, `CMPS`) & `REP` / `REPE` / `REPNE` Prefixes**:
+   - Implemented non-REP and REP string operations (`MOVSB/W/D`, `STOSB/W/D`, `LODSB/W/D`, `SCASB/W/D`, `CMPSB/W/D`) in `src/codegen_new/codegen_ops_string.c` and `src/codegen_new/codegen_ops_string.h`.
    - Handled both 16-bit and 32-bit address sizing (`(E)SI`, `(E)DI`, `(E)CX`) and operand sizing (8, 16, and 32-bit).
    - Source segment properly obeys `op_ea_seg` overrides, and destination segment strictly targets `ES`.
-   - Accurate segment limit checks (`CHECK_SEG_LIMITS`) and segment write checks (`codegen_check_seg_write`).
-   - Dynamic Direction Flag (`DF`) pointer adjustments using IR branch structures.
-   - REP loop iteration model with initial zero count bypass, count decrement, and re-entry via `codegen_exit_rout` to preserve hardware interrupt responsiveness and cycle accounting.
-   - Populated opcodes `0xA4`, `0xA5`, `0xAA`, `0xAB`, `0xAC`, `0xAD` in `recomp_opcodes` and defined `recomp_opcodes_REPE` dispatch in `src/codegen_new/codegen_ops.c` and `src/codegen_new/codegen.c`.
+   - Accurate segment limit checks (`CHECK_SEG_LIMITS`), segment write checks (`codegen_check_seg_write`), and protected-mode segment validity checks (`codegen_check_seg_read` to trap NULL selectors / `#GP(0)`).
+   - Dynamic Direction Flag (`DF`) pointer adjustments using branchless arithmetic IR uOps.
+   - Comprehensive comparison flag updates (`FLAGS_SUB8/16/32`) and conditional loop termination for `REPE` (ZF==0 exit) and `REPNE` (ZF==1 exit).
+   - Single-iteration re-entry loop model via `codegen_exit_rout` to preserve hardware interrupt responsiveness, cycle accounting, and exception recovery.
+   - Populated opcodes `0xA4`–`0xA7`, `0xAA`–`0xAF` in `recomp_opcodes`, and populated `recomp_opcodes_REPE` and `recomp_opcodes_REPNE` dispatch tables in `src/codegen_new/codegen_ops.c` and `src/codegen_new/codegen.c`.
+   - Validated across full DOS benchmark suite (Quake 159.3 FPS, Doom 6224.17 FPS / 12 realtics, PCPBench 62.2 FPS, Dhrystone 434,783 Ops/sec / 247.46 VAX MIPS) and verified full Windows 98 guest boot to desktop in both Safe Mode and Normal Mode.
 
 ---
 
@@ -162,10 +164,13 @@ However, the x86-64 backend in `codegen_new` was ported without general REX pref
 **Goal**: Reduce the execution cost of guest loads and stores, which account for ~30–40% of all uOps.
 
 ### Tasks
-1. **Host Helper Register Caching**:
-   - Dedicate a register (e.g. `R12` or pinned `R15`) or use PC-relative addressing for `readlookup2` and `writelookup2` base pointers.
-   - Eliminates the 10-byte `MOV64_REG_IMM` from every execution of `build_load_routine` and `build_store_routine`.
-2. **Inlined Aligned Fast-Path**:
+1. **[x] Host Helper Register Caching**:
+   - Pinned host register `R12` to cache the `readlookup2` base pointer upon entry to every compiled block in `codegen_backend_prologue`.
+   - Eliminated the 10-byte `MOV64_REG_IMM` from every guest load in `build_load_routine` by indexing directly via `[R12 + RSI*8]`.
+   - Eliminated the 10-byte `MOV64_REG_IMM` from every guest store in `build_store_routine` by indexing via `[R12 + RSI*8 + (writelookup2 - readlookup2)]`.
+   - Replaced obsolete `CODEBLOCK_NO_IMMEDIATES` uses of `R12` with standard 64-bit absolute loads in `codegen_backend_x86-64_ops.c`.
+   - Verified 100% benchmark suite passing (Quake 159.3 FPS, Doom 6224.17 FPS, PCPBench 62.2 FPS, Dhrystone 434,783 Ops/sec) and stable Windows 98 guest boot to desktop.
+2. **[ ] Inlined Aligned Fast-Path**:
    - For aligned memory accesses (`size == 1, 2, 4`), inline the TLB check directly into the block:
      ```assembly
      MOV  ECX, ESI

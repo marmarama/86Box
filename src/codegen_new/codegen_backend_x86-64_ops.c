@@ -363,6 +363,13 @@ host_x86_JZ_short(codeblock_t *block)
     codegen_addbyte2(block, 0x74, 0); /*JZ*/
     return &block_write_data[block_pos - 1];
 }
+uint8_t *
+host_x86_JMP_short(codeblock_t *block)
+{
+    codegen_alloc_bytes(block, 2);
+    codegen_addbyte2(block, 0xeb, 0); /*JMP short*/
+    return &block_write_data[block_pos - 1];
+}
 
 uint32_t *
 host_x86_JNB_long(codeblock_t *block)
@@ -767,7 +774,6 @@ void
 host_x86_MOV8_REG_ABS(codeblock_t *block, int dst_reg, void *p)
 {
     int64_t offset     = (uintptr_t) p - (((uintptr_t) &cpu_state) + 128);
-    int64_t ram_offset = (uintptr_t) p - (((uintptr_t) ram) + 2147483648ULL);
 
     if (offset >= -128 && offset <= 127) {
         codegen_alloc_bytes(block, 4);
@@ -780,10 +786,6 @@ host_x86_MOV8_REG_ABS(codeblock_t *block, int dst_reg, void *p)
             codegen_addbyte(block, rex_byte(0, dst_reg, 0, 0));
         codegen_addbyte2(block, 0x8a, 0x85 | ((dst_reg & 7) << 3)); /*MOV dst_reg, offset[RBP]*/
         codegen_addlong(block, offset);
-    } else if ((ram_offset >= -2147483648LL) && (ram_offset <= 2147483647LL) && (block->flags & CODEBLOCK_NO_IMMEDIATES)) {
-        codegen_alloc_bytes(block, 8);
-        codegen_addbyte4(block, rex_byte(0, dst_reg, 0, REG_R12), 0x8a, 0x84 | ((dst_reg & 7) << 3), 0x24); /*MOV dst_reg, ram_offset[R12]*/
-        codegen_addlong(block, ram_offset);
     } else {
         codegen_alloc_bytes(block, 13);
         codegen_addbyte2(block, 0x49, 0xb9); /*MOV R9, p*/
@@ -795,7 +797,6 @@ void
 host_x86_MOV16_REG_ABS(codeblock_t *block, int dst_reg, void *p)
 {
     int64_t offset     = (uintptr_t) p - (((uintptr_t) &cpu_state) + 128);
-    int64_t ram_offset = (uintptr_t) p - (((uintptr_t) ram) + 2147483648ULL);
 
     if (offset >= -128 && offset <= 127) {
         codegen_alloc_bytes(block, 5);
@@ -810,11 +811,6 @@ host_x86_MOV16_REG_ABS(codeblock_t *block, int dst_reg, void *p)
             codegen_addbyte(block, rex_byte(0, dst_reg, 0, 0));
         codegen_addbyte2(block, 0x8b, 0x85 | ((dst_reg & 7) << 3)); /*MOV dst_reg, offset[RBP]*/
         codegen_addlong(block, offset);
-    } else if ((ram_offset >= -2147483648LL) && (ram_offset <= 2147483647LL) && (block->flags & CODEBLOCK_NO_IMMEDIATES)) {
-        codegen_alloc_bytes(block, 9);
-        codegen_addbyte2(block, 0x66, rex_byte(0, dst_reg, 0, REG_R12));
-        codegen_addbyte3(block, 0x8b, 0x84 | ((dst_reg & 7) << 3), 0x24); /*MOV dst_reg, ram_offset[R12]*/
-        codegen_addlong(block, ram_offset);
     } else {
         codegen_alloc_bytes(block, 15);
         codegen_addbyte2(block, 0x49, 0xb9); /*MOV R9, p*/
@@ -827,7 +823,6 @@ void
 host_x86_MOV32_REG_ABS(codeblock_t *block, int dst_reg, void *p)
 {
     int64_t offset     = (uintptr_t) p - (((uintptr_t) &cpu_state) + 128);
-    int64_t ram_offset = (uintptr_t) p - (((uintptr_t) ram) + 2147483648ULL);
 
     if (offset >= -128 && offset <= 127) {
         codegen_alloc_bytes(block, 4);
@@ -840,17 +835,11 @@ host_x86_MOV32_REG_ABS(codeblock_t *block, int dst_reg, void *p)
             codegen_addbyte(block, rex_byte(0, dst_reg, 0, 0));
         codegen_addbyte2(block, 0x8b, 0x85 | ((dst_reg & 7) << 3)); /*MOV dst_reg, offset[RBP]*/
         codegen_addlong(block, offset);
-    } else if ((ram_offset >= -2147483648LL) && (ram_offset <= 2147483647LL) && (block->flags & CODEBLOCK_NO_IMMEDIATES)) {
-        codegen_alloc_bytes(block, 8);
-        codegen_addbyte4(block, rex_byte(0, dst_reg, 0, REG_R12), 0x8b, 0x84 | ((dst_reg & 7) << 3), 0x24); /*MOV dst_reg, ram_offset[R12]*/
-        codegen_addlong(block, ram_offset);
-    } else if ((ram_offset < -2147483648LL) || (ram_offset > 2147483647LL) || !(block->flags & CODEBLOCK_NO_IMMEDIATES)) {
+    } else {
         codegen_alloc_bytes(block, 13);
         codegen_addbyte2(block, 0x49, 0xb9);   /*MOV r9,(uintptr_t) p*/
         codegen_addquad(block, (uintptr_t) p);
         codegen_addbyte3(block, rex_byte(0, dst_reg, 0, REG_R9), 0x8b, 0x01 | ((dst_reg & 7) << 3)); /*MOV dst_reg, [R9]*/
-    } else {
-        fatal("host_x86_MOV32_REG_ABS - RAM offset = %016" PRIX64 " (p - ram = %016" PRIXPTR ")\n", ram_offset, (uintptr_t) p - (uintptr_t) ram);
     }
 }
 void
@@ -913,6 +902,16 @@ host_x86_MOV64_REG_BASE_INDEX_SHIFT(codeblock_t *block, int dst_reg, int base_re
         codegen_addbyte3(block, 0x8b, 0x04 | ((dst_reg & 7) << 3),
                          (scale << 6) | ((index_reg & 7) << 3) | (base_reg & 7));
     }
+}
+
+void
+host_x86_MOV64_REG_BASE_INDEX_SHIFT_OFFSET(codeblock_t *block, int dst_reg, int base_reg, int index_reg, int scale, int32_t offset)
+{
+    codegen_alloc_bytes(block, 8);
+    codegen_addbyte(block, rex_byte(1, dst_reg, index_reg, base_reg));
+    codegen_addbyte3(block, 0x8b, 0x84 | ((dst_reg & 7) << 3),
+                     (scale << 6) | ((index_reg & 7) << 3) | (base_reg & 7));
+    codegen_addlong(block, offset);
 }
 
 void
@@ -1179,7 +1178,6 @@ void
 host_x86_MOVZX_REG_ABS_16_8(codeblock_t *block, int dst_reg, void *p)
 {
     int64_t offset     = (uintptr_t) p - (((uintptr_t) &cpu_state) + 128);
-    int64_t ram_offset = (uintptr_t) p - (((uintptr_t) ram) + 2147483648ULL);
 
     if (offset >= -128 && offset <= 127) {
         codegen_alloc_bytes(block, 6);
@@ -1187,12 +1185,6 @@ host_x86_MOVZX_REG_ABS_16_8(codeblock_t *block, int dst_reg, void *p)
         if (dst_reg & 8)
             codegen_addbyte(block, rex_byte(0, dst_reg, 0, 0));
         codegen_addbyte4(block, 0x0f, 0xb6, 0x45 | ((dst_reg & 7) << 3), offset); /*MOVZX dst_reg, offset[RBP]*/
-    } else if ((ram_offset >= -2147483648LL) && (ram_offset <= 2147483647LL) && (block->flags & CODEBLOCK_NO_IMMEDIATES)) {
-        codegen_alloc_bytes(block, 11);
-        codegen_addbyte(block, 0x66);
-        codegen_addbyte(block, rex_byte(0, dst_reg, 0, REG_R12));
-        codegen_addbyte4(block, 0x0f, 0xb6, 0x84 | ((dst_reg & 7) << 3), 0x24); /*MOVZX dst_reg, ram_offset[R12]*/
-        codegen_addlong(block, ram_offset);
     } else {
         codegen_alloc_bytes(block, 10);
         codegen_addbyte2(block, 0x49, 0xb9); /*MOV R9, p*/
@@ -1207,18 +1199,12 @@ void
 host_x86_MOVZX_REG_ABS_32_8(codeblock_t *block, int dst_reg, void *p)
 {
     int64_t offset     = (uintptr_t) p - (((uintptr_t) &cpu_state) + 128);
-    int64_t ram_offset = (uintptr_t) p - (((uintptr_t) ram) + 2147483648ULL);
 
     if (offset >= -128 && offset <= 127) {
         codegen_alloc_bytes(block, 5);
         if (dst_reg & 8)
             codegen_addbyte(block, rex_byte(0, dst_reg, 0, 0));
         codegen_addbyte4(block, 0x0f, 0xb6, 0x45 | ((dst_reg & 7) << 3), offset); /*MOVZX dst_reg, offset[RBP]*/
-    } else if ((ram_offset >= -2147483648LL) && (ram_offset <= 2147483647LL) && (block->flags & CODEBLOCK_NO_IMMEDIATES)) {
-        codegen_alloc_bytes(block, 9);
-        codegen_addbyte(block, rex_byte(0, dst_reg, 0, REG_R12));
-        codegen_addbyte4(block, 0x0f, 0xb6, 0x84 | ((dst_reg & 7) << 3), 0x24); /*MOVZX dst_reg, ram_offset[R12]*/
-        codegen_addlong(block, ram_offset);
     } else {
         codegen_alloc_bytes(block, 10);
         codegen_addbyte2(block, 0x49, 0xb9); /*MOV R9, p*/
@@ -1231,18 +1217,12 @@ void
 host_x86_MOVZX_REG_ABS_32_16(codeblock_t *block, int dst_reg, void *p)
 {
     int64_t offset     = (uintptr_t) p - (((uintptr_t) &cpu_state) + 128);
-    int64_t ram_offset = (uintptr_t) p - (((uintptr_t) ram) + 2147483648ULL);
 
     if (offset >= -128 && offset <= 127) {
         codegen_alloc_bytes(block, 5);
         if (dst_reg & 8)
             codegen_addbyte(block, rex_byte(0, dst_reg, 0, 0));
         codegen_addbyte4(block, 0x0f, 0xb7, 0x45 | ((dst_reg & 7) << 3), offset); /*MOVZX dst_reg, offset[RBP]*/
-    } else if ((ram_offset >= -2147483648LL) && (ram_offset <= 2147483647LL) && (block->flags & CODEBLOCK_NO_IMMEDIATES)) {
-        codegen_alloc_bytes(block, 9);
-        codegen_addbyte(block, rex_byte(0, dst_reg, 0, REG_R12));
-        codegen_addbyte4(block, 0x0f, 0xb7, 0x84 | ((dst_reg & 7) << 3), 0x24); /*MOVZX dst_reg, ram_offset[R12]*/
-        codegen_addlong(block, ram_offset);
     } else {
         codegen_alloc_bytes(block, 10);
         codegen_addbyte2(block, 0x49, 0xb9); /*MOV R9, p*/

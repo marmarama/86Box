@@ -73,6 +73,12 @@ fpu_PUSH(codeblock_t *block, ir_data_t *ir)
 static inline void
 CHECK_SEG_LIMITS(UNUSED(codeblock_t *block), ir_data_t *ir, x86seg *seg, int addr_reg, int end_offset)
 {
+    if (!(cr0 & 1) || (cpu_state.eflags & VM_FLAG))
+        return;
+
+    if (seg->limit_low == 0 && seg->limit_high == 0xffffffff)
+        return;
+
     if ((seg == &cpu_state.seg_ds && codegen_flat_ds && !(cpu_cur_status & CPU_STATUS_NOTFLATDS)) || (seg == &cpu_state.seg_ss && codegen_flat_ss && !(cpu_cur_status & CPU_STATUS_NOTFLATSS)))
         return;
 

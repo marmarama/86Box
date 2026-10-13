@@ -993,6 +993,70 @@ codegen_LOAD_SEG(codeblock_t *block, uop_t *uop)
     return 0;
 }
 
+static void
+codegen_mem_load_fastpath(codeblock_t *block, int dest_reg, int dest_size)
+{
+    uint32_t *misaligned_offset = NULL;
+    uint32_t *branch_offset;
+    uint32_t *done_offset;
+
+    /* Ensure entire inlined load sequence fits contiguously in the current block */
+    codegen_alloc_bytes(block, 64);
+
+    if (REG_IS_W(dest_size)) {
+        host_x86_TEST32_REG_IMM(block, REG_ESI, 1);
+        misaligned_offset = host_x86_JNZ_long(block);
+    } else if (REG_IS_L(dest_size)) {
+        host_x86_TEST32_REG_IMM(block, REG_ESI, 3);
+        misaligned_offset = host_x86_JNZ_long(block);
+    }
+
+    host_x86_MOV32_REG_REG(block, REG_EDI, REG_ESI);
+    host_x86_SHR32_IMM(block, REG_EDI, 12);
+    host_x86_MOV64_REG_BASE_INDEX_SHIFT(block, REG_RDI, REG_R12, REG_RDI, 3);
+
+    host_x86_CMP64_REG_IMM(block, REG_RDI, (uint32_t) -1);
+    branch_offset = host_x86_JZ_long(block);
+
+    if (REG_IS_B(dest_size)) {
+        host_x86_MOVZX_BASE_INDEX_32_8(block, REG_ECX, REG_RDI, REG_RSI);
+    } else if (REG_IS_W(dest_size)) {
+        host_x86_MOVZX_BASE_INDEX_32_16(block, REG_ECX, REG_RDI, REG_RSI);
+    } else {
+        host_x86_MOV32_REG_BASE_INDEX(block, REG_ECX, REG_RDI, REG_RSI);
+    }
+
+    done_offset = host_x86_JMP_long(block);
+
+    /* Slow path */
+    *branch_offset = (uint32_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) branch_offset) - 4;
+    if (misaligned_offset) {
+        *misaligned_offset = (uint32_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) misaligned_offset) - 4;
+    }
+
+    if (REG_IS_B(dest_size)) {
+        host_x86_CALL(block, codegen_mem_load_byte);
+    } else if (REG_IS_W(dest_size)) {
+        host_x86_CALL(block, codegen_mem_load_word);
+    } else {
+        host_x86_CALL(block, codegen_mem_load_long);
+    }
+
+    host_x86_TEST32_REG(block, REG_ESI, REG_ESI);
+    host_x86_JNZ(block, codegen_exit_rout);
+
+    /* Done */
+    *done_offset = (uint32_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) done_offset) - 4;
+
+    if (REG_IS_B(dest_size)) {
+        host_x86_MOV8_REG_REG(block, dest_reg, REG_ECX);
+    } else if (REG_IS_W(dest_size)) {
+        host_x86_MOV16_REG_REG(block, dest_reg, REG_ECX);
+    } else if (REG_IS_L(dest_size)) {
+        host_x86_MOV32_REG_REG(block, dest_reg, REG_ECX);
+    }
+}
+
 static int
 codegen_MEM_LOAD_ABS(codeblock_t *block, uop_t *uop)
 {
@@ -1001,26 +1065,7 @@ codegen_MEM_LOAD_ABS(codeblock_t *block, uop_t *uop)
     int dest_size = IREG_GET_SIZE(uop->dest_reg_a_real);
 
     host_x86_LEA_REG_IMM(block, REG_ESI, seg_reg, uop->imm_data);
-    if (REG_IS_B(dest_size)) {
-        host_x86_CALL(block, codegen_mem_load_byte);
-    } else if (REG_IS_W(dest_size)) {
-        host_x86_CALL(block, codegen_mem_load_word);
-    } else if (REG_IS_L(dest_size)) {
-        host_x86_CALL(block, codegen_mem_load_long);
-    }
-#    ifdef RECOMPILER_DEBUG
-    else
-        fatal("MEM_LOAD_ABS - %02x\n", uop->dest_reg_a_real);
-#    endif
-    host_x86_TEST32_REG(block, REG_ESI, REG_ESI);
-    host_x86_JNZ(block, codegen_exit_rout);
-    if (REG_IS_B(dest_size)) {
-        host_x86_MOV8_REG_REG(block, dest_reg, REG_ECX);
-    } else if (REG_IS_W(dest_size)) {
-        host_x86_MOV16_REG_REG(block, dest_reg, REG_ECX);
-    } else if (REG_IS_L(dest_size)) {
-        host_x86_MOV32_REG_REG(block, dest_reg, REG_ECX);
-    }
+    codegen_mem_load_fastpath(block, dest_reg, dest_size);
 
     return 0;
 }
@@ -1039,29 +1084,13 @@ codegen_MEM_LOAD_REG(codeblock_t *block, uop_t *uop)
             host_x86_AND32_REG_IMM(block, REG_ESI, 0x0000ffff);
         }
     }
-    if (REG_IS_B(dest_size)) {
-        host_x86_CALL(block, codegen_mem_load_byte);
-    } else if (REG_IS_W(dest_size)) {
-        host_x86_CALL(block, codegen_mem_load_word);
-    } else if (REG_IS_L(dest_size)) {
-        host_x86_CALL(block, codegen_mem_load_long);
-    } else if (REG_IS_Q(dest_size)) {
+    if (REG_IS_Q(dest_size)) {
         host_x86_CALL(block, codegen_mem_load_quad);
-    }
-#    ifdef RECOMPILER_DEBUG
-    else
-        fatal("MEM_LOAD_REG - %02x\n", uop->dest_reg_a_real);
-#    endif
-    host_x86_TEST32_REG(block, REG_ESI, REG_ESI);
-    host_x86_JNZ(block, codegen_exit_rout);
-    if (REG_IS_B(dest_size)) {
-        host_x86_MOV8_REG_REG(block, dest_reg, REG_ECX);
-    } else if (REG_IS_W(dest_size)) {
-        host_x86_MOV16_REG_REG(block, dest_reg, REG_ECX);
-    } else if (REG_IS_L(dest_size)) {
-        host_x86_MOV32_REG_REG(block, dest_reg, REG_ECX);
-    } else if (REG_IS_Q(dest_size)) {
+        host_x86_TEST32_REG(block, REG_ESI, REG_ESI);
+        host_x86_JNZ(block, codegen_exit_rout);
         host_x86_MOVQ_XREG_XREG(block, dest_reg, REG_XMM_TEMP);
+    } else {
+        codegen_mem_load_fastpath(block, dest_reg, dest_size);
     }
 
     return 0;
@@ -2883,14 +2912,21 @@ static int
 codegen_XOR_IMM(codeblock_t *block, uop_t *uop)
 {
     int dest_reg  = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_reg   = HOST_REG_GET(uop->src_reg_a_real);
     int dest_size = IREG_GET_SIZE(uop->dest_reg_a_real);
     int src_size  = IREG_GET_SIZE(uop->src_reg_a_real);
 
     if (REG_IS_L(dest_size) && REG_IS_L(src_size)) {
+        if (dest_reg != src_reg)
+            host_x86_MOV32_REG_REG(block, dest_reg, src_reg);
         host_x86_XOR32_REG_IMM(block, dest_reg, uop->imm_data);
     } else if (REG_IS_W(dest_size) && REG_IS_W(src_size)) {
+        if (dest_reg != src_reg)
+            host_x86_MOV16_REG_REG(block, dest_reg, src_reg);
         host_x86_XOR16_REG_IMM(block, dest_reg, uop->imm_data);
     } else if (REG_IS_B(dest_size) && REG_IS_B(src_size)) {
+        if (dest_reg != src_reg)
+            host_x86_MOV8_REG_REG(block, dest_reg, src_reg);
         host_x86_XOR8_REG_IMM(block, dest_reg, uop->imm_data);
     }
 #    ifdef RECOMPILER_DEBUG

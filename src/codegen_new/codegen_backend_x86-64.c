@@ -112,8 +112,7 @@ build_load_routine(codeblock_t *block, int size, int is_float)
     */
     host_x86_MOV32_REG_REG(block, REG_ECX, REG_ESI);
     host_x86_SHR32_IMM(block, REG_ESI, 12);
-    host_x86_MOV64_REG_IMM(block, REG_RDI, (uint64_t) (uintptr_t) readlookup2);
-    host_x86_MOV64_REG_BASE_INDEX_SHIFT(block, REG_RSI, REG_RDI, REG_RSI, 3);
+    host_x86_MOV64_REG_BASE_INDEX_SHIFT(block, REG_RSI, REG_R12, REG_RSI, 3);
     if (size != 1) {
         host_x86_TEST32_REG_IMM(block, REG_ECX, size - 1);
         misaligned_offset = host_x86_JNZ_short(block);
@@ -209,10 +208,15 @@ build_store_routine(codeblock_t *block, int size, int is_float)
       MOVZX ECX, AL
       RET
     */
+    intptr_t write_offset = (intptr_t) writelookup2 - (intptr_t) readlookup2;
     host_x86_MOV32_REG_REG(block, REG_EDI, REG_ESI);
     host_x86_SHR32_IMM(block, REG_ESI, 12);
-    host_x86_MOV64_REG_IMM(block, REG_R8, (uint64_t) (uintptr_t) writelookup2);
-    host_x86_MOV64_REG_BASE_INDEX_SHIFT(block, REG_RSI, REG_R8, REG_RSI, 3);
+    if (write_offset >= INT32_MIN && write_offset <= INT32_MAX) {
+        host_x86_MOV64_REG_BASE_INDEX_SHIFT_OFFSET(block, REG_RSI, REG_R12, REG_RSI, 3, (int32_t) write_offset);
+    } else {
+        host_x86_MOV64_REG_IMM(block, REG_R8, (uint64_t) (uintptr_t) writelookup2);
+        host_x86_MOV64_REG_BASE_INDEX_SHIFT(block, REG_RSI, REG_R8, REG_RSI, 3);
+    }
     if (size != 1) {
         host_x86_TEST32_REG_IMM(block, REG_EDI, size - 1);
         misaligned_offset = host_x86_JNZ_short(block);
@@ -409,13 +413,12 @@ codegen_backend_prologue(codeblock_t *block)
     host_x86_SUB64_REG_IMM(block, REG_RSP, 0x48);
 #endif
     host_x86_MOV64_REG_IMM(block, REG_RBP, ((uintptr_t) &cpu_state) + 128);
+    host_x86_MOV64_REG_IMM(block, REG_R12, (uint64_t) (uintptr_t) readlookup2);
     if (block->flags & CODEBLOCK_HAS_FPU) {
         host_x86_MOV32_REG_ABS(block, REG_EAX, &cpu_state.TOP);
         host_x86_SUB32_REG_IMM(block, REG_EAX, block->TOP);
         host_x86_MOV32_BASE_OFFSET_REG(block, REG_RSP, IREG_TOP_diff_stack_offset, REG_EAX);
     }
-    if (block->flags & CODEBLOCK_NO_IMMEDIATES)
-        host_x86_MOV64_REG_IMM(block, REG_R12, ((uintptr_t) ram) + 2147483648ULL);
 }
 
 void

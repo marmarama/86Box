@@ -33,6 +33,7 @@ void host_x86_JZ(codeblock_t *block, void *p);
 uint8_t *host_x86_JNZ_short(codeblock_t *block);
 uint8_t *host_x86_JS_short(codeblock_t *block);
 uint8_t *host_x86_JZ_short(codeblock_t *block);
+uint8_t *host_x86_JMP_short(codeblock_t *block);
 
 uint32_t *host_x86_JNB_long(codeblock_t *block);
 uint32_t *host_x86_JNBE_long(codeblock_t *block);
@@ -86,6 +87,7 @@ void host_x86_MOV8_REG_ABS_REG_REG_SHIFT(codeblock_t *block, int dst_reg, uint32
 void host_x86_MOV32_REG_BASE_INDEX(codeblock_t *block, int dst_reg, int base_reg, int index_reg);
 
 void host_x86_MOV64_REG_BASE_INDEX_SHIFT(codeblock_t *block, int dst_reg, int base_reg, int index_reg, int scale);
+void host_x86_MOV64_REG_BASE_INDEX_SHIFT_OFFSET(codeblock_t *block, int dst_reg, int base_reg, int index_reg, int scale, int32_t offset);
 
 void host_x86_MOV16_REG_BASE_OFFSET(codeblock_t *block, int dst_reg, int base_reg, int offset);
 void host_x86_MOV32_REG_BASE_OFFSET(codeblock_t *block, int dst_reg, int base_reg, int offset);
