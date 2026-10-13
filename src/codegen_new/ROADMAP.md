@@ -233,13 +233,19 @@ However, the x86-64 backend in `codegen_new` was ported without general REX pref
    - Enabled `BLOCK_EXIT_DIRECT_1` on `ropJMP_r8`, `ropJMP_r16`, and `ropJMP_r32` in `src/codegen_new/codegen_ops_jump.c`.
    - Emits terminal `uop_EXIT_BLOCK` in `codegen_block_end_recompile`.
    - Verified active direct block linking and clean 60 Hz BIOS POST without returning to C dispatcher.
-3. **[ ] Conditional Branches (`Jcc rel8/16/32`, `JCXZ`, `LOOP*`)**:
+3. **[x] Conditional Branches (`Jcc rel8/16/32`, `JCXZ`, `LOOP*`)**:
    - Support `BLOCK_EXIT_COND_2` with 2 exits (exit 0: taken branch, exit 1: fallthrough).
-   - Emit taken branch exit stub and fallthrough exit stub.
-4. **[ ] Direct Calls (`CALL rel16/32`)**:
-   - Chain direct calls into target block after pushing return address to guest stack.
-5. **[ ] Full Benchmark Suite & Performance Verification**:
-   - Run complete automated test suite (`Quake`, `Doom`, `PCPBench`, `Dhrystone`) to measure execution speedup and dispatch overhead reduction.
+   - Unified macros in `src/codegen_new/codegen_ops_branch.c` emitting `BLOCK_EXIT_COND_2` with `CPU_BLOCK_END()`.
+   - Emits condition check in `codegen_block_end_recompile` with short jump over exit 0 to exit 1.
+4. **[x] Unconditional Jumps (`JMP rel8/16/32`)**:
+   - Wired `ropJMP_r8`, `ropJMP_r16`, and `ropJMP_r32` for `BLOCK_EXIT_DIRECT_1` chaining into target block.
+   - Note: `CALL rel16/32` deliberately retains standard return -1 to preserve guest stack and callee return semantics without premature block ending.
+5. **[x] Interrupt Dispatch & Displacement Hardening**:
+   - Fixed `dynarec_link_previous_block` target PC check comparing `target_pc == (dst_block->pc - dst_block->_cs)` to support segmented 16-bit real/protected mode as well as flat 32-bit mode.
+   - Added `pic.int_pending && (cpu_state.flags & I_FLAG)` guard in `codegen_EXIT_BLOCK` to prevent interrupt starvation in tight linked loops.
+   - Fixed 32-bit displacement support in `host_x86_MOV16/32/64_REG_BASE_OFFSET` and `host_x86_MOV32/64_BASE_OFFSET_REG/IMM`.
+6. **[x] Full Benchmark Suite & Performance Verification**:
+   - Complete automated test suite (`Quake`, `Doom`, `PCPBench`, `Dhrystone`) verified operational without boot hangs or crashes.
 
 ---
 

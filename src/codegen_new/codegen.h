@@ -37,6 +37,33 @@
 #define BLOCK_EXIT_DIRECT_1  1
 #define BLOCK_EXIT_COND_2    2
 
+enum {
+    COND_O   = 0,
+    COND_NO  = 1,
+    COND_B   = 2,
+    COND_NB  = 3,
+    COND_E   = 4,
+    COND_NE  = 5,
+    COND_BE  = 6,
+    COND_NBE = 7,
+    COND_S   = 8,
+    COND_NS  = 9,
+    COND_P   = 10,
+    COND_NP  = 11,
+    COND_L   = 12,
+    COND_NL  = 13,
+    COND_LE  = 14,
+    COND_NLE = 15,
+    COND_JCXZ_16  = 16,
+    COND_JCXZ_32  = 17,
+    COND_LOOP_16  = 18,
+    COND_LOOP_32  = 19,
+    COND_LOOPE_16 = 20,
+    COND_LOOPE_32 = 21,
+    COND_LOOPNE_16 = 22,
+    COND_LOOPNE_32 = 23,
+};
+
 typedef struct codeblock_link_t {
     uint32_t  target_pc;          /* Guest PC of target (or BLOCK_PC_INVALID) */
     uint32_t *jmp_disp_ptr;      /* Pointer to 32-bit displacement in host JMP */
@@ -70,6 +97,7 @@ typedef struct codeblock_t {
     /* Direct block chaining data */
     uint16_t direct_entry_pos;
     uint8_t  exit_type;
+    uint8_t  exit_cond;
     codeblock_link_t links[CODEBLOCK_MAX_EXITS];
     uint32_t first_incoming_link;
 

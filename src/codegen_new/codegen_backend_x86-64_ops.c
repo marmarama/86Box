@@ -959,8 +959,18 @@ host_x86_MOV16_REG_BASE_OFFSET(codeblock_t *block, int dst_reg, int base_reg, in
         } else {
             codegen_addbyte3(block, 0x8b, 0x40 | (base_reg & 7) | ((dst_reg & 7) << 3), offset);
         }
-    } else
-        fatal("MOV16_REG_BASE_OFFSET - offset %i\n", offset);
+    } else {
+        codegen_alloc_bytes(block, 10);
+        codegen_addbyte(block, 0x66);
+        if ((dst_reg & 8) || (base_reg & 8))
+            codegen_addbyte(block, rex_byte(0, dst_reg, 0, base_reg));
+        if ((base_reg & 7) == 4) {
+            codegen_addbyte3(block, 0x8b, 0x80 | (base_reg & 7) | ((dst_reg & 7) << 3), 0x24);
+        } else {
+            codegen_addbyte2(block, 0x8b, 0x80 | (base_reg & 7) | ((dst_reg & 7) << 3));
+        }
+        codegen_addlong(block, offset);
+    }
 }
 void
 host_x86_MOV32_REG_BASE_OFFSET(codeblock_t *block, int dst_reg, int base_reg, int offset)
@@ -974,8 +984,17 @@ host_x86_MOV32_REG_BASE_OFFSET(codeblock_t *block, int dst_reg, int base_reg, in
         } else {
             codegen_addbyte3(block, 0x8b, 0x40 | (base_reg & 7) | ((dst_reg & 7) << 3), offset);
         }
-    } else
-        fatal("MOV32_REG_BASE_OFFSET - offset %i\n", offset);
+    } else {
+        codegen_alloc_bytes(block, 9);
+        if ((dst_reg & 8) || (base_reg & 8))
+            codegen_addbyte(block, rex_byte(0, dst_reg, 0, base_reg));
+        if ((base_reg & 7) == 4) {
+            codegen_addbyte3(block, 0x8b, 0x80 | (base_reg & 7) | ((dst_reg & 7) << 3), 0x24);
+        } else {
+            codegen_addbyte2(block, 0x8b, 0x80 | (base_reg & 7) | ((dst_reg & 7) << 3));
+        }
+        codegen_addlong(block, offset);
+    }
 }
 void
 host_x86_MOV64_REG_BASE_OFFSET(codeblock_t *block, int dst_reg, int base_reg, int offset)
@@ -988,8 +1007,16 @@ host_x86_MOV64_REG_BASE_OFFSET(codeblock_t *block, int dst_reg, int base_reg, in
         } else {
             codegen_addbyte3(block, 0x8b, 0x40 | (base_reg & 7) | ((dst_reg & 7) << 3), offset);
         }
-    } else
-        fatal("MOV64_REG_BASE_OFFSET - offset %i\n", offset);
+    } else {
+        codegen_alloc_bytes(block, 9);
+        codegen_addbyte(block, rex_byte(1, dst_reg, 0, base_reg));
+        if ((base_reg & 7) == 4) {
+            codegen_addbyte3(block, 0x8b, 0x80 | (base_reg & 7) | ((dst_reg & 7) << 3), 0x24);
+        } else {
+            codegen_addbyte2(block, 0x8b, 0x80 | (base_reg & 7) | ((dst_reg & 7) << 3));
+        }
+        codegen_addlong(block, offset);
+    }
 }
 
 void
@@ -1004,8 +1031,17 @@ host_x86_MOV32_BASE_OFFSET_REG(codeblock_t *block, int base_reg, int offset, int
         } else {
             codegen_addbyte3(block, 0x89, 0x40 | (base_reg & 7) | ((src_reg & 7) << 3), offset);
         }
-    } else
-        fatal("MOV32_BASE_OFFSET_REG - offset %i\n", offset);
+    } else {
+        codegen_alloc_bytes(block, 9);
+        if ((src_reg & 8) || (base_reg & 8))
+            codegen_addbyte(block, rex_byte(0, src_reg, 0, base_reg));
+        if ((base_reg & 7) == 4) {
+            codegen_addbyte3(block, 0x89, 0x80 | (base_reg & 7) | ((src_reg & 7) << 3), 0x24);
+        } else {
+            codegen_addbyte2(block, 0x89, 0x80 | (base_reg & 7) | ((src_reg & 7) << 3));
+        }
+        codegen_addlong(block, offset);
+    }
 }
 void
 host_x86_MOV64_BASE_OFFSET_REG(codeblock_t *block, int base_reg, int offset, int src_reg)
@@ -1018,8 +1054,16 @@ host_x86_MOV64_BASE_OFFSET_REG(codeblock_t *block, int base_reg, int offset, int
         } else {
             codegen_addbyte3(block, 0x89, 0x40 | (base_reg & 7) | ((src_reg & 7) << 3), offset);
         }
-    } else
-        fatal("MOV64_BASE_OFFSET_REG - offset %i\n", offset);
+    } else {
+        codegen_alloc_bytes(block, 9);
+        codegen_addbyte(block, rex_byte(1, src_reg, 0, base_reg));
+        if ((base_reg & 7) == 4) {
+            codegen_addbyte3(block, 0x89, 0x80 | (base_reg & 7) | ((src_reg & 7) << 3), 0x24);
+        } else {
+            codegen_addbyte2(block, 0x89, 0x80 | (base_reg & 7) | ((src_reg & 7) << 3));
+        }
+        codegen_addlong(block, offset);
+    }
 }
 
 void
@@ -1036,8 +1080,20 @@ host_x86_MOV32_BASE_OFFSET_IMM(codeblock_t *block, int base_reg, int offset, uin
             codegen_addbyte3(block, 0xc7, 0x40 | (base_reg & 7), offset);
             codegen_addlong(block, imm_data);
         }
-    } else
-        fatal("MOV32_BASE_OFFSET_IMM - offset %i\n", offset);
+    } else {
+        codegen_alloc_bytes(block, 12);
+        if (base_reg & 8)
+            codegen_addbyte(block, rex_byte(0, 0, 0, base_reg));
+        if ((base_reg & 7) == 4) {
+            codegen_addbyte3(block, 0xc7, 0x80 | (base_reg & 7), 0x24);
+            codegen_addlong(block, offset);
+            codegen_addlong(block, imm_data);
+        } else {
+            codegen_addbyte2(block, 0xc7, 0x80 | (base_reg & 7));
+            codegen_addlong(block, offset);
+            codegen_addlong(block, imm_data);
+        }
+    }
 }
 
 void

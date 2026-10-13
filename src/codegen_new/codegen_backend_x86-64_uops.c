@@ -3,6 +3,7 @@
 #    include <stdint.h>
 #    include <stdio.h>
 #    include <86box/86box.h>
+#    include <86box/pic.h>
 #    include "cpu.h"
 #    include <86box/mem.h>
 #    include <86box/plat_unused.h>
@@ -899,7 +900,7 @@ codegen_EXIT_BLOCK(codeblock_t *block, uop_t *uop)
 
     block->links[exit_idx].target_pc = target_pc;
 
-    codegen_alloc_bytes(block, 80);
+    codegen_alloc_bytes(block, 128);
 
     /* 1. Cycle check:
           cmp dword ptr [rbp + (offsetof(cpu_state_t, _cycles) - 128)], 0
@@ -909,12 +910,27 @@ codegen_EXIT_BLOCK(codeblock_t *block, uop_t *uop)
     host_x86_CMP32_BASE_OFFSET_IMM(block, REG_RBP, cycles_disp, 0);
     uint32_t *jle_disp = host_x86_JLE_long(block);
 
-    /* 2. Direct branch instruction (patched to target_block->direct_entry_pos when linked):
+    /* 2. Interrupt check:
+          If pic.int_pending != 0 && (cpu_state.flags & I_FLAG) != 0,
+          exit to C dispatch loop to service the pending interrupt.
+    */
+    host_x86_MOVZX_REG_ABS_32_8(block, REG_EAX, &pic.int_pending);
+    host_x86_TEST32_REG(block, REG_EAX, REG_EAX);
+    uint8_t *no_irq = host_x86_JZ_short(block);
+
+    int flags_disp = (int) offsetof(cpu_state_t, flags) - 128;
+    host_x86_MOV16_REG_BASE_OFFSET(block, REG_EDX, REG_RBP, flags_disp);
+    host_x86_TEST32_REG_IMM(block, REG_EDX, I_FLAG);
+    uint32_t *jnz_irq = host_x86_JNZ_long(block);
+
+    *no_irq = (uint8_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) (no_irq + 1));
+
+    /* 3. Direct branch instruction (patched to target_block->direct_entry_pos when linked):
           jmp rel32
     */
     block->links[exit_idx].jmp_disp_ptr = host_x86_JMP_long(block);
 
-    /* 3. Unlinked stub:
+    /* 4. Unlinked stub:
           When unlinked, the branch jumps here.
     */
     uint8_t *unlinked_stub = &block_write_data[block_pos];
@@ -928,9 +944,10 @@ codegen_EXIT_BLOCK(codeblock_t *block, uop_t *uop)
     host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, last_exit_idx) - 128, exit_idx);
     host_x86_JMP(block, codegen_exit_rout);
 
-    /* 4. Exit due to cycle expiry: */
+    /* 5. Exit due to cycle expiry or pending interrupt: */
     uint8_t *exit_cycles_stub = &block_write_data[block_pos];
     *jle_disp = (uint32_t) (exit_cycles_stub - ((uint8_t *) jle_disp + 4));
+    *jnz_irq  = (uint32_t) (exit_cycles_stub - ((uint8_t *) jnz_irq + 4));
 
     host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, pc) - 128, target_pc);
     host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, last_block_nr) - 128, 0);

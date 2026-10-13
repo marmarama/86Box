@@ -24,6 +24,8 @@
 #include "codegen_backend.h"
 #include "codegen_ir.h"
 #include "codegen_reg.h"
+#include "codegen_ops_branch.h"
+#include "codegen_ops_jit_wrappers.h"
 
 uint8_t *block_write_data = NULL;
 
@@ -503,6 +505,7 @@ codegen_unlink_block(codeblock_t *block)
         block->links[i].next_link = LINK_NONE;
     }
     block->exit_type = BLOCK_EXIT_NONE;
+    block->exit_cond = 0;
 }
 
 static void
@@ -711,6 +714,8 @@ codegen_block_start_recompile(codeblock_t *block)
 #endif
 
     codegen_unlink_block(block);
+    block->exit_type = BLOCK_EXIT_NONE;
+    block->exit_cond = 0;
 
     if (block->head_mem_block) {
         codegen_allocator_free(block->head_mem_block);
@@ -935,6 +940,55 @@ codegen_block_end_recompile(codeblock_t *block)
     codegen_accumulate_flush(ir_data);
     if (block->exit_type == BLOCK_EXIT_DIRECT_1) {
         uop_EXIT_BLOCK(ir_data, 0, block->links[0].target_pc);
+    } else if (block->exit_type == BLOCK_EXIT_COND_2) {
+        int jump_false = -1;
+        int jump_false_extra = -1;
+
+        if (block->exit_cond < 16) {
+            jump_false = codegen_cond_jump_false(ir_data, block->exit_cond);
+        } else if (block->exit_cond == COND_JCXZ_16) {
+            jump_false = uop_CMP_IMM_JNZ_DEST(ir_data, IREG_CX, 0);
+        } else if (block->exit_cond == COND_JCXZ_32) {
+            jump_false = uop_CMP_IMM_JNZ_DEST(ir_data, IREG_ECX, 0);
+        } else if (block->exit_cond == COND_LOOP_16) {
+            uop_SUB_IMM(ir_data, IREG_CX, IREG_CX, 1);
+            jump_false = uop_CMP_IMM_JZ_DEST(ir_data, IREG_CX, 0);
+        } else if (block->exit_cond == COND_LOOP_32) {
+            uop_SUB_IMM(ir_data, IREG_ECX, IREG_ECX, 1);
+            jump_false = uop_CMP_IMM_JZ_DEST(ir_data, IREG_ECX, 0);
+        } else if (block->exit_cond == COND_LOOPE_16 || block->exit_cond == COND_LOOPE_32) {
+            int is_32  = (block->exit_cond == COND_LOOPE_32);
+            int cx_reg = is_32 ? IREG_ECX : IREG_CX;
+            uop_SUB_IMM(ir_data, cx_reg, cx_reg, 1);
+            jump_false = uop_CMP_IMM_JZ_DEST(ir_data, cx_reg, 0);
+            if (codegen_flags_changed && flags_res_valid()) {
+                jump_false_extra = uop_CMP_IMM_JNZ_DEST(ir_data, IREG_flags_res, 0);
+            } else {
+                uop_CALL_FUNC_RESULT(ir_data, IREG_temp0, jit_ZF_SET);
+                jump_false_extra = uop_CMP_IMM_JZ_DEST(ir_data, IREG_temp0, 0);
+            }
+        } else if (block->exit_cond == COND_LOOPNE_16 || block->exit_cond == COND_LOOPNE_32) {
+            int is_32  = (block->exit_cond == COND_LOOPNE_32);
+            int cx_reg = is_32 ? IREG_ECX : IREG_CX;
+            uop_SUB_IMM(ir_data, cx_reg, cx_reg, 1);
+            jump_false = uop_CMP_IMM_JZ_DEST(ir_data, cx_reg, 0);
+            if (codegen_flags_changed && flags_res_valid()) {
+                jump_false_extra = uop_CMP_IMM_JZ_DEST(ir_data, IREG_flags_res, 0);
+            } else {
+                uop_CALL_FUNC_RESULT(ir_data, IREG_temp0, jit_ZF_SET);
+                jump_false_extra = uop_CMP_IMM_JNZ_DEST(ir_data, IREG_temp0, 0);
+            }
+        }
+
+        if (jump_false == -1) {
+            uop_EXIT_BLOCK(ir_data, 0, block->links[0].target_pc);
+        } else {
+            uop_EXIT_BLOCK(ir_data, 0, block->links[0].target_pc);
+            uop_set_jump_dest(ir_data, jump_false);
+            if (jump_false_extra != -1)
+                uop_set_jump_dest(ir_data, jump_false_extra);
+            uop_EXIT_BLOCK(ir_data, 1, block->links[1].target_pc);
+        }
     }
     codegen_ir_compile(ir_data, block);
 }

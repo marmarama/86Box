@@ -489,7 +489,7 @@ dynarec_link_previous_block(codeblock_t *dst_block)
         cpu_state.last_block_nr = 0;
         if (src_block->valid &&
             src_block->_cs == dst_block->_cs &&
-            src_block->links[exit_idx].target_pc == cpu_state.pc &&
+            src_block->links[exit_idx].target_pc == (dst_block->pc - dst_block->_cs) &&
             !((src_block->status ^ dst_block->status) & (CPU_STATUS_FLAGS | CPU_STATUS_MASK)) &&
             (!(dst_block->flags & CODEBLOCK_STATIC_TOP) || (dst_block->TOP == (cpu_state.TOP & 7))) &&
             !(dst_block->flags & CODEBLOCK_IN_DIRTY_LIST)) {
