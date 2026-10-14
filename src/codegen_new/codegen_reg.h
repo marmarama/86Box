@@ -41,6 +41,7 @@ enum {
     IREG_rm_mod_reg,
 
     IREG_cycles,
+    IREG_exit_request,
 
     IREG_CS_base,
     IREG_DS_base,

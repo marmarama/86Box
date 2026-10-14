@@ -98,6 +98,9 @@ codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
         if (uop->type & UOP_TYPE_BARRIER)
             codegen_reg_flush_invalidate(ir, block);
 
+        if ((uop->type & UOP_MASK) == (UOP_LOOP_LABEL & UOP_MASK))
+            uop->jump_dest = &block_write_data[block_pos];
+
         if (uop->type & UOP_TYPE_JUMP_DEST) {
             uop_t *uop_dest = uop;
 

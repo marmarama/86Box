@@ -163,6 +163,13 @@
 #define UOP_CMP_IMM_JZ_DEST (UOP_TYPE_PARAMS_REGS | UOP_TYPE_PARAMS_IMM | UOP_TYPE_PARAMS_POINTER | 0x60 | UOP_TYPE_ORDER_BARRIER | UOP_TYPE_JUMP)
 /*UOP_CMP_IMM_JNZ_DEST - if (src_reg_a != imm_data) then jump to ptr*/
 #define UOP_CMP_IMM_JNZ_DEST (UOP_TYPE_PARAMS_REGS | UOP_TYPE_PARAMS_IMM | UOP_TYPE_PARAMS_POINTER | 0x61 | UOP_TYPE_ORDER_BARRIER | UOP_TYPE_JUMP)
+/*UOP_CMP_IMM_JLE_DEST - if (signed)(src_reg_a <= imm_data) then jump to ptr*/
+#define UOP_CMP_IMM_JLE_DEST (UOP_TYPE_PARAMS_REGS | UOP_TYPE_PARAMS_IMM | UOP_TYPE_PARAMS_POINTER | 0x6e | UOP_TYPE_ORDER_BARRIER | UOP_TYPE_JUMP)
+
+/*UOP_LOOP_LABEL - loop destination marker with barrier*/
+#define UOP_LOOP_LABEL       (UOP_TYPE_BARRIER | 0x72)
+/*UOP_LOOP_JMP - backward jump to UOP_LOOP_LABEL*/
+#define UOP_LOOP_JMP         (UOP_TYPE_PARAMS_POINTER | 0x73)
 
 /*UOP_CMP_JB_DEST - if (src_reg_a < src_reg_b) then jump to ptr*/
 #define UOP_CMP_JB_DEST (UOP_TYPE_PARAMS_REGS | UOP_TYPE_PARAMS_IMM | UOP_TYPE_PARAMS_POINTER | 0x62 | UOP_TYPE_ORDER_BARRIER | UOP_TYPE_JUMP)
@@ -729,6 +736,7 @@ extern int codegen_fp_enter(void);
 
 #define uop_CMP_IMM_JNZ_DEST(ir, src_reg, imm)                   uop_gen_reg_src1_imm(UOP_CMP_IMM_JNZ_DEST, ir, src_reg, imm)
 #define uop_CMP_IMM_JZ_DEST(ir, src_reg, imm)                    uop_gen_reg_src1_imm(UOP_CMP_IMM_JZ_DEST, ir, src_reg, imm)
+#define uop_CMP_IMM_JLE_DEST(ir, src_reg, imm)                   uop_gen_reg_src1_imm(UOP_CMP_IMM_JLE_DEST, ir, src_reg, imm)
 
 #define uop_CMP_JB(ir, src_reg_a, src_reg_b, p)                  uop_gen_reg_src2_pointer(UOP_CMP_JB, ir, src_reg_a, src_reg_b, p)
 #define uop_CMP_JNBE(ir, src_reg_a, src_reg_b, p)                uop_gen_reg_src2_pointer(UOP_CMP_JNBE, ir, src_reg_a, src_reg_b, p)
@@ -838,6 +846,20 @@ uop_EXIT_BLOCK(ir_data_t *ir, int exit_idx, uint32_t target_pc)
 #define uop_MOV_INT_DOUBLE_64(ir, dst_reg, src_reg_d, src_reg_q, tag)    uop_gen_reg_dst_src3(UOP_MOV_INT_DOUBLE_64, ir, dst_reg, src_reg_d, src_reg_q, tag)
 
 #define uop_NOP_BARRIER(ir)                                              uop_gen(UOP_NOP_BARRIER, ir)
+
+static inline int
+uop_LOOP_LABEL(ir_data_t *ir)
+{
+    return uop_gen(UOP_LOOP_LABEL, ir);
+}
+
+static inline void
+uop_LOOP_JMP(ir_data_t *ir, int loop_label_uop)
+{
+    uop_t *uop = uop_alloc(ir, UOP_LOOP_JMP);
+    uop->type  = UOP_LOOP_JMP;
+    uop->p     = &ir->uops[loop_label_uop];
+}
 
 #define uop_PACKSSWB(ir, dst_reg, src_reg_a, src_reg_b)                  uop_gen_reg_dst_src2(UOP_PACKSSWB, ir, dst_reg, src_reg_a, src_reg_b)
 #define uop_PACKSSDW(ir, dst_reg, src_reg_a, src_reg_b)                  uop_gen_reg_dst_src2(UOP_PACKSSDW, ir, dst_reg, src_reg_a, src_reg_b)

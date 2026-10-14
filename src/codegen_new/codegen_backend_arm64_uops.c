@@ -278,6 +278,40 @@ codegen_CMP_IMM_JZ_DEST(codeblock_t *block, uop_t *uop)
 }
 
 static int
+codegen_CMP_IMM_JLE_DEST(codeblock_t *block, uop_t *uop)
+{
+    int src_reg  = HOST_REG_GET(uop->src_reg_a_real);
+    int src_size = IREG_GET_SIZE(uop->src_reg_a_real);
+
+    if (REG_IS_L(src_size)) {
+        host_arm64_CMP_IMM(block, src_reg, uop->imm_data);
+    } else if (REG_IS_W(src_size)) {
+        host_arm64_SXTH(block, REG_TEMP, src_reg);
+        host_arm64_CMP_IMM(block, REG_TEMP, uop->imm_data);
+    } else
+        fatal("CMP_IMM_JLE_DEST %02x\n", uop->src_reg_a_real);
+
+    uop->p = host_arm64_BLE_(block);
+
+    return 0;
+}
+
+static int
+codegen_LOOP_LABEL(UNUSED(codeblock_t *block), UNUSED(uop_t *uop))
+{
+    return 0;
+}
+
+static int
+codegen_LOOP_JMP(codeblock_t *block, uop_t *uop)
+{
+    uop_t *loop_label = (uop_t *) uop->p;
+    host_arm64_B(block, loop_label->jump_dest);
+
+    return 0;
+}
+
+static int
 codegen_CMP_JB(codeblock_t *block, uop_t *uop)
 {
     int       src_reg_a  = HOST_REG_GET(uop->src_reg_a_real);
@@ -3397,6 +3431,16 @@ const uOpFn uop_handlers[UOP_MAX] = {
     [UOP_CMP_IMM_JZ_DEST &
         UOP_MASK]
     = codegen_CMP_IMM_JZ_DEST,
+    [UOP_CMP_IMM_JLE_DEST &
+        UOP_MASK]
+    = codegen_CMP_IMM_JLE_DEST,
+
+    [UOP_LOOP_LABEL &
+        UOP_MASK]
+    = codegen_LOOP_LABEL,
+    [UOP_LOOP_JMP &
+        UOP_MASK]
+    = codegen_LOOP_JMP,
 
     [UOP_JMP_DEST &
         UOP_MASK]

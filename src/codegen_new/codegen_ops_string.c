@@ -13,6 +13,7 @@
 #include "codegen_ir.h"
 #include "codegen_ops.h"
 #include "codegen_ops_helpers.h"
+#include "codegen_accumulate.h"
 #include "codegen_ops_string.h"
 
 /* Branchless pointer advance based on Direction Flag (DF):
@@ -223,14 +224,29 @@ static inline uint32_t
 ropREP_STOS_common(codeblock_t *block, ir_data_t *ir, uint32_t op_32, uint32_t op_pc, int step, int val_reg)
 {
     int count_reg = (op_32 & 0x200) ? IREG_ECX : IREG_CX;
+    int step_cycles = is486 ? 3 : 4;
+
+    codegen_accumulate_flush(ir);
 
     int jump_zero = uop_CMP_IMM_JZ_DEST(ir, count_reg, 0);
+
+    int loop_label = uop_LOOP_LABEL(ir);
 
     codegen_stos_single(block, ir, op_32, step, val_reg);
 
     uop_SUB_IMM(ir, count_reg, count_reg, 1);
+    uop_SUB_IMM(ir, IREG_cycles, IREG_cycles, step_cycles);
+
+    uop_NOP_BARRIER(ir);
 
     int jump_cnt_zero = uop_CMP_IMM_JZ_DEST(ir, count_reg, 0);
+    int jump_cycles   = uop_CMP_IMM_JLE_DEST(ir, IREG_cycles, 0);
+    int jump_exit     = uop_CMP_IMM_JNZ_DEST(ir, IREG_exit_request, 0);
+
+    uop_LOOP_JMP(ir, loop_label);
+
+    uop_set_jump_dest(ir, jump_cycles);
+    uop_set_jump_dest(ir, jump_exit);
     uop_MOV_IMM(ir, IREG_pc, cpu_state.oldpc);
     uop_JMP(ir, codegen_exit_rout);
 
@@ -245,14 +261,29 @@ static inline uint32_t
 ropREP_LODS_common(codeblock_t *block, ir_data_t *ir, uint32_t op_32, uint32_t op_pc, int step, int val_reg)
 {
     int count_reg = (op_32 & 0x200) ? IREG_ECX : IREG_CX;
+    int step_cycles = is486 ? 3 : 4;
+
+    codegen_accumulate_flush(ir);
 
     int jump_zero = uop_CMP_IMM_JZ_DEST(ir, count_reg, 0);
+
+    int loop_label = uop_LOOP_LABEL(ir);
 
     codegen_lods_single(block, ir, op_32, step, val_reg);
 
     uop_SUB_IMM(ir, count_reg, count_reg, 1);
+    uop_SUB_IMM(ir, IREG_cycles, IREG_cycles, step_cycles);
+
+    uop_NOP_BARRIER(ir);
 
     int jump_cnt_zero = uop_CMP_IMM_JZ_DEST(ir, count_reg, 0);
+    int jump_cycles   = uop_CMP_IMM_JLE_DEST(ir, IREG_cycles, 0);
+    int jump_exit     = uop_CMP_IMM_JNZ_DEST(ir, IREG_exit_request, 0);
+
+    uop_LOOP_JMP(ir, loop_label);
+
+    uop_set_jump_dest(ir, jump_cycles);
+    uop_set_jump_dest(ir, jump_exit);
     uop_MOV_IMM(ir, IREG_pc, cpu_state.oldpc);
     uop_JMP(ir, codegen_exit_rout);
 
@@ -267,14 +298,29 @@ static inline uint32_t
 ropREP_MOVS_common(codeblock_t *block, ir_data_t *ir, uint32_t op_32, uint32_t op_pc, int step, int val_reg)
 {
     int count_reg = (op_32 & 0x200) ? IREG_ECX : IREG_CX;
+    int step_cycles = is486 ? 3 : 4;
+
+    codegen_accumulate_flush(ir);
 
     int jump_zero = uop_CMP_IMM_JZ_DEST(ir, count_reg, 0);
+
+    int loop_label = uop_LOOP_LABEL(ir);
 
     codegen_movs_single(block, ir, op_32, step, val_reg);
 
     uop_SUB_IMM(ir, count_reg, count_reg, 1);
+    uop_SUB_IMM(ir, IREG_cycles, IREG_cycles, step_cycles);
+
+    uop_NOP_BARRIER(ir);
 
     int jump_cnt_zero = uop_CMP_IMM_JZ_DEST(ir, count_reg, 0);
+    int jump_cycles   = uop_CMP_IMM_JLE_DEST(ir, IREG_cycles, 0);
+    int jump_exit     = uop_CMP_IMM_JNZ_DEST(ir, IREG_exit_request, 0);
+
+    uop_LOOP_JMP(ir, loop_label);
+
+    uop_set_jump_dest(ir, jump_cycles);
+    uop_set_jump_dest(ir, jump_exit);
     uop_MOV_IMM(ir, IREG_pc, cpu_state.oldpc);
     uop_JMP(ir, codegen_exit_rout);
 
@@ -289,15 +335,30 @@ static inline uint32_t
 ropREPE_SCAS_common(codeblock_t *block, ir_data_t *ir, uint32_t op_32, uint32_t op_pc, int step, int acc_reg, int val_reg, int flags_sub_op)
 {
     int count_reg = (op_32 & 0x200) ? IREG_ECX : IREG_CX;
+    int step_cycles = is486 ? 3 : 4;
+
+    codegen_accumulate_flush(ir);
 
     int jump_zero = uop_CMP_IMM_JZ_DEST(ir, count_reg, 0);
+
+    int loop_label = uop_LOOP_LABEL(ir);
 
     codegen_scas_single(block, ir, op_32, step, acc_reg, val_reg, flags_sub_op);
 
     uop_SUB_IMM(ir, count_reg, count_reg, 1);
+    uop_SUB_IMM(ir, IREG_cycles, IREG_cycles, step_cycles);
+
+    uop_NOP_BARRIER(ir);
 
     int jump_mismatch = uop_CMP_IMM_JNZ_DEST(ir, IREG_flags_res, 0);
     int jump_cnt_zero = uop_CMP_IMM_JZ_DEST(ir, count_reg, 0);
+    int jump_cycles   = uop_CMP_IMM_JLE_DEST(ir, IREG_cycles, 0);
+    int jump_exit     = uop_CMP_IMM_JNZ_DEST(ir, IREG_exit_request, 0);
+
+    uop_LOOP_JMP(ir, loop_label);
+
+    uop_set_jump_dest(ir, jump_cycles);
+    uop_set_jump_dest(ir, jump_exit);
     uop_MOV_IMM(ir, IREG_pc, cpu_state.oldpc);
     uop_JMP(ir, codegen_exit_rout);
 
@@ -313,15 +374,30 @@ static inline uint32_t
 ropREPNE_SCAS_common(codeblock_t *block, ir_data_t *ir, uint32_t op_32, uint32_t op_pc, int step, int acc_reg, int val_reg, int flags_sub_op)
 {
     int count_reg = (op_32 & 0x200) ? IREG_ECX : IREG_CX;
+    int step_cycles = is486 ? 3 : 4;
+
+    codegen_accumulate_flush(ir);
 
     int jump_zero = uop_CMP_IMM_JZ_DEST(ir, count_reg, 0);
+
+    int loop_label = uop_LOOP_LABEL(ir);
 
     codegen_scas_single(block, ir, op_32, step, acc_reg, val_reg, flags_sub_op);
 
     uop_SUB_IMM(ir, count_reg, count_reg, 1);
+    uop_SUB_IMM(ir, IREG_cycles, IREG_cycles, step_cycles);
+
+    uop_NOP_BARRIER(ir);
 
     int jump_match    = uop_CMP_IMM_JZ_DEST(ir, IREG_flags_res, 0);
     int jump_cnt_zero = uop_CMP_IMM_JZ_DEST(ir, count_reg, 0);
+    int jump_cycles   = uop_CMP_IMM_JLE_DEST(ir, IREG_cycles, 0);
+    int jump_exit     = uop_CMP_IMM_JNZ_DEST(ir, IREG_exit_request, 0);
+
+    uop_LOOP_JMP(ir, loop_label);
+
+    uop_set_jump_dest(ir, jump_cycles);
+    uop_set_jump_dest(ir, jump_exit);
     uop_MOV_IMM(ir, IREG_pc, cpu_state.oldpc);
     uop_JMP(ir, codegen_exit_rout);
 
@@ -337,15 +413,30 @@ static inline uint32_t
 ropREPE_CMPS_common(codeblock_t *block, ir_data_t *ir, uint32_t op_32, uint32_t op_pc, int step, int src_val, int dst_val, int flags_sub_op)
 {
     int count_reg = (op_32 & 0x200) ? IREG_ECX : IREG_CX;
+    int step_cycles = is486 ? 3 : 4;
+
+    codegen_accumulate_flush(ir);
 
     int jump_zero = uop_CMP_IMM_JZ_DEST(ir, count_reg, 0);
+
+    int loop_label = uop_LOOP_LABEL(ir);
 
     codegen_cmps_single(block, ir, op_32, step, src_val, dst_val, flags_sub_op);
 
     uop_SUB_IMM(ir, count_reg, count_reg, 1);
+    uop_SUB_IMM(ir, IREG_cycles, IREG_cycles, step_cycles);
+
+    uop_NOP_BARRIER(ir);
 
     int jump_mismatch = uop_CMP_IMM_JNZ_DEST(ir, IREG_flags_res, 0);
     int jump_cnt_zero = uop_CMP_IMM_JZ_DEST(ir, count_reg, 0);
+    int jump_cycles   = uop_CMP_IMM_JLE_DEST(ir, IREG_cycles, 0);
+    int jump_exit     = uop_CMP_IMM_JNZ_DEST(ir, IREG_exit_request, 0);
+
+    uop_LOOP_JMP(ir, loop_label);
+
+    uop_set_jump_dest(ir, jump_cycles);
+    uop_set_jump_dest(ir, jump_exit);
     uop_MOV_IMM(ir, IREG_pc, cpu_state.oldpc);
     uop_JMP(ir, codegen_exit_rout);
 
@@ -361,15 +452,30 @@ static inline uint32_t
 ropREPNE_CMPS_common(codeblock_t *block, ir_data_t *ir, uint32_t op_32, uint32_t op_pc, int step, int src_val, int dst_val, int flags_sub_op)
 {
     int count_reg = (op_32 & 0x200) ? IREG_ECX : IREG_CX;
+    int step_cycles = is486 ? 3 : 4;
+
+    codegen_accumulate_flush(ir);
 
     int jump_zero = uop_CMP_IMM_JZ_DEST(ir, count_reg, 0);
+
+    int loop_label = uop_LOOP_LABEL(ir);
 
     codegen_cmps_single(block, ir, op_32, step, src_val, dst_val, flags_sub_op);
 
     uop_SUB_IMM(ir, count_reg, count_reg, 1);
+    uop_SUB_IMM(ir, IREG_cycles, IREG_cycles, step_cycles);
+
+    uop_NOP_BARRIER(ir);
 
     int jump_match    = uop_CMP_IMM_JZ_DEST(ir, IREG_flags_res, 0);
     int jump_cnt_zero = uop_CMP_IMM_JZ_DEST(ir, count_reg, 0);
+    int jump_cycles   = uop_CMP_IMM_JLE_DEST(ir, IREG_cycles, 0);
+    int jump_exit     = uop_CMP_IMM_JNZ_DEST(ir, IREG_exit_request, 0);
+
+    uop_LOOP_JMP(ir, loop_label);
+
+    uop_set_jump_dest(ir, jump_cycles);
+    uop_set_jump_dest(ir, jump_exit);
     uop_MOV_IMM(ir, IREG_pc, cpu_state.oldpc);
     uop_JMP(ir, codegen_exit_rout);
 

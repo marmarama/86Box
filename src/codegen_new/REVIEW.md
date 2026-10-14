@@ -103,10 +103,11 @@ locals, instead of at every exit path.
 
 ## Performance concerns
 
-- **REP string ops exit to the dispatcher every iteration.** The interpreter processes
-  many iterations in one call. For Win98's `memcpy`/`memset` (REP MOVSD/STOSD) the JIT
-  version is likely slower than the interpreter. Loop inside the block, with a cycle
-  and exit-request check per iteration, or process bounded chunks.
+- **REP string ops exit to the dispatcher every iteration.** *(Resolved)*: Implemented in-block
+  backward loops (`UOP_LOOP_LABEL`, `UOP_LOOP_JMP`, `UOP_CMP_IMM_JLE_DEST`) across `REP MOVS`,
+  `REP STOS`, `REP LODS`, `REPE/REPNE SCAS`, and `REPE/REPNE CMPS` with `uop_NOP_BARRIER` register
+  writeback, per-iteration cycle deduction (`is486 ? 3 : 4`), and cycle expiry / `exit_request` polling.
+  Avoids thousands of block exits and dispatcher hash lookups for guest `memcpy`/`memset`.
 - **Condition-code evaluation falls back to C calls** (`jit_cond_*`) when flags aren't
   in the fast path. This makes linked `Jcc` less valuable until Phase 5.
 - **Code size.** Each `EXIT_BLOCK` emits about 100 bytes (cycle check, IRQ check, linked

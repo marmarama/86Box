@@ -251,17 +251,18 @@ However, the x86-64 backend in `codegen_new` was ported without general REX pref
     - Not yet recorded. The harness works; complete benchmarks to be captured.
 7. **[ ] Safety hardening (in progress, see `REVIEW.md`)**:
     - **Addressed**:
-      - **Intra-page Linking Policy (`LINK_SAME_PAGE`)**: Enabled `LINK_SAME_PAGE` (`0x20`) by default in `LINK_DEFAULT` (`0x3f`). Source and destination must share both guest physical and linear (virtual) pages (`phys >> 12` and `pc >> 12` match), preventing stale links across CR3/PTE updates while keeping `codegen_flush()` a no-op to eliminate 65,536-block scans during POST.
+      - **Intra-page Linking Policy (`LINK_SAME_PAGE`)**: Enabled `LINK_SAME_PAGE` (`0x20`) by default in `LINK_DEFAULT` (`0x37`). Source and destination must share both guest physical and linear (virtual) pages (`phys >> 12` and `pc >> 12` match), preventing stale links across CR3/PTE updates while keeping `codegen_flush()` a no-op to eliminate 65,536-block scans during POST.
       - **Architectural `cpu_state.pc` Upfront Writeback**: Moved `cpu_state.pc = target_pc` write to the top of `codegen_EXIT_BLOCK` before cycle/IRQ checks and direct branches.
       - **FPU TOP Safety**: Refused direct linking to `CODEBLOCK_STATIC_TOP` destinations to ensure runtime TOP verification via the C dispatcher.
       - **rel32 Reach Checks & `memcpy` Writes**: Added displacement range checks in `codegen_link_exit` (refusing links exceeding `int32_t` range) and `memcpy` writes in `patch_jmp_disp()` and `patch_disp32()`.
       - **Dispatcher Cleanup & 16-bit Target Masking**: Reset `last_block_nr` / `last_exit_idx` unconditionally at top of `exec386_dynarec_dyn()` and masked target PC to 16 bits for real/16-bit mode blocks.
       - **`BT/BTS/BTR/BTC` Signed Memory Bit Offsets**: Implemented arithmetic right shifts (`uop_SAR_IMM`) and sign-extension (`uop_MOVSX`) for memory bit-base displacements.
-      - **Asynchronous Event Checking & `cpu_state.exit_request`**: Added unified `exit_request` word in `cpu_state` tracking unmasked NMIs (`nmi && nmi_enable && nmi_mask`), SMIs (`smi_line`), single-step trap flag (`T_FLAG`), CPU reset (`x86_was_reset` / `cpu_init`), aborts/FPU exceptions, and `cpu_end_block_after_ins`. Emitted single check in `codegen_EXIT_BLOCK` to immediately abort linked chains back to C dispatcher, and guarded IRQ dispatch with `!cpu_end_block_after_ins` to respect the one-instruction STI interrupt shadow.
+      - **Asynchronous Event Checking & `cpu_state.exit_request`**: Added unified `exit_request` word in `cpu_state` tracking unmasked NMIs (`nmi && nmi_enable && nmi_mask`), SMIs (`smi_line`), single-step trap flag (`T_FLAG`), CPU reset (`x86_was_reset` / `cpu_init`), and aborts/FPU exceptions. Emitted single check in `codegen_EXIT_BLOCK` to immediately abort linked chains back to C dispatcher.
     - **Still Open**:
       - W^X page protection handling on hosts enforcing strict W^X.
       - SMC re-entrancy torture testing.
       - FreeDOS boot confirmation and full linked DOS benchmark suite measurements (Windows 98 desktop boot confirmed manually).
+      - Revisit enabling `LINK_REAL` by default: currently excluded from `LINK_DEFAULT` (`0x37`) because real-mode CS:IP aliasing and skipped C dispatcher state normalisation caused FreeDOS `COMMAND.COM` batch command lookup failures. Diagnose real-mode jump target masking and segment aliasing in `dynarec_link_previous_block` to re-enable safely.
 
 ### Phase 4b (not started): Indirect branches
 - `RET` and indirect `JMP`/`CALL` still return to the C dispatcher. A return-address cache or inline cache keyed by target PC would extend chaining to them.
@@ -347,4 +348,6 @@ To ensure functional correctness alongside performance gains throughout all phas
 - **Phase 2–4 Verification**:
   - Run self-modifying code torture tests (Doom engine self-patching, DOS/4GW installers) to verify block invalidation and unlinking.
   - Verify interrupt delivery latency and cycle accounting accuracy under block chaining.
+  - **Revisit Enabling `LINK_REAL` by Default**: 16-bit real-mode linking (`LINK_REAL = 1 << 3`) is currently excluded from `LINK_DEFAULT` (`0x37`) after FreeDOS `COMMAND.COM` command matching regressions. Investigate `CS:IP` aliasing and 16-bit target address masking in `dynarec_link_previous_block` to re-enable real-mode block chaining by default without breaking DOS environments.
+
 
