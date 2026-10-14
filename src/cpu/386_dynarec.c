@@ -481,19 +481,23 @@ block_ended:
 
 #ifdef USE_NEW_DYNAREC
 static inline void
-dynarec_link_previous_block(codeblock_t *dst_block)
+dynarec_link_previous_block(codeblock_t *dst_block, uint16_t prev_block_nr, int prev_exit_idx)
 {
-    if (cpu_state.last_block_nr) {
-        codeblock_t *src_block = &codeblock[cpu_state.last_block_nr];
-        int exit_idx = cpu_state.last_exit_idx;
-        cpu_state.last_block_nr = 0;
+    if (prev_block_nr) {
+        codeblock_t *src_block = &codeblock[prev_block_nr];
+        int exit_idx = prev_exit_idx;
         if (src_block->valid &&
-            src_block->_cs == dst_block->_cs &&
-            src_block->links[exit_idx].target_pc == (dst_block->pc - dst_block->_cs) &&
-            !((src_block->status ^ dst_block->status) & (CPU_STATUS_FLAGS | CPU_STATUS_MASK)) &&
-            (!(dst_block->flags & CODEBLOCK_STATIC_TOP) || (dst_block->TOP == (cpu_state.TOP & 7))) &&
-            !(dst_block->flags & CODEBLOCK_IN_DIRTY_LIST)) {
-            codegen_link_exit(src_block, exit_idx, dst_block);
+            src_block->_cs == dst_block->_cs) {
+            uint32_t dst_pc = (src_block->status & CPU_STATUS_USE32) ?
+                              (dst_block->pc - dst_block->_cs) :
+                              ((dst_block->pc - dst_block->_cs) & 0xffff);
+            if (src_block->links[exit_idx].target_pc == dst_pc &&
+                !((src_block->status ^ dst_block->status) & (CPU_STATUS_FLAGS | CPU_STATUS_MASK)) &&
+                (!(dst_block->flags & CODEBLOCK_STATIC_TOP) ||
+                 ((src_block->flags & CODEBLOCK_STATIC_TOP) && (src_block->TOP == dst_block->TOP))) &&
+                !(dst_block->flags & CODEBLOCK_IN_DIRTY_LIST)) {
+                codegen_link_exit(src_block, exit_idx, dst_block);
+            }
         }
     }
 }
@@ -506,6 +510,11 @@ static __inline void
 #endif
 exec386_dynarec_dyn(void)
 {
+#ifdef USE_NEW_DYNAREC
+    uint16_t prev_block_nr = cpu_state.last_block_nr;
+    int      prev_exit_idx = cpu_state.last_exit_idx;
+    cpu_state.last_block_nr = 0;
+#endif
     uint32_t start_pc  = 0;
     uint32_t phys_addr = get_phys(cs + cpu_state.pc);
     int      hash      = HASH(phys_addr);
@@ -704,7 +713,7 @@ exec386_dynarec_dyn(void)
 #    ifndef USE_NEW_DYNAREC
         codeblock_hash[hash] = block;
 #    else
-        dynarec_link_previous_block(block);
+        dynarec_link_previous_block(block, prev_block_nr, prev_exit_idx);
 #    endif
         inrecomp = 1;
         code();
@@ -815,7 +824,7 @@ exec386_dynarec_dyn(void)
         if ((!cpu_state.abrt || (cpu_state.abrt & ABRT_EXPECTED)) && !new_ne && !x86_was_reset && !cpu_fetch_device) {
             codegen_block_end_recompile(block);
 #    ifdef USE_NEW_DYNAREC
-            dynarec_link_previous_block(block);
+            dynarec_link_previous_block(block, prev_block_nr, prev_exit_idx);
 #    endif
         }
 

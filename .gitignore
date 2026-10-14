@@ -69,6 +69,7 @@ CMakeLists.txt.user
 
 # General debugging sessions
 86box.cfg
+benchmark_results.log
 *.patch
 *.*.orig
 *.*.rej

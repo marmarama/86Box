@@ -269,10 +269,6 @@ flushmmucache_nopc(void)
             writelookup[c]               = 0xffffffff;
         }
     }
-
-#ifdef USE_DYNAREC
-    codegen_flush();
-#endif
 }
 
 void

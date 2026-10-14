@@ -751,12 +751,12 @@ ropBT_common(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchda
         if (!is_imm) {
             int bit_reg_idx = (fetchdat >> 3) & 7;
             if (is_op32) {
-                uop_SHR_IMM(ir, IREG_temp1, IREG_32(bit_reg_idx), 5);
+                uop_SAR_IMM(ir, IREG_temp1, IREG_32(bit_reg_idx), 5);
                 uop_SHL_IMM(ir, IREG_temp1, IREG_temp1, 2);
                 uop_ADD(ir, IREG_eaaddr, IREG_eaaddr, IREG_temp1);
             } else {
-                uop_MOVZX(ir, IREG_temp1, IREG_16(bit_reg_idx));
-                uop_SHR_IMM(ir, IREG_temp1, IREG_temp1, 4);
+                uop_MOVSX(ir, IREG_temp1, IREG_16(bit_reg_idx));
+                uop_SAR_IMM(ir, IREG_temp1, IREG_temp1, 4);
                 uop_SHL_IMM(ir, IREG_temp1, IREG_temp1, 1);
                 uop_ADD(ir, IREG_eaaddr, IREG_eaaddr, IREG_temp1);
             }

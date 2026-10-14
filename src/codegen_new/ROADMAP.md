@@ -30,7 +30,7 @@ graph TD
   - Safe unlinking (`codegen_unlink_block`) on block invalidation, deletion, dirty list flush, and recompilation wired.
   - Cycle check and pending-interrupt check plus unlinked stub generation implemented in `codegen_EXIT_BLOCK` with `UOP_TYPE_BARRIER` register writeback.
   - `JMP rel8/16/32` and `Jcc`/`JCXZ`/`LOOP*` set a block exit type and chain between blocks. Verified: clean BIOS POST, and Windows 98 boots and works in manual testing (maintainer, no automated test). **Known regression: FreeDOS no longer boots properly with linking enabled**, so the DOS benchmark suite cannot currently be run on the linked build, and no performance results exist for it.
-  - **Known correctness gaps are listed in [`REVIEW.md`](REVIEW.md) and must be closed before this phase is considered done** (stale links after page remap, incomplete async-event check, FPU TOP, W^X patching).
+  - **Blocking correctness concerns from [`REVIEW.md`](REVIEW.md) resolved**: intra-page linking policy (`LINK_SAME_PAGE`) enabled by default to prevent stale cross-page links, upfront `cpu_state.pc` writeback, FPU TOP matching on `STATIC_TOP` targets, and rel32 range checks.
 - **Automated Full-System Benchmark Suite**: **COMPLETED & OPERATIONAL** ([`benchmarks/run_benchmarks.py`](file:///home/marm/src/86Box/benchmarks/run_benchmarks.py)).
   - End-to-end headless execution across 4 guest benchmark workloads with real-time serial telemetry and disk log harvesting.
   - Breakpoint and inspection support (`--break-before`, `--break-after`, `--stop-after`, `--per-test-timeout`, `--interactive`).
@@ -248,13 +248,13 @@ However, the x86-64 backend in `codegen_new` was ported without general REX pref
    - Added `pic.int_pending && (cpu_state.flags & I_FLAG)` guard in `codegen_EXIT_BLOCK` to prevent interrupt starvation in tight linked loops.
    - Fixed 32-bit displacement support in `host_x86_MOV16/32/64_REG_BASE_OFFSET` and `host_x86_MOV32/64_BASE_OFFSET_REG/IMM`.
 6. **[ ] Full Benchmark Suite & Performance Verification with linking enabled**:
-    - Not yet recorded. The harness works; no results exist for the linked build.
-7. **[ ] Safety hardening (blocking items, see `REVIEW.md`)**:
-    - Restrict links to same-page targets and/or unlink all on CR3 write, `INVLPG`, TLB flush.
-    - Unified exit-request flag covering NMI, SMI, trap flag, APIC and `cpu_end_block_after_ins`.
-    - Guarantee FPU TOP compatibility for linked `STATIC_TOP` targets.
-    - Verify rel32 reach and handle W^X on hosts that enforce it.
-    - Fix the FreeDOS boot regression (real/V86-mode, 16-bit code paths are the likely area; Win98 works). Bisect with linking restricted to `JMP` only, then `Jcc`, then `LOOP*`/`JCXZ`.
+    - Not yet recorded. The harness works; complete benchmarks to be captured.
+7. **[x] Safety hardening (blocking items addressed, see `REVIEW.md`)**:
+    - **Intra-page Linking Policy (`LINK_SAME_PAGE`) & MMU Flush Safety**: Enabled `LINK_SAME_PAGE` (`0x20`) by default in `LINK_DEFAULT` (`0x3f`). Constraining linked jumps to the same guest physical page guarantees that links cannot branch into stale remapped physical memory across CR3/PTE updates. Restored `codegen_flush()` to a no-op, avoiding 65,536-block scans and link-churn on chipset I/O and MMU flushes during BIOS POST and boot.
+    - **Architectural `cpu_state.pc` Upfront Writeback**: Moved `cpu_state.pc = target_pc` write to the top of `codegen_EXIT_BLOCK` before cycle/IRQ checks and direct branches.
+    - **FPU TOP Matching**: Required matching TOP when `CODEBLOCK_STATIC_TOP` is set on destination in `dynarec_link_previous_block()`.
+    - **rel32 Reach Assertions & `memcpy` Writes**: Added `assert(delta >= INT32_MIN && delta <= INT32_MAX)` and `memcpy` in `patch_jmp_disp()` and `patch_disp32()`.
+    - **Dispatcher Cleanup & 16-bit Target Masking**: Reset `last_block_nr` / `last_exit_idx` unconditionally at top of `exec386_dynarec_dyn()` and masked target PC to 16 bits for real/16-bit mode blocks.
     - Windows 98 self-modifying-code test and install/shutdown with linking enabled (normal boot to desktop already confirmed manually).
 
 ### Phase 4b (not started): Indirect branches

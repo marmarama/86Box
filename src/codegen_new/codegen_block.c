@@ -1119,7 +1119,7 @@ codegen_block_end_recompile(codeblock_t *block)
 void
 codegen_flush(void)
 {
-    codegen_unpatch_all_links();
+    return;
 }
 
 void

@@ -1,9 +1,11 @@
 #if defined __amd64__ || defined _M_X64
 
+#    include <assert.h>
 #    include <stdint.h>
 #    include <stdio.h>
 #    include <string.h>
 #    include <86box/86box.h>
+#    include <86box/nmi.h>
 #    include <86box/pic.h>
 #    include "cpu.h"
 #    include <86box/mem.h>
@@ -893,6 +895,15 @@ codegen_JMP(codeblock_t *block, uop_t *uop)
     return 0;
 }
 
+static inline void
+patch_disp32(uint32_t *disp_ptr, const void *target)
+{
+    intptr_t delta = (intptr_t) ((const uint8_t *) target - ((const uint8_t *) disp_ptr + 4));
+    assert(delta >= INT32_MIN && delta <= INT32_MAX);
+    uint32_t disp = (uint32_t) delta;
+    memcpy(disp_ptr, &disp, sizeof(disp));
+}
+
 static int
 codegen_EXIT_BLOCK(codeblock_t *block, uop_t *uop)
 {
@@ -916,7 +927,7 @@ codegen_EXIT_BLOCK(codeblock_t *block, uop_t *uop)
     host_x86_CMP32_BASE_OFFSET_IMM(block, REG_RBP, cycles_disp, 0);
     uint32_t *jle_disp = host_x86_JLE_long(block);
 
-    /* 2. Interrupt check:
+    /* 2. Maskable hardware interrupt check:
           If pic.int_pending != 0 && (cpu_state.flags & I_FLAG) != 0,
           exit to C dispatch loop to service the pending interrupt.
     */
@@ -943,8 +954,7 @@ codegen_EXIT_BLOCK(codeblock_t *block, uop_t *uop)
     block->links[exit_idx].unlinked_target = unlinked_stub;
 
     /* Patch initial displacement to point to unlinked_stub: */
-    uint32_t initial_disp = (uint32_t) (unlinked_stub - ((uint8_t *) block->links[exit_idx].jmp_disp_ptr + 4));
-    memcpy(block->links[exit_idx].jmp_disp_ptr, &initial_disp, sizeof(initial_disp));
+    patch_disp32(block->links[exit_idx].jmp_disp_ptr, unlinked_stub);
 
     host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, last_block_nr) - 128, get_block_nr(block));
     host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, last_exit_idx) - 128, exit_idx);
@@ -952,10 +962,8 @@ codegen_EXIT_BLOCK(codeblock_t *block, uop_t *uop)
 
     /* 5. Exit due to cycle expiry or pending interrupt: */
     uint8_t *exit_cycles_stub = &block_write_data[block_pos];
-    uint32_t jle_disp_val = (uint32_t) (exit_cycles_stub - ((uint8_t *) jle_disp + 4));
-    uint32_t jnz_disp_val = (uint32_t) (exit_cycles_stub - ((uint8_t *) jnz_irq + 4));
-    memcpy(jle_disp, &jle_disp_val, sizeof(jle_disp_val));
-    memcpy(jnz_irq, &jnz_disp_val, sizeof(jnz_disp_val));
+    patch_disp32(jle_disp, exit_cycles_stub);
+    patch_disp32(jnz_irq, exit_cycles_stub);
 
     host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, last_block_nr) - 128, 0);
     host_x86_JMP(block, codegen_exit_rout);

@@ -1,0 +1,91 @@
+====================================================== 
+86Box Automated Dynarec Benchmark Suite               
+System: Intel Pentium II on 440BX                     
+====================================================== 
+[START] DOOM demo3                                     
+
+P_Init: Checking cmd-line parameters...
+Playing demo demo3.lmp.
+V_Init: allocate screens.
+M_LoadDefaults: Load system defaults.
+Z_Init: Init zone memory allocation daemon. 
+DPMI memory: 0x6e1c00, 0x6c1c00 allocated for zone
+W_Init: Init WADfiles.
+        adding doom1.wad
+        couldn't open demo3.lmp
+        shareware version.
+M_Init: Init miscellaneous info.
+R_Init: Init DOOM refresh daemon - [                   ]...................
+P_Init: Init Playloop state.
+I_Init: Setting up machine state.
+I_StartupDPMI
+I_StartupMouse
+Mouse: detected
+CyberMan: Wrong mouse driver - no SWIFT support (AX=53c1).
+I_StartupJoystick
+I_StartupKeyboard
+I_StartupSound
+I_StartupTimer()
+  calling DMX_Init
+D_CheckNetGame: Checking network game status.
+startskill 2  deathmatch: 0  startmap: 1  startepisode: 1
+player 1 of 1 (1 nodes)
+S_Init: Setting up sound.
+HU_Init: Setting up heads up display.
+ST_Init: Init status bar.
+timed 2134 gametics in 12 realtics
+[FINISH] DOOM demo3                                    
+[START] PCPBENCH vga                                   
+Erreichte Framerate im VESA Modus 100 (640x400 8bpp LFB): 62.2 fps
+
+[FINISH] PCPBENCH vga                                  
+[START] DHRYSTONE                                      
+
+Dhrystone Benchmark, Version 2.1 (Language: C or C++)
+
+No run time input data
+
+Compiler        Watcom C/C++ 10.5 Dos4GW
+Optimisation       No optimisation
+Register option not selected
+
+       10000 runs   0.00 seconds 
+      100000 runs   0.22 seconds 
+      200000 runs   0.43 seconds 
+      400000 runs   0.93 seconds 
+      800000 runs   1.81 seconds 
+     1600000 runs   3.68 seconds 
+     3200000 runs   7.36 seconds 
+
+Final values (* implementation-dependent):
+
+Int_Glob:      O.K.  5  Bool_Glob:     O.K.  1
+Ch_1_Glob:     O.K.  A  Ch_2_Glob:     O.K.  B
+Arr_1_Glob[8]: O.K.  7  Arr_2_Glob8/7: O.K.     3200010
+Ptr_Glob->              Ptr_Comp:       *    4464836
+  Discr:       O.K.  0  Enum_Comp:     O.K.  2
+  Int_Comp:    O.K.  17 Str_Comp:      O.K.  DHRYSTONE PROGRAM, SOME STRING
+Next_Ptr_Glob->         Ptr_Comp:       *    4464836 same as above
+  Discr:       O.K.  0  Enum_Comp:     O.K.  1
+  Int_Comp:    O.K.  18 Str_Comp:      O.K.  DHRYSTONE PROGRAM, SOME STRING
+Int_1_Loc:     O.K.  5  Int_2_Loc:     O.K.  13
+Int_3_Loc:     O.K.  7  Enum_Loc:      O.K.  1
+Str_1_Loc:                             O.K.  DHRYSTONE PROGRAM, 1'ST STRING
+Str_2_Loc:                             O.K.  DHRYSTONE PROGRAM, 2'ND STRING
+
+Microseconds for one run through Dhrystone:         2.30 
+Dhrystones per Second:                          434783 
+VAX  MIPS rating =                                247.46 
+
+
+A new results file will have been created in the same directory as the
+.EXE files if one did not already exist. If you made a mistake on input, 
+you can use a text editor to correct it, delete the results or copy 
+them to a different file name. If you intend to run multiple tests you
+you may wish to rename DHRY.TXT with a more informative title.
+
+Please submit feedback and results files as a posting in Section 12
+or to Roy_Longbottom@compuserve.com
+
+[FINISH] DHRYSTONE                                     
+[START] QUAKE demo1                                    
