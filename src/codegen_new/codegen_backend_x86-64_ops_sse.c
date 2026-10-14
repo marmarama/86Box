@@ -221,10 +221,14 @@ host_x86_MOVQ_ABS_XREG(codeblock_t *block, void *p, int src_reg)
     if (src_reg & 8)
         fatal("host_x86_MOVQ_ABS_REG reg & 8\n");
 
-    if (offset >= -128 && offset < 127) {
+    if (offset >= -128 && offset <= 127) {
         codegen_alloc_bytes(block, 5);
-        codegen_addbyte4(block, 0x66, 0x0f, 0xd6, 0x45 | (src_reg << 3)); /*MOVQ offset[EBP], src_reg*/
+        codegen_addbyte4(block, 0x66, 0x0f, 0xd6, 0x45 | (src_reg << 3)); /*MOVQ offset[RBP], src_reg*/
         codegen_addbyte(block, offset);
+    } else if ((uintptr_t) p >= (uintptr_t) &cpu_state && (uintptr_t) p < (uintptr_t) &cpu_state + sizeof(cpu_state_t)) {
+        codegen_alloc_bytes(block, 8);
+        codegen_addbyte4(block, 0x66, 0x0f, 0xd6, 0x85 | (src_reg << 3)); /*MOVQ offset[RBP], src_reg*/
+        codegen_addlong(block, offset);
     } else {
         if ((uintptr_t) p >> 32)
             fatal("host_x86_MOVQ_ABS_REG - out of range %p\n", p);
@@ -295,15 +299,19 @@ host_x86_MOVQ_XREG_ABS(codeblock_t *block, int dst_reg, void *p)
     if (dst_reg & 8)
         fatal("host_x86_MOVQ_REG_ABS reg & 8\n");
 
-    if (offset >= -128 && offset < 127) {
+    if (offset >= -128 && offset <= 127) {
         codegen_alloc_bytes(block, 5);
-        codegen_addbyte4(block, 0xf3, 0x0f, 0x7e, 0x45 | (dst_reg << 3)); /*MOVQ offset[EBP], src_reg*/
+        codegen_addbyte4(block, 0xf3, 0x0f, 0x7e, 0x45 | (dst_reg << 3)); /*MOVQ offset[RBP], dst_reg*/
         codegen_addbyte(block, offset);
+    } else if ((uintptr_t) p >= (uintptr_t) &cpu_state && (uintptr_t) p < (uintptr_t) &cpu_state + sizeof(cpu_state_t)) {
+        codegen_alloc_bytes(block, 8);
+        codegen_addbyte4(block, 0xf3, 0x0f, 0x7e, 0x85 | (dst_reg << 3)); /*MOVQ offset[RBP], dst_reg*/
+        codegen_addlong(block, offset);
     } else {
         if ((uintptr_t) p >> 32)
             fatal("host_x86_MOVQ_REG_ABS - out of range %p\n", p);
         codegen_alloc_bytes(block, 9);
-        codegen_addbyte4(block, 0xf3, 0x0f, 0x7e, 0x04 | (dst_reg << 3)); /*MOVQ [p], src_reg*/
+        codegen_addbyte4(block, 0xf3, 0x0f, 0x7e, 0x04 | (dst_reg << 3)); /*MOVQ [p], dst_reg*/
         codegen_addbyte(block, 0x25);
         codegen_addlong(block, (uint32_t) (uintptr_t) p);
     }

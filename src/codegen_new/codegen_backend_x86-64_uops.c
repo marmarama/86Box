@@ -927,7 +927,15 @@ codegen_EXIT_BLOCK(codeblock_t *block, uop_t *uop)
     host_x86_CMP32_BASE_OFFSET_IMM(block, REG_RBP, cycles_disp, 0);
     uint32_t *jle_disp = host_x86_JLE_long(block);
 
-    /* 2. Maskable hardware interrupt check:
+    /* 2. Asynchronous event check (NMI, SMI, trap flag, reset, abrt, etc.):
+          cmp dword ptr [rbp + (offsetof(cpu_state_t, exit_request) - 128)], 0
+          jne .Lexit_cycles
+    */
+    int exit_disp = (int) offsetof(cpu_state_t, exit_request) - 128;
+    host_x86_CMP32_BASE_OFFSET_IMM(block, REG_RBP, exit_disp, 0);
+    uint32_t *jne_disp = host_x86_JNZ_long(block);
+
+    /* 3. Maskable hardware interrupt check:
           If pic.int_pending != 0 && (cpu_state.flags & I_FLAG) != 0,
           exit to C dispatch loop to service the pending interrupt.
           Note: uses host REG_EAX and REG_EDX as scratch registers; this is safe
@@ -945,12 +953,12 @@ codegen_EXIT_BLOCK(codeblock_t *block, uop_t *uop)
 
     *no_irq = (uint8_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) (no_irq + 1));
 
-    /* 3. Direct branch instruction (patched to target_block->direct_entry_pos when linked):
+    /* 4. Direct branch instruction (patched to target_block->direct_entry_pos when linked):
           jmp rel32
     */
     block->links[exit_idx].jmp_disp_ptr = host_x86_JMP_long(block);
 
-    /* 4. Unlinked stub:
+    /* 5. Unlinked stub:
           When unlinked, the branch jumps here.
     */
     uint8_t *unlinked_stub = &block_write_data[block_pos];
@@ -963,9 +971,10 @@ codegen_EXIT_BLOCK(codeblock_t *block, uop_t *uop)
     host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, last_exit_idx) - 128, exit_idx);
     host_x86_JMP(block, codegen_exit_rout);
 
-    /* 5. Exit due to cycle expiry or pending interrupt: */
+    /* 6. Exit due to cycle expiry, async event, or pending interrupt: */
     uint8_t *exit_cycles_stub = &block_write_data[block_pos];
     patch_disp32(jle_disp, exit_cycles_stub);
+    patch_disp32(jne_disp, exit_cycles_stub);
     patch_disp32(jnz_irq, exit_cycles_stub);
 
     host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, last_block_nr) - 128, 0);

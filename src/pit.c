@@ -442,6 +442,7 @@ void
 pit_nmi_timer_ps2(int new_out, UNUSED(int old_out), UNUSED(void *priv))
 {
     nmi = new_out;
+    cpu_update_nmi();
 
     if (nmi)
         nmi_auto_clear = 1;
@@ -1557,6 +1558,7 @@ void
 pit_nmi_timer_ps2(int new_out, UNUSED(int old_out), UNUSED(void *priv))
 {
     nmi = new_out;
+    cpu_update_nmi();
 
     if (nmi)
         nmi_auto_clear = 1;

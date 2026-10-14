@@ -1499,6 +1499,7 @@ enter_smm_check(int in_hlt)
 #endif
 
         smi_line = 0;
+        cpu_state.exit_request &= ~EXIT_STATUS_SMI;
     }
 }
 
@@ -2200,6 +2201,7 @@ smi_raise(void)
         cpu_fast_off_advance();
 
     smi_line = 1;
+    cpu_state.exit_request |= EXIT_STATUS_SMI;
 }
 
 void
@@ -2214,6 +2216,7 @@ nmi_raise(void)
     }
 
     nmi = 1;
+    cpu_update_nmi();
 }
 
 #ifndef USE_DYNAREC

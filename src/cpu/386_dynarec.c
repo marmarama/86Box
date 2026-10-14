@@ -513,6 +513,8 @@ exec386_dynarec_dyn(void)
     uint16_t prev_block_nr = cpu_state.last_block_nr;
     int      prev_exit_idx = cpu_state.last_exit_idx;
     cpu_state.last_block_nr = 0;
+    x86_was_reset = 0;
+    cpu_update_exit_request();
 #endif
     uint32_t start_pc  = 0;
     uint32_t phys_addr = get_phys(cs + cpu_state.pc);
@@ -976,6 +978,7 @@ exec386_dynarec(int32_t cycs)
         while (cycles > 0) {
             oldcs           = CS;
             oldcpl          = CPL;
+            cpu_update_exit_request();
 #    ifndef USE_NEW_DYNAREC
             cpu_state.oldpc = cpu_state.pc;
             cpu_state.op32  = use32;
@@ -1000,6 +1003,7 @@ exec386_dynarec(int32_t cycs)
             if (cpu_init) {
                 cpu_init = 0;
                 resetx86();
+                cpu_update_exit_request();
             }
 
             if (cpu_state.abrt) {
@@ -1047,6 +1051,7 @@ exec386_dynarec(int32_t cycs)
 #    else
                 nmi = 0;
 #    endif
+                cpu_update_nmi();
             } else if ((cpu_state.flags & I_FLAG) && pic.int_pending) {
                 vector = picinterrupt();
                 if (vector != -1) {

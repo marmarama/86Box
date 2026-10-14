@@ -274,6 +274,8 @@ reset_common(int hard)
     nmi_enable     = 1;
     nmi            = 0;
     nmi_auto_clear = 0;
+    cpu_update_nmi();
+    cpu_update_exit_request();
 
     use32          = 0;
     cpu_cur_status = 0;
@@ -347,6 +349,7 @@ reset_common(int hard)
         flushmmucache();
     cpu_cache_invalidate();
     x86_was_reset = 1;
+    cpu_state.exit_request |= EXIT_STATUS_RESET;
     cpu_alt_reset = 0;
 
     cpu_ven_reset();

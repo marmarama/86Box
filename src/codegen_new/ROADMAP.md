@@ -257,8 +257,8 @@ However, the x86-64 backend in `codegen_new` was ported without general REX pref
       - **rel32 Reach Checks & `memcpy` Writes**: Added displacement range checks in `codegen_link_exit` (refusing links exceeding `int32_t` range) and `memcpy` writes in `patch_jmp_disp()` and `patch_disp32()`.
       - **Dispatcher Cleanup & 16-bit Target Masking**: Reset `last_block_nr` / `last_exit_idx` unconditionally at top of `exec386_dynarec_dyn()` and masked target PC to 16 bits for real/16-bit mode blocks.
       - **`BT/BTS/BTR/BTC` Signed Memory Bit Offsets**: Implemented arithmetic right shifts (`uop_SAR_IMM`) and sign-extension (`uop_MOVSX`) for memory bit-base displacements.
+      - **Asynchronous Event Checking & `cpu_state.exit_request`**: Added unified `exit_request` word in `cpu_state` tracking unmasked NMIs (`nmi && nmi_enable && nmi_mask`), SMIs (`smi_line`), single-step trap flag (`T_FLAG`), CPU reset (`x86_was_reset` / `cpu_init`), aborts/FPU exceptions, and `cpu_end_block_after_ins`. Emitted single check in `codegen_EXIT_BLOCK` to immediately abort linked chains back to C dispatcher, and guarded IRQ dispatch with `!cpu_end_block_after_ins` to respect the one-instruction STI interrupt shadow.
     - **Still Open**:
-      - Full asynchronous event coverage (NMI, SMI, trap flag, APIC, STI interrupt shadow).
       - W^X page protection handling on hosts enforcing strict W^X.
       - SMC re-entrancy torture testing.
       - FreeDOS boot confirmation and full linked DOS benchmark suite measurements (Windows 98 desktop boot confirmed manually).

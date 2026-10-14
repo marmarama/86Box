@@ -323,7 +323,29 @@ host_x86_CMP32_BASE_OFFSET_IMM(codeblock_t *block, int base_reg, int offset, int
             }
         }
     } else {
-        fatal("CMP32_BASE_OFFSET_IMM - offset %i\n", offset);
+        if (imm_data >= -128 && imm_data <= 127) {
+            codegen_alloc_bytes(block, 8);
+            if (base_reg & 8)
+                codegen_addbyte(block, rex_byte(0, 0, 0, base_reg));
+            if ((base_reg & 7) == 4) {
+                codegen_addbyte3(block, 0x83, 0x80 | RM_OP_CMP | (base_reg & 7), 0x24);
+            } else {
+                codegen_addbyte2(block, 0x83, 0x80 | RM_OP_CMP | (base_reg & 7));
+            }
+            codegen_addlong(block, offset);
+            codegen_addbyte(block, imm_data & 0xff);
+        } else {
+            codegen_alloc_bytes(block, 11);
+            if (base_reg & 8)
+                codegen_addbyte(block, rex_byte(0, 0, 0, base_reg));
+            if ((base_reg & 7) == 4) {
+                codegen_addbyte3(block, 0x81, 0x80 | RM_OP_CMP | (base_reg & 7), 0x24);
+            } else {
+                codegen_addbyte2(block, 0x81, 0x80 | RM_OP_CMP | (base_reg & 7));
+            }
+            codegen_addlong(block, offset);
+            codegen_addlong(block, imm_data);
+        }
     }
 }
 

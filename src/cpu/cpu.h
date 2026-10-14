@@ -447,6 +447,8 @@ typedef struct {
 
     int sf_exc;
 #endif
+
+    uint32_t exit_request;
 } cpu_state_t;
 
 #define in_smm   cpu_state._in_smm
@@ -941,5 +943,45 @@ extern void    wait_cycs(int c, int bus);
 #define prefetch_queue_get_suspended !prefetch_queue_get_prefetching
 
 extern void    fpu_postamble(void);
+
+#define EXIT_STATUS_NMI        (1 << 0)
+#define EXIT_STATUS_SMI        (1 << 1)
+#define EXIT_STATUS_TRAP       (1 << 2)
+#define EXIT_STATUS_RESET      (1 << 3)
+#define EXIT_STATUS_ABRT       (1 << 4)
+#define EXIT_STATUS_BLOCK_END  (1 << 5)
+#define EXIT_STATUS_FORCE      (1 << 6)
+
+extern int nmi;
+extern int nmi_mask;
+extern int nmi_enable;
+extern int x86_was_reset;
+extern int cpu_init;
+
+static inline void
+cpu_update_nmi(void)
+{
+    if (nmi && nmi_enable && nmi_mask)
+        cpu_state.exit_request |= EXIT_STATUS_NMI;
+    else
+        cpu_state.exit_request &= ~EXIT_STATUS_NMI;
+}
+
+static inline void
+cpu_update_exit_request(void)
+{
+    uint32_t req = 0;
+    if (cpu_state._smi_line)
+        req |= EXIT_STATUS_SMI;
+    if (nmi && nmi_enable && nmi_mask)
+        req |= EXIT_STATUS_NMI;
+    if (cpu_state.flags & T_FLAG)
+        req |= EXIT_STATUS_TRAP;
+    if (x86_was_reset || cpu_init)
+        req |= EXIT_STATUS_RESET;
+    if (cpu_state.abrt || new_ne)
+        req |= EXIT_STATUS_ABRT;
+    cpu_state.exit_request = req;
+}
 
 #endif /*EMU_CPU_H*/
