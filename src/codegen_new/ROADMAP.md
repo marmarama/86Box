@@ -16,7 +16,7 @@ graph TD
 ## Current Status & Empirical Results (October 2026)
 
 ### Status Summary
-- **Phase 0**: **COMPLETED**. Dead prologue/epilogue stack traffic eliminated, bounds check redundancies streamlined, conditionalized FPU preservation.
+- **Phase 0**: **COMPLETED**. Dead prologue/epilogue stack traffic eliminated, bounds check redundancies streamlined. (XMM6/XMM7 preservation on Win64 is currently *unconditional* in the prologue/exit routine: linked blocks must share one uniform stack frame, so the earlier "only if `CODEBLOCK_HAS_FPU`" optimisation was intentionally dropped.)
 - **Phase 1 (General Host Registers)**: **COMPLETED (8 Regs)**.
   - General allocatable host registers expanded from 3 to 8 (`RAX, RBX, RDX, R10, R11, R13, R14, R15`).
   - Generalized REX prefix generation (`rex_byte`, `host_x86_rex_emit`) implemented across instruction emitters.
@@ -25,11 +25,12 @@ graph TD
   - Conditional moves (`CMOVcc`, 0F 40–4F), Set byte on condition (`SETcc`, 0F 90–9F), Bit tests/scans (`BT/BTS/BTR/BTC`, `BSF/BSR`), Byte swap (`BSWAP`), Atomic operations (`CMPXCHG`, `XADD`), and String operations (`MOVS`, `STOS`, `LODS`, `SCAS`, `CMPS` with `REP/REPE/REPNE`). Verified full DOS benchmark suite and stable Windows 98 guest boot to desktop.
 - **Phase 3 (Memory Load/Store Fast-Path Inlining)**: **COMPLETED**.
   - Host register `R12` pinned to `readlookup2` base, inlined TLB check and direct host RAM read/write fast paths across all integer load and store uOps.
-- **Phase 4 (Direct Block Chaining)**: **IN PROGRESS (Unconditional Jumps Working)**.
+- **Phase 4 (Direct Block Chaining)**: **IN PROGRESS (experimental; not yet validated or benchmarked)**.
   - Core link structures (`codeblock_link_t`, `first_incoming_link`, `links[2]`), ID encoding, and incoming doubly-linked lists implemented.
-  - Safe unlinking (`codegen_unlink_block`) on block invalidation, deletion, dirty list flush, and recompilation fully wired.
-  - Cycle check (`CMP [RBP + cycles], 0` / `JLE .Lexit_cycles`) and unlinked stub generation implemented in `codegen_EXIT_BLOCK` with `UOP_TYPE_BARRIER` register writeback.
-  - Unconditional jumps (`JMP rel8/16/32`) now chain directly between blocks in native host machine code without returning to C dispatcher. Verified with clean 60 Hz BIOS POST.
+  - Safe unlinking (`codegen_unlink_block`) on block invalidation, deletion, dirty list flush, and recompilation wired.
+  - Cycle check and pending-interrupt check plus unlinked stub generation implemented in `codegen_EXIT_BLOCK` with `UOP_TYPE_BARRIER` register writeback.
+  - `JMP rel8/16/32` and `Jcc`/`JCXZ`/`LOOP*` set a block exit type and chain between blocks. Verified: clean BIOS POST, and Windows 98 boots and works in manual testing (maintainer, no automated test). **Known regression: FreeDOS no longer boots properly with linking enabled**, so the DOS benchmark suite cannot currently be run on the linked build, and no performance results exist for it.
+  - **Known correctness gaps are listed in [`REVIEW.md`](REVIEW.md) and must be closed before this phase is considered done** (stale links after page remap, incomplete async-event check, FPU TOP, W^X patching).
 - **Automated Full-System Benchmark Suite**: **COMPLETED & OPERATIONAL** ([`benchmarks/run_benchmarks.py`](file:///home/marm/src/86Box/benchmarks/run_benchmarks.py)).
   - End-to-end headless execution across 4 guest benchmark workloads with real-time serial telemetry and disk log harvesting.
   - Breakpoint and inspection support (`--break-before`, `--break-after`, `--stop-after`, `--per-test-timeout`, `--interactive`).
@@ -45,6 +46,9 @@ All benchmarks executed on an emulated Intel Pentium II on 440BX chipset under F
 | **PCPBench (Mode 100 VESA 640x400)** | VESA LFB & Mixed 3D Geometry | **60.40 FPS** | **60.20 FPS** | **-0.3%** |
 | **Dhrystone 2.1 (Watcom Dos4GW)** | Pure 32-bit DPMI Integer Compute | **418,848 Ops/sec** (238.4 VAX MIPS) | **416,125 Ops/sec** (236.8 VAX MIPS) | **-0.7%** |
 | **Total Host Wall-Clock Time** | Complete Automated Suite Run | **115.93 s** | **104.37 s** | **-10.0% faster** :zap: |
+
+> [!NOTE]
+> This table was measured after Phases 0-1 only (8 registers), **before** Phases 2-4. Later phase notes quote other numbers (e.g. Quake 159.3 FPS) from single runs against a different baseline; these are not directly comparable. Results are single-run with no variance reported. Re-measure all phases against the same legacy baseline, several runs each, and include a linked-vs-unlinked comparison for Phase 4.
 
 > [!NOTE]
 > Under full compiler release optimizations (`-O3`), the New Dynarec with 8 general host registers (`RAX, RBX, RDX, R10, R11, R13, R14, R15`) demonstrates a **+2.9% FPS gain in Quake 1 (153.30 vs 149.00)** and achieves a **9.1% reduction in total host execution time (105.88s vs 116.43s)** over the legacy dynarec across the automated test suite.
@@ -237,15 +241,24 @@ However, the x86-64 backend in `codegen_new` was ported without general REX pref
    - Support `BLOCK_EXIT_COND_2` with 2 exits (exit 0: taken branch, exit 1: fallthrough).
    - Unified macros in `src/codegen_new/codegen_ops_branch.c` emitting `BLOCK_EXIT_COND_2` with `CPU_BLOCK_END()`.
    - Emits condition check in `codegen_block_end_recompile` with short jump over exit 0 to exit 1.
-4. **[x] Unconditional Jumps (`JMP rel8/16/32`)**:
-   - Wired `ropJMP_r8`, `ropJMP_r16`, and `ropJMP_r32` for `BLOCK_EXIT_DIRECT_1` chaining into target block.
-   - Note: `CALL rel16/32` deliberately retains standard return -1 to preserve guest stack and callee return semantics without premature block ending.
+4. **[x] Note on `CALL`/`RET`/indirect branches**:
+   - `CALL rel16/32` deliberately retains standard return -1 to preserve guest stack and callee return semantics without premature block ending. `RET`, indirect `JMP`/`CALL` and far transfers are not chained (see Phase 4b below).
 5. **[x] Interrupt Dispatch & Displacement Hardening**:
    - Fixed `dynarec_link_previous_block` target PC check comparing `target_pc == (dst_block->pc - dst_block->_cs)` to support segmented 16-bit real/protected mode as well as flat 32-bit mode.
    - Added `pic.int_pending && (cpu_state.flags & I_FLAG)` guard in `codegen_EXIT_BLOCK` to prevent interrupt starvation in tight linked loops.
    - Fixed 32-bit displacement support in `host_x86_MOV16/32/64_REG_BASE_OFFSET` and `host_x86_MOV32/64_BASE_OFFSET_REG/IMM`.
-6. **[x] Full Benchmark Suite & Performance Verification**:
-   - Complete automated test suite (`Quake`, `Doom`, `PCPBench`, `Dhrystone`) verified operational without boot hangs or crashes.
+6. **[ ] Full Benchmark Suite & Performance Verification with linking enabled**:
+    - Not yet recorded. The harness works; no results exist for the linked build.
+7. **[ ] Safety hardening (blocking items, see `REVIEW.md`)**:
+    - Restrict links to same-page targets and/or unlink all on CR3 write, `INVLPG`, TLB flush.
+    - Unified exit-request flag covering NMI, SMI, trap flag, APIC and `cpu_end_block_after_ins`.
+    - Guarantee FPU TOP compatibility for linked `STATIC_TOP` targets.
+    - Verify rel32 reach and handle W^X on hosts that enforce it.
+    - Fix the FreeDOS boot regression (real/V86-mode, 16-bit code paths are the likely area; Win98 works). Bisect with linking restricted to `JMP` only, then `Jcc`, then `LOOP*`/`JCXZ`.
+    - Windows 98 self-modifying-code test and install/shutdown with linking enabled (normal boot to desktop already confirmed manually).
+
+### Phase 4b (not started): Indirect branches
+- `RET` and indirect `JMP`/`CALL` still return to the C dispatcher. A return-address cache or inline cache keyed by target PC would extend chaining to them.
 
 ---
 

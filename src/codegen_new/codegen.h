@@ -443,6 +443,31 @@ void codegen_set_loop_start(struct ir_data_t *ir, int first_instruction);
 void codegen_link_exit(codeblock_t *src_block, int exit_idx, codeblock_t *dst_block);
 void codegen_unlink_block(codeblock_t *block);
 
+/* Block-linking policy. Evaluated at link time only (see codegen_link_exit), so
+   it can be changed while running. Defaults come from the environment:
+     BOX86_LINK_MASK  bitmask of LINK_* below (decimal or 0x hex)
+     BOX86_LINK_LIMIT only create the first N links (0 = unlimited); the Nth link
+                      is logged, which makes bisecting a bad link easy. */
+#define LINK_JMP       (1 << 0) /* direct JMP rel */
+#define LINK_JCC       (1 << 1) /* Jcc rel */
+#define LINK_LOOP      (1 << 2) /* JCXZ / LOOP / LOOPE / LOOPNE */
+#define LINK_REAL      (1 << 3) /* link blocks compiled in real mode or V86 */
+#define LINK_PMODE     (1 << 4) /* link blocks compiled in protected mode */
+#define LINK_SAME_PAGE (1 << 5) /* restriction: only if source and target share a guest physical page */
+#define LINK_NO_FPU    (1 << 6) /* restriction: never link blocks that use the FPU */
+#define LINK_DEFAULT   (LINK_JMP | LINK_JCC | LINK_LOOP | LINK_REAL | LINK_PMODE)
+
+extern uint32_t codegen_link_mask;
+extern uint32_t codegen_link_limit;
+
+/* Change policy at runtime and unpatch every existing link so the new policy takes
+   effect. Call only from the CPU thread outside a running block. */
+void codegen_link_set_policy(uint32_t mask, uint32_t limit);
+
+/* Unpatch every existing link back to its unlinked stub so that control returns
+   to the C dispatcher on block exit (called on CR3/TLB flushes via codegen_flush). */
+void codegen_unpatch_all_links(void);
+
 #ifdef DEBUG_EXTRA
 extern uint32_t instr_counts[256 * 256];
 #endif

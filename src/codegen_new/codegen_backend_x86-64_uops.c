@@ -2,6 +2,7 @@
 
 #    include <stdint.h>
 #    include <stdio.h>
+#    include <string.h>
 #    include <86box/86box.h>
 #    include <86box/pic.h>
 #    include "cpu.h"
@@ -902,6 +903,11 @@ codegen_EXIT_BLOCK(codeblock_t *block, uop_t *uop)
 
     codegen_alloc_bytes(block, 128);
 
+    /* Write target_pc to cpu_state.pc up front so direct linked jumps,
+       unlinked stubs, and cycle/interrupt exits all have accurate architectural PC: */
+    int pc_disp = (int) offsetof(cpu_state_t, pc) - 128;
+    host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, pc_disp, target_pc);
+
     /* 1. Cycle check:
           cmp dword ptr [rbp + (offsetof(cpu_state_t, _cycles) - 128)], 0
           jle .Lexit_cycles
@@ -937,19 +943,20 @@ codegen_EXIT_BLOCK(codeblock_t *block, uop_t *uop)
     block->links[exit_idx].unlinked_target = unlinked_stub;
 
     /* Patch initial displacement to point to unlinked_stub: */
-    *block->links[exit_idx].jmp_disp_ptr = (uint32_t) (unlinked_stub - ((uint8_t *) block->links[exit_idx].jmp_disp_ptr + 4));
+    uint32_t initial_disp = (uint32_t) (unlinked_stub - ((uint8_t *) block->links[exit_idx].jmp_disp_ptr + 4));
+    memcpy(block->links[exit_idx].jmp_disp_ptr, &initial_disp, sizeof(initial_disp));
 
-    host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, pc) - 128, target_pc);
     host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, last_block_nr) - 128, get_block_nr(block));
     host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, last_exit_idx) - 128, exit_idx);
     host_x86_JMP(block, codegen_exit_rout);
 
     /* 5. Exit due to cycle expiry or pending interrupt: */
     uint8_t *exit_cycles_stub = &block_write_data[block_pos];
-    *jle_disp = (uint32_t) (exit_cycles_stub - ((uint8_t *) jle_disp + 4));
-    *jnz_irq  = (uint32_t) (exit_cycles_stub - ((uint8_t *) jnz_irq + 4));
+    uint32_t jle_disp_val = (uint32_t) (exit_cycles_stub - ((uint8_t *) jle_disp + 4));
+    uint32_t jnz_disp_val = (uint32_t) (exit_cycles_stub - ((uint8_t *) jnz_irq + 4));
+    memcpy(jle_disp, &jle_disp_val, sizeof(jle_disp_val));
+    memcpy(jnz_irq, &jnz_disp_val, sizeof(jnz_disp_val));
 
-    host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, pc) - 128, target_pc);
     host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, last_block_nr) - 128, 0);
     host_x86_JMP(block, codegen_exit_rout);
 

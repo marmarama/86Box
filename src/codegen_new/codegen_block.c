@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -47,6 +48,7 @@ static int block_num;
 int        block_pos;
 
 uint32_t codegen_endpc;
+static uint32_t codegen_active_links = 0;
 
 int        codegen_block_cycles;
 static int codegen_block_ins;
@@ -261,6 +263,7 @@ codegen_reset(void)
 
     cpu_state.last_block_nr = 0;
     cpu_state.last_exit_idx = 0;
+    codegen_active_links    = 0;
 }
 
 void
@@ -415,11 +418,111 @@ codegen_remove_from_incoming_list(codeblock_t *dst_block, uint16_t src_block_nr,
     link->next_link = LINK_NONE;
 }
 
+uint32_t codegen_link_mask  = LINK_DEFAULT;
+uint32_t codegen_link_limit = 0;
+static uint32_t codegen_link_count   = 0;
+static int      codegen_link_env_read = 0;
+
+static void
+codegen_link_read_env(void)
+{
+    const char *s;
+
+    codegen_link_env_read = 1;
+    if ((s = getenv("BOX86_LINK_MASK")) != NULL && *s)
+        codegen_link_mask = (uint32_t) strtoul(s, NULL, 0);
+    if ((s = getenv("BOX86_LINK_LIMIT")) != NULL && *s)
+        codegen_link_limit = (uint32_t) strtoul(s, NULL, 0);
+    if (codegen_link_mask != LINK_DEFAULT || codegen_link_limit)
+        pclog("Block linking policy: mask=0x%x limit=%u\n", codegen_link_mask, codegen_link_limit);
+}
+
+/* Returns non-zero if the policy permits linking this exit to dst_block. */
+static int
+codegen_link_allowed(const codeblock_t *src_block, const codeblock_t *dst_block)
+{
+    uint32_t mask = codegen_link_mask;
+    uint32_t kind;
+    int      pmode;
+
+    if (src_block->exit_type == BLOCK_EXIT_DIRECT_1)
+        kind = LINK_JMP;
+    else if (src_block->exit_cond < COND_JCXZ_16)
+        kind = LINK_JCC;
+    else
+        kind = LINK_LOOP;
+    if (!(mask & kind))
+        return 0;
+
+    pmode = (src_block->status & CPU_STATUS_PMODE) && !(src_block->status & CPU_STATUS_V86);
+    if (!(mask & (pmode ? LINK_PMODE : LINK_REAL)))
+        return 0;
+
+    if ((mask & LINK_SAME_PAGE) && (src_block->phys >> 12) != (dst_block->phys >> 12))
+        return 0;
+    if ((mask & LINK_NO_FPU) && ((src_block->flags | dst_block->flags) & CODEBLOCK_HAS_FPU))
+        return 0;
+
+    return 1;
+}
+
+static inline void
+patch_jmp_disp(uint32_t *jmp_disp_ptr, const void *target)
+{
+    intptr_t delta = (intptr_t) ((const uint8_t *) target - ((const uint8_t *) jmp_disp_ptr + 4));
+    assert(delta >= INT32_MIN && delta <= INT32_MAX);
+    uint32_t disp = (uint32_t) delta;
+    memcpy(jmp_disp_ptr, &disp, sizeof(disp));
+}
+
+/* Restore every patched exit to its unlinked stub, keeping the stubs so exits can
+   be relinked later (unlike codegen_unlink_block, which is for dead blocks). */
+void
+codegen_unpatch_all_links(void)
+{
+    if (codegen_active_links == 0)
+        return;
+
+    for (int c = 0; c < BLOCK_SIZE; c++) {
+        codeblock_t *block = &codeblock[c];
+
+        if (!block->valid)
+            continue;
+        for (int i = 0; i < CODEBLOCK_MAX_EXITS; i++) {
+            codeblock_link_t *link = &block->links[i];
+
+            if (link->target_block == BLOCK_INVALID)
+                continue;
+            if (link->jmp_disp_ptr && link->unlinked_target)
+                patch_jmp_disp(link->jmp_disp_ptr, link->unlinked_target);
+            link->target_block = BLOCK_INVALID;
+            link->prev_link    = LINK_NONE;
+            link->next_link    = LINK_NONE;
+        }
+        block->first_incoming_link = LINK_NONE;
+    }
+    codegen_active_links    = 0;
+    cpu_state.last_block_nr = 0;
+}
+
+void
+codegen_link_set_policy(uint32_t mask, uint32_t limit)
+{
+    codegen_link_env_read = 1;
+    codegen_link_mask     = mask;
+    codegen_link_limit    = limit;
+    codegen_link_count    = 0;
+    codegen_unpatch_all_links();
+}
+
 void
 codegen_link_exit(codeblock_t *src_block, int exit_idx, codeblock_t *dst_block)
 {
     if (!src_block || !dst_block || exit_idx < 0 || exit_idx >= CODEBLOCK_MAX_EXITS)
         return;
+
+    if (!codegen_link_env_read)
+        codegen_link_read_env();
 
     codeblock_link_t *link = &src_block->links[exit_idx];
 
@@ -431,22 +534,38 @@ codegen_link_exit(codeblock_t *src_block, int exit_idx, codeblock_t *dst_block)
     if (!(dst_block->flags & CODEBLOCK_WAS_RECOMPILED) || !dst_block->data)
         return;
 
+    /* Runtime policy (mask / limit). */
+    if (!codegen_link_allowed(src_block, dst_block))
+        return;
+    if (codegen_link_limit) {
+        if (codegen_link_count >= codegen_link_limit)
+            return;
+        codegen_link_count++;
+        if (codegen_link_count == codegen_link_limit)
+            pclog("Block link #%u (last allowed): block %p pc=%08x exit %d -> block %p pc=%08x (cs=%08x status=%04x)\n",
+                  codegen_link_count, (void *) src_block, src_block->pc, exit_idx,
+                  (void *) dst_block, dst_block->pc, src_block->_cs, (unsigned) src_block->status);
+    }
+
     /* If already linked to a block, remove it from old destination's list first. */
     if (link->target_block != BLOCK_INVALID) {
         codeblock_t *old_dst = &codeblock[link->target_block];
         codegen_remove_from_incoming_list(old_dst, get_block_nr(src_block), exit_idx);
         link->target_block = BLOCK_INVALID;
+        if (codegen_active_links > 0)
+            codegen_active_links--;
     }
 
     /* Compute target host code address. */
     uint8_t *target_code = &dst_block->data[dst_block->direct_entry_pos];
 
     /* Patch displacement: rel32 relative to end of the 5-byte JMP instruction. */
-    *link->jmp_disp_ptr = (uint32_t) (target_code - ((uint8_t *) link->jmp_disp_ptr + 4));
+    patch_jmp_disp(link->jmp_disp_ptr, target_code);
 
     /* Record target block. */
     uint16_t src_block_nr = get_block_nr(src_block);
     link->target_block = get_block_nr(dst_block);
+    codegen_active_links++;
 
     /* Insert link into destination block's incoming link list. */
     uint32_t link_id = encode_link_id(src_block_nr, exit_idx);
@@ -479,9 +598,11 @@ codegen_unlink_block(codeblock_t *block)
         codeblock_link_t *link = &pred_block->links[pred_exit_idx];
 
         if (link->jmp_disp_ptr && link->unlinked_target) {
-            *link->jmp_disp_ptr = (uint32_t) ((uint8_t *) link->unlinked_target - ((uint8_t *) link->jmp_disp_ptr + 4));
+            patch_jmp_disp(link->jmp_disp_ptr, link->unlinked_target);
         }
         link->target_block = BLOCK_INVALID;
+        if (codegen_active_links > 0)
+            codegen_active_links--;
 
         block->first_incoming_link = link->next_link;
         link->prev_link = LINK_NONE;
@@ -494,9 +615,11 @@ codegen_unlink_block(codeblock_t *block)
             codeblock_t *dst_block = &codeblock[block->links[i].target_block];
             codegen_remove_from_incoming_list(dst_block, get_block_nr(block), i);
             block->links[i].target_block = BLOCK_INVALID;
+            if (codegen_active_links > 0)
+                codegen_active_links--;
         }
         if (block->links[i].jmp_disp_ptr && block->links[i].unlinked_target) {
-            *block->links[i].jmp_disp_ptr = (uint32_t) ((uint8_t *) block->links[i].unlinked_target - ((uint8_t *) block->links[i].jmp_disp_ptr + 4));
+            patch_jmp_disp(block->links[i].jmp_disp_ptr, block->links[i].unlinked_target);
         }
         block->links[i].jmp_disp_ptr = NULL;
         block->links[i].unlinked_target = NULL;
@@ -996,7 +1119,7 @@ codegen_block_end_recompile(codeblock_t *block)
 void
 codegen_flush(void)
 {
-    return;
+    codegen_unpatch_all_links();
 }
 
 void
