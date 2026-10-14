@@ -437,6 +437,8 @@ codegen_link_read_env(void)
         pclog("Block linking policy: mask=0x%x limit=%u\n", codegen_link_mask, codegen_link_limit);
 }
 
+_Static_assert(BLOCK_SIZE <= 65536, "prev_block_nr and link ID encoding require BLOCK_SIZE <= 65536");
+
 /* Returns non-zero if the policy permits linking this exit to dst_block. */
 static int
 codegen_link_allowed(const codeblock_t *src_block, const codeblock_t *dst_block)
@@ -458,7 +460,9 @@ codegen_link_allowed(const codeblock_t *src_block, const codeblock_t *dst_block)
     if (!(mask & (pmode ? LINK_PMODE : LINK_REAL)))
         return 0;
 
-    if ((mask & LINK_SAME_PAGE) && (src_block->phys >> 12) != (dst_block->phys >> 12))
+    if ((mask & LINK_SAME_PAGE) &&
+        (((src_block->phys >> 12) != (dst_block->phys >> 12)) ||
+         ((src_block->pc >> 12) != (dst_block->pc >> 12))))
         return 0;
     if ((mask & LINK_NO_FPU) && ((src_block->flags | dst_block->flags) & CODEBLOCK_HAS_FPU))
         return 0;
@@ -480,6 +484,20 @@ patch_jmp_disp(uint32_t *jmp_disp_ptr, const void *target)
 void
 codegen_unpatch_all_links(void)
 {
+#ifndef RELEASE_BUILD
+    /* Debug validation: ensure codegen_active_links matches actual active link count */
+    uint32_t counted_links = 0;
+    for (int c = 0; c < BLOCK_SIZE; c++) {
+        if (!codeblock[c].valid)
+            continue;
+        for (int i = 0; i < CODEBLOCK_MAX_EXITS; i++) {
+            if (codeblock[c].links[i].target_block != BLOCK_INVALID)
+                counted_links++;
+        }
+    }
+    assert(counted_links == codegen_active_links);
+#endif
+
     if (codegen_active_links == 0)
         return;
 
@@ -547,6 +565,14 @@ codegen_link_exit(codeblock_t *src_block, int exit_idx, codeblock_t *dst_block)
                   (void *) dst_block, dst_block->pc, src_block->_cs, (unsigned) src_block->status);
     }
 
+    /* Compute target host code address. */
+    uint8_t *target_code = &dst_block->data[dst_block->direct_entry_pos];
+
+    /* Refuse link if rel32 displacement exceeds int32_t range. */
+    intptr_t delta = (intptr_t) ((const uint8_t *) target_code - ((const uint8_t *) link->jmp_disp_ptr + 4));
+    if (delta < INT32_MIN || delta > INT32_MAX)
+        return;
+
     /* If already linked to a block, remove it from old destination's list first. */
     if (link->target_block != BLOCK_INVALID) {
         codeblock_t *old_dst = &codeblock[link->target_block];
@@ -555,9 +581,6 @@ codegen_link_exit(codeblock_t *src_block, int exit_idx, codeblock_t *dst_block)
         if (codegen_active_links > 0)
             codegen_active_links--;
     }
-
-    /* Compute target host code address. */
-    uint8_t *target_code = &dst_block->data[dst_block->direct_entry_pos];
 
     /* Patch displacement: rel32 relative to end of the 5-byte JMP instruction. */
     patch_jmp_disp(link->jmp_disp_ptr, target_code);

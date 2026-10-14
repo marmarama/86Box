@@ -930,6 +930,9 @@ codegen_EXIT_BLOCK(codeblock_t *block, uop_t *uop)
     /* 2. Maskable hardware interrupt check:
           If pic.int_pending != 0 && (cpu_state.flags & I_FLAG) != 0,
           exit to C dispatch loop to service the pending interrupt.
+          Note: uses host REG_EAX and REG_EDX as scratch registers; this is safe
+          because UOP_EXIT_BLOCK is emitted after UOP_TYPE_BARRIER where all guest
+          registers have been flushed to cpu_state and host registers are unallocated.
     */
     host_x86_MOVZX_REG_ABS_32_8(block, REG_EAX, &pic.int_pending);
     host_x86_TEST32_REG(block, REG_EAX, REG_EAX);

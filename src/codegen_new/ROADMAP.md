@@ -249,13 +249,19 @@ However, the x86-64 backend in `codegen_new` was ported without general REX pref
    - Fixed 32-bit displacement support in `host_x86_MOV16/32/64_REG_BASE_OFFSET` and `host_x86_MOV32/64_BASE_OFFSET_REG/IMM`.
 6. **[ ] Full Benchmark Suite & Performance Verification with linking enabled**:
     - Not yet recorded. The harness works; complete benchmarks to be captured.
-7. **[x] Safety hardening (blocking items addressed, see `REVIEW.md`)**:
-    - **Intra-page Linking Policy (`LINK_SAME_PAGE`) & MMU Flush Safety**: Enabled `LINK_SAME_PAGE` (`0x20`) by default in `LINK_DEFAULT` (`0x3f`). Constraining linked jumps to the same guest physical page guarantees that links cannot branch into stale remapped physical memory across CR3/PTE updates. Restored `codegen_flush()` to a no-op, avoiding 65,536-block scans and link-churn on chipset I/O and MMU flushes during BIOS POST and boot.
-    - **Architectural `cpu_state.pc` Upfront Writeback**: Moved `cpu_state.pc = target_pc` write to the top of `codegen_EXIT_BLOCK` before cycle/IRQ checks and direct branches.
-    - **FPU TOP Matching**: Required matching TOP when `CODEBLOCK_STATIC_TOP` is set on destination in `dynarec_link_previous_block()`.
-    - **rel32 Reach Assertions & `memcpy` Writes**: Added `assert(delta >= INT32_MIN && delta <= INT32_MAX)` and `memcpy` in `patch_jmp_disp()` and `patch_disp32()`.
-    - **Dispatcher Cleanup & 16-bit Target Masking**: Reset `last_block_nr` / `last_exit_idx` unconditionally at top of `exec386_dynarec_dyn()` and masked target PC to 16 bits for real/16-bit mode blocks.
-    - Windows 98 self-modifying-code test and install/shutdown with linking enabled (normal boot to desktop already confirmed manually).
+7. **[ ] Safety hardening (in progress, see `REVIEW.md`)**:
+    - **Addressed**:
+      - **Intra-page Linking Policy (`LINK_SAME_PAGE`)**: Enabled `LINK_SAME_PAGE` (`0x20`) by default in `LINK_DEFAULT` (`0x3f`). Source and destination must share both guest physical and linear (virtual) pages (`phys >> 12` and `pc >> 12` match), preventing stale links across CR3/PTE updates while keeping `codegen_flush()` a no-op to eliminate 65,536-block scans during POST.
+      - **Architectural `cpu_state.pc` Upfront Writeback**: Moved `cpu_state.pc = target_pc` write to the top of `codegen_EXIT_BLOCK` before cycle/IRQ checks and direct branches.
+      - **FPU TOP Safety**: Refused direct linking to `CODEBLOCK_STATIC_TOP` destinations to ensure runtime TOP verification via the C dispatcher.
+      - **rel32 Reach Checks & `memcpy` Writes**: Added displacement range checks in `codegen_link_exit` (refusing links exceeding `int32_t` range) and `memcpy` writes in `patch_jmp_disp()` and `patch_disp32()`.
+      - **Dispatcher Cleanup & 16-bit Target Masking**: Reset `last_block_nr` / `last_exit_idx` unconditionally at top of `exec386_dynarec_dyn()` and masked target PC to 16 bits for real/16-bit mode blocks.
+      - **`BT/BTS/BTR/BTC` Signed Memory Bit Offsets**: Implemented arithmetic right shifts (`uop_SAR_IMM`) and sign-extension (`uop_MOVSX`) for memory bit-base displacements.
+    - **Still Open**:
+      - Full asynchronous event coverage (NMI, SMI, trap flag, APIC, STI interrupt shadow).
+      - W^X page protection handling on hosts enforcing strict W^X.
+      - SMC re-entrancy torture testing.
+      - FreeDOS boot confirmation and full linked DOS benchmark suite measurements (Windows 98 desktop boot confirmed manually).
 
 ### Phase 4b (not started): Indirect branches
 - `RET` and indirect `JMP`/`CALL` still return to the C dispatcher. A return-address cache or inline cache keyed by target PC would extend chaining to them.

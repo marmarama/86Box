@@ -20,7 +20,10 @@ Read once, on the first link attempt. Both are optional.
 
 ### `BOX86_LINK_MASK`
 
-A bitmask (decimal or `0x` hex). Default is `0x1f`. `0` disables linking entirely.
+A bitmask (decimal or `0x` hex). Default is `0x3f` (all permissions plus
+`LINK_SAME_PAGE`). `0` disables linking entirely. **An explicit mask replaces the
+default, so the masks in the examples below (`0x19`, `0x1a`, ...) do not include
+`LINK_SAME_PAGE`; add `0x20` to them to bisect with the default safety policy.**
 
 | Bit    | Name             | Meaning                                                                 |
 | :----- | :--------------- | :---------------------------------------------------------------------- |
@@ -29,12 +32,12 @@ A bitmask (decimal or `0x` hex). Default is `0x1f`. `0` disables linking entirel
 | `0x04` | `LINK_LOOP`      | `JCXZ`, `LOOP`, `LOOPE`, `LOOPNE`                                       |
 | `0x08` | `LINK_REAL`      | link blocks compiled in real mode or V86                                |
 | `0x10` | `LINK_PMODE`     | link blocks compiled in protected mode                                  |
-| `0x20` | `LINK_SAME_PAGE` | restriction: only link when source and target share a guest physical page |
+| `0x20` | `LINK_SAME_PAGE` | restriction: only link when source and target share guest physical and linear pages |
 | `0x40` | `LINK_NO_FPU`    | restriction: never link a block that uses the FPU (source or target)    |
 
-The first five bits are permissions (all must allow the link). The last two
-are restrictions that are off by default. A link needs its exit kind bit **and** its
-mode bit, so `0x08` alone links nothing.
+The first five bits are permissions (all must allow the link). Bit `0x20` (`LINK_SAME_PAGE`)
+is a safety restriction enabled by default in `0x3f`. `0x40` (`LINK_NO_FPU`) is off by default.
+A link needs its exit kind bit **and** its mode bit, so `0x08` alone links nothing.
 
 ### `BOX86_LINK_LIMIT`
 

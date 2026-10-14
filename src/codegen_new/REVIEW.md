@@ -190,3 +190,71 @@ Check the same for `CMOVcc` (P6+) and `SETcc` (386, fine).
 4. Differential fuzzer.
 5. Re-measure everything; update ROADMAP numbers.
 6. Clean up history and split commits before any upstreaming.
+
+---
+
+# Follow-up review: the fixes (commit `a9ff6ec09` and predecessors)
+
+Static reading only; not built or run beyond the earlier compile.
+
+## Resolved or improved
+- **Same-page linking by default (`LINK_DEFAULT = 0x3f`)** and `codegen_flush()` back to a
+  no-op. Good: this removes the POST slowdown and covers most of item 1.
+- **`cpu_state.pc` written first in `EXIT_BLOCK`**, before the cycle and IRQ checks.
+  Correct, and removes duplicated stores in the stubs.
+- **`last_block_nr`/`last_exit_idx` read into locals and cleared at the top of
+  `exec386_dynarec_dyn`.** Resolves item 6.
+- **`memcpy` displacement writes** (no unaligned UB).
+- **`BT/BTS/BTR/BTC` register offset**: now uses a signed shift (`SAR`, plus `MOVSX` for
+  16-bit). That is the correct hardware behaviour.
+
+## Remaining issues, most important first
+
+1. **The FPU TOP check compares the wrong values.** `block->TOP` is the TOP at block
+   *entry* (`block->TOP = cpu_state.TOP & 7`, `codegen_block.c`). The link check now
+   requires `src->TOP == dst->TOP`. That is only right when the source leaves TOP
+   unchanged. A source block that pushes or pops (`FLD`, `FSTP`) exits with a different
+   TOP than it entered with, and would link to a destination that assumes the entry
+   value. The old runtime check used the real TOP at exit; a static link-time check must
+   use the source's *exit* TOP (not currently recorded). Until then, refuse to link to a
+   `STATIC_TOP` destination from any source that touched the FPU, or make `LINK_NO_FPU`
+   part of the default.
+2. **"Same page" is checked on physical pages only.** `codegen_link_allowed` compares
+   `phys >> 12`. If one physical page is mapped at two virtual addresses, a jump across
+   a virtual page boundary into the alias passes the check. Remapping the second virtual
+   page later leaves a stale link. Also require `(src->pc >> 12) == (dst->pc >> 12)`
+   (linear pages) so source and target are in the same virtual page too.
+3. **The rel32 range check is an `assert`.** Release builds compile it out (`NDEBUG`),
+   so the protection disappears exactly where it matters. Change `codegen_link_exit` to
+   refuse the link when the delta doesn't fit, and keep the assert only for the stub
+   displacements, which are always in the same block.
+4. **Async event handling is still incomplete (item 2).** `EXIT_BLOCK` still checks only
+   `cycles` and `pic.int_pending && IF`. NMI, SMI, the trap flag, APIC interrupts and the
+   one-instruction `STI` shadow are not covered. The ROADMAP now says the blocking
+   concerns are "resolved"; that is not accurate for this item, nor for W^X (item 4) or
+   SMC testing (item 5). Please reword it to say which were addressed.
+5. **Link counter correctness.** `codegen_active_links` is now a correctness-relevant
+   fast path (`codegen_unpatch_all_links` returns early at 0). Every place that sets
+   `target_block = BLOCK_INVALID` must decrement it exactly once. A drift to 0 while
+   links exist would make the unpatch a silent no-op. Add a debug assertion that
+   recounts links in `codegen_unpatch_all_links`.
+6. **The reset in the "block not recompiled" and interpreter-fallback paths** is
+   covered by the new top-of-function reset. Re-check that `prev_block_nr` is not
+   used after an early return that skips linking intentionally. (It isn't today.)
+7. **`uint16_t prev_block_nr`** is fine only while `BLOCK_SIZE <= 65536`. Add a
+   static assert, since the link id encoding has the same limit.
+8. **The IRQ check clobbers `EAX`/`EDX`.** Fine after the barrier writeback, but note
+   that this couples `EXIT_BLOCK` to the allocator's scratch conventions; a comment
+   would help.
+9. **Still open from the first review:** in-block `REP` loops, differential fuzzer,
+   W^X handling, benchmarking linked vs unlinked, and FreeDOS confirmation (the
+   ROADMAP does not say whether the FreeDOS regression is fixed).
+10. **Docs:** `DEBUGGING.md` default mask updated to `0x3f`. Explicit
+    `BOX86_LINK_MASK` values replace the default, so bisect masks need `0x20` added.
+
+## Suggested next steps
+1. Fix item 1 (TOP) and item 2 (virtual page check): both are small.
+2. Turn the rel32 assert into a refusal (item 3).
+3. Soften the ROADMAP claim and record that FreeDOS status is unknown.
+4. Re-run FreeDOS and the DOS benchmark suite with linking on and off.
+
