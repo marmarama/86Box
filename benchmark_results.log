@@ -33,10 +33,10 @@ player 1 of 1 (1 nodes)
 S_Init: Setting up sound.
 HU_Init: Setting up heads up display.
 ST_Init: Init status bar.
-timed 2134 gametics in 12 realtics
+timed 2134 gametics in 13 realtics
 [FINISH] DOOM demo3                                    
 [START] PCPBENCH vga                                   
-Erreichte Framerate im VESA Modus 100 (640x400 8bpp LFB): 212.0 fps
+Erreichte Framerate im VESA Modus 100 (640x400 8bpp LFB): 208.7 fps
 
 [FINISH] PCPBENCH vga                                  
 [START] DHRYSTONE                                      
@@ -53,13 +53,12 @@ Register option not selected
       100000 runs   0.00 seconds 
      1000000 runs   2.00 seconds 
      2000000 runs   5.00 seconds 
-     4000000 runs  10.00 seconds 
 
 Final values (* implementation-dependent):
 
 Int_Glob:      O.K.  5  Bool_Glob:     O.K.  1
 Ch_1_Glob:     O.K.  A  Ch_2_Glob:     O.K.  B
-Arr_1_Glob[8]: O.K.  7  Arr_2_Glob8/7: O.K.     4000010
+Arr_1_Glob[8]: O.K.  7  Arr_2_Glob8/7: O.K.     2000010
 Ptr_Glob->              Ptr_Comp:       *    4464836
   Discr:       O.K.  0  Enum_Comp:     O.K.  2
   Int_Comp:    O.K.  17 Str_Comp:      O.K.  DHRYSTONE PROGRAM, SOME STRING
@@ -71,9 +70,9 @@ Int_3_Loc:     O.K.  7  Enum_Loc:      O.K.  1
 Str_1_Loc:                             O.K.  DHRYSTONE PROGRAM, 1'ST STRING
 Str_2_Loc:                             O.K.  DHRYSTONE PROGRAM, 2'ND STRING
 
-Microseconds for one run through Dhrystone:         2.00 
-Dhrystones per Second:                          418410 
-VAX  MIPS rating =                                238.00 
+Microseconds for one run through Dhrystone:         3.00 
+Dhrystones per Second:                          400000 
+VAX  MIPS rating =                                228.00 
 
 
 A new results file will have been created in the same directory as the
