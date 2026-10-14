@@ -1111,22 +1111,14 @@ codegen_block_end_recompile(codeblock_t *block)
             int is_32  = (block->exit_cond == COND_LOOPE_32);
             int cx_reg = is_32 ? IREG_ECX : IREG_CX;
             jump_false = uop_CMP_IMM_JZ_DEST(ir_data, cx_reg, 0);
-            if (codegen_flags_changed && flags_res_valid()) {
-                jump_false_extra = uop_CMP_IMM_JNZ_DEST(ir_data, IREG_flags_res, 0);
-            } else {
-                uop_CALL_FUNC_RESULT(ir_data, IREG_temp0, jit_ZF_SET);
-                jump_false_extra = uop_CMP_IMM_JZ_DEST(ir_data, IREG_temp0, 0);
-            }
+            uop_CALL_FUNC_RESULT(ir_data, IREG_temp0, jit_ZF_SET);
+            jump_false_extra = uop_CMP_IMM_JZ_DEST(ir_data, IREG_temp0, 0);
         } else if (block->exit_cond == COND_LOOPNE_16 || block->exit_cond == COND_LOOPNE_32) {
             int is_32  = (block->exit_cond == COND_LOOPNE_32);
             int cx_reg = is_32 ? IREG_ECX : IREG_CX;
             jump_false = uop_CMP_IMM_JZ_DEST(ir_data, cx_reg, 0);
-            if (codegen_flags_changed && flags_res_valid()) {
-                jump_false_extra = uop_CMP_IMM_JZ_DEST(ir_data, IREG_flags_res, 0);
-            } else {
-                uop_CALL_FUNC_RESULT(ir_data, IREG_temp0, jit_ZF_SET);
-                jump_false_extra = uop_CMP_IMM_JNZ_DEST(ir_data, IREG_temp0, 0);
-            }
+            uop_CALL_FUNC_RESULT(ir_data, IREG_temp0, jit_ZF_SET);
+            jump_false_extra = uop_CMP_IMM_JNZ_DEST(ir_data, IREG_temp0, 0);
         }
 
         if (jump_false == -1) {
