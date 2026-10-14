@@ -2134,6 +2134,14 @@ page_index(page_t *page)
     return ((uintptr_t) page - (uintptr_t) pages) / sizeof(page_t);
 }
 
+static inline void
+codegen_notify_code_write(page_t *page)
+{
+    cpu_state.exit_request |= EXIT_STATUS_BLOCK_END;
+    if (!page_in_evict_list(page))
+        page_add_to_evict_list(page);
+}
+
 void
 page_add_to_evict_list(page_t *page)
 {
@@ -2142,6 +2150,7 @@ page_add_to_evict_list(page_t *page)
     page->evict_prev                          = 0;
     purgable_page_list_head                   = pages[purgable_page_list_head].evict_prev;
     purgeable_page_count++;
+    cpu_state.exit_request |= EXIT_STATUS_BLOCK_END;
 }
 
 void
@@ -2176,11 +2185,9 @@ mem_write_ramb_page(uint32_t addr, uint8_t val, page_t *page)
 
         page->mem[addr & 0xfff] = val;
         page->dirty_mask |= mask;
-        if ((page->code_present_mask & mask) && !page_in_evict_list(page))
-            page_add_to_evict_list(page);
         page->byte_dirty_mask[byte_offset] |= byte_mask;
-        if ((page->byte_code_present_mask[byte_offset] & byte_mask) && !page_in_evict_list(page))
-            page_add_to_evict_list(page);
+        if ((page->code_present_mask & mask) || (page->byte_code_present_mask[byte_offset] & byte_mask))
+            codegen_notify_code_write(page);
     }
 }
 
@@ -2203,19 +2210,19 @@ mem_write_ramw_page(uint32_t addr, uint16_t val, page_t *page)
             mask |= (mask << 1);
         *(uint16_t *) &page->mem[addr & 0xfff] = val;
         page->dirty_mask |= mask;
-        if ((page->code_present_mask & mask) && !page_in_evict_list(page))
-            page_add_to_evict_list(page);
+        if (page->code_present_mask & mask)
+            codegen_notify_code_write(page);
         if ((addr & PAGE_BYTE_MASK_MASK) == PAGE_BYTE_MASK_MASK) {
             page->byte_dirty_mask[byte_offset + 1] |= 1;
-            if ((page->byte_code_present_mask[byte_offset + 1] & 1) && !page_in_evict_list(page))
-                page_add_to_evict_list(page);
+            if (page->byte_code_present_mask[byte_offset + 1] & 1)
+                codegen_notify_code_write(page);
         } else
             byte_mask |= (byte_mask << 1);
 
         page->byte_dirty_mask[byte_offset] |= byte_mask;
 
-        if ((page->byte_code_present_mask[byte_offset] & byte_mask) && !page_in_evict_list(page))
-            page_add_to_evict_list(page);
+        if (page->byte_code_present_mask[byte_offset] & byte_mask)
+            codegen_notify_code_write(page);
     }
 }
 
@@ -2239,14 +2246,14 @@ mem_write_raml_page(uint32_t addr, uint32_t val, page_t *page)
         *(uint32_t *) &page->mem[addr & 0xfff] = val;
         page->dirty_mask |= mask;
         page->byte_dirty_mask[byte_offset] |= byte_mask;
-        if (!page_in_evict_list(page) && ((page->code_present_mask & mask) || (page->byte_code_present_mask[byte_offset] & byte_mask)))
-            page_add_to_evict_list(page);
+        if ((page->code_present_mask & mask) || (page->byte_code_present_mask[byte_offset] & byte_mask))
+            codegen_notify_code_write(page);
         if ((addr & PAGE_BYTE_MASK_MASK) > (PAGE_BYTE_MASK_MASK - 3)) {
             uint32_t byte_mask_2 = 0xf >> (4 - (addr & 3));
 
             page->byte_dirty_mask[byte_offset + 1] |= byte_mask_2;
-            if ((page->byte_code_present_mask[byte_offset + 1] & byte_mask_2) && !page_in_evict_list(page))
-                page_add_to_evict_list(page);
+            if (page->byte_code_present_mask[byte_offset + 1] & byte_mask_2)
+                codegen_notify_code_write(page);
         }
     }
 }

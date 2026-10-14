@@ -559,10 +559,11 @@ codegen_link_exit(codeblock_t *src_block, int exit_idx, codeblock_t *dst_block)
         if (codegen_link_count >= codegen_link_limit)
             return;
         codegen_link_count++;
-        if (codegen_link_count == codegen_link_limit)
+        if (codegen_link_count == codegen_link_limit) {
             pclog("Block link #%u (last allowed): block %p pc=%08x exit %d -> block %p pc=%08x (cs=%08x status=%04x)\n",
                   codegen_link_count, (void *) src_block, src_block->pc, exit_idx,
                   (void *) dst_block, dst_block->pc, src_block->_cs, (unsigned) src_block->status);
+        }
     }
 
     /* Compute target host code address. */
