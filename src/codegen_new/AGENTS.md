@@ -122,7 +122,24 @@ This document captures essential architectural knowledge, debugging workflows, t
     target_addr = hex(base + mon_off + 636)
     subprocess.run(["gdb", "-p", str(pid), "-batch", "-ex", f"p (*(int*){target_addr})++"])
     ```
-  - Screenshots are saved into `<vm_dir>/screenshots/` and can be inspected as PNG artifacts.
+### 3. Guest Debugging via Built-in GDBSTUB (`-DGDBSTUB=ON`)
+- 86Box includes an internal GDB Remote Serial Protocol (RSP) stub server ([`src/gdbstub.c`](file:///home/marm/src/86Box/src/gdbstub.c)) for live, non-invasive guest OS/BIOS debugging (see [Discussion #7090](https://github.com/86Box/86Box/discussions/7090)).
+- **Build with GDBSTUB**:
+  ```bash
+  cmake -B build/new_dynarec_gdb -S . -G Ninja -DNEW_DYNAREC=ON -DGDBSTUB=ON
+  ninja -C build/new_dynarec_gdb
+  ```
+- **Usage**:
+  1. Start the VM: execution automatically pauses at `POST -- --` before executing the first BIOS instruction.
+  2. Connect any GDB-compatible client (GDB, IDA Pro, Ghidra):
+     ```bash
+     gdb -ex "target remote 127.0.0.1:12345"
+     ```
+  3. Supports software/hardware breakpoints, memory read/write watchpoints (`rwatch`/`watch`), register dumps across mode switches (real, V86, pmode), and `monitor` commands (`monitor help`).
+- **Dynarec Caveat**: When single-stepping or setting instruction breakpoints in recompiled code, run with `BOX86_LINK_MASK=0` (or force interpreter) so control returns to the C dispatcher on every block rather than bypassing GDB hooks via direct block chaining.
+- **Host GDB vs Guest GDBSTUB**:
+  - `gdb -p <86box_pid>`: Attaches to the host process (used for poking host structures like `mon_screenshots`).
+  - `target remote :12345`: Attaches to the virtual guest CPU (used for debugging BIOS, DOS, JemmEx, VxDs, kernels).
 
 ---
 

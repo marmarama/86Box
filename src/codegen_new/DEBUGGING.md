@@ -108,3 +108,4 @@ Enable `pclog` output (debug build or logging enabled for the emulator) to see t
   interpreter build side by side and diff the register state after N blocks.
 - The benchmark harness (`benchmarks/run_benchmarks.py`) can be used for this as long as
   the environment variables are inherited by the 86Box process.
+- To inspect live guest state (BIOS, DOS drivers, kernels), build with `-DGDBSTUB=ON` and connect with `target remote 127.0.0.1:12345` (set `BOX86_LINK_MASK=0` when single-stepping so control returns to the C dispatcher on every block).
