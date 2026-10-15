@@ -455,7 +455,7 @@ void codegen_unlink_block(codeblock_t *block);
 #define LINK_PMODE     (1 << 4) /* link blocks compiled in protected mode */
 #define LINK_SAME_PAGE (1 << 5) /* restriction: only if source and target share a guest physical page */
 #define LINK_NO_FPU    (1 << 6) /* restriction: never link blocks that use the FPU */
-#define LINK_DEFAULT   (LINK_JMP | LINK_JCC | LINK_LOOP | LINK_PMODE | LINK_SAME_PAGE)
+#define LINK_DEFAULT   (LINK_JMP | LINK_JCC | LINK_LOOP | LINK_REAL | LINK_PMODE | LINK_SAME_PAGE)
 
 extern uint32_t codegen_link_mask;
 extern uint32_t codegen_link_limit;

@@ -144,6 +144,6 @@ Runtime policy can be configured without recompiling using the `BOX86_LINK_MASK`
 - `0x00`: Linking completely disabled (uses unlinked C dispatch stubs only).
 - `0x31`: Unconditional `JMP` in PMODE, intra-page (`LINK_JMP | LINK_PMODE | LINK_SAME_PAGE`).
 - `0x33`: `JMP` + `Jcc` in PMODE, intra-page.
-- `0x37`: **Standard Default Policy** (`LINK_JMP | LINK_JCC | LINK_LOOP | LINK_PMODE | LINK_SAME_PAGE`). Verified 100% stable on Windows 98 and DOS benchmarks.
-- `0x3f`: Full linking including `LINK_REAL`.
+- `0x37`: Protected-mode policy without `LINK_REAL` (`LINK_JMP | LINK_JCC | LINK_LOOP | LINK_PMODE | LINK_SAME_PAGE`).
+- `0x3f`: **Standard Default Policy** (`LINK_JMP | LINK_JCC | LINK_LOOP | LINK_REAL | LINK_PMODE | LINK_SAME_PAGE`). Verified 100% stable on Windows 98 and DOS benchmarks.
 - `BOX86_LINK_LIMIT=N`: Cuts off linking after N links and logs the Nth link details to identify diverging or corrupting blocks.
