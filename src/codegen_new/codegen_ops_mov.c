@@ -733,66 +733,15 @@ ropXLAT(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNUSE
 }
 
 uint32_t
-ropCMOVcc_16(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
+ropCMOVcc_16(UNUSED(codeblock_t *block), UNUSED(ir_data_t *ir), UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), UNUSED(uint32_t op_pc))
 {
-    int cond = opcode & 0x0f;
-    int dest_reg = (fetchdat >> 3) & 7;
-    int jump_skip;
-
-    /* Check CPU support: if illegal on this CPU, fall back to interpreter #UD handler */
-    if (x86_dynarec_opcodes_0f[opcode | op_32] == x86_dynarec_opcodes_0f[0x0b])
-        return 0;
-
-    codegen_mark_code_present(block, cs + op_pc, 1);
-    if ((fetchdat & 0xc0) == 0xc0) {
-        int src_reg = fetchdat & 7;
-        jump_skip = codegen_cond_jump_false(ir, cond);
-        uop_MOV(ir, IREG_16(dest_reg), IREG_16(src_reg));
-    } else {
-        x86seg *target_seg;
-
-        uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
-        target_seg = codegen_generate_ea(ir, op_ea_seg, fetchdat, op_ssegs, &op_pc, op_32, 0);
-        jump_skip = codegen_cond_jump_false(ir, cond);
-        codegen_check_seg_read(block, ir, target_seg);
-        uop_MEM_LOAD_REG(ir, IREG_16(dest_reg), ireg_seg_base(target_seg), IREG_eaaddr);
-    }
-
-    if (jump_skip != -1)
-        uop_set_jump_dest(ir, jump_skip);
-
-    return op_pc + 1;
+    return 0;
 }
 
 uint32_t
-ropCMOVcc_32(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
+ropCMOVcc_32(UNUSED(codeblock_t *block), UNUSED(ir_data_t *ir), UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), UNUSED(uint32_t op_pc))
 {
-    int cond = opcode & 0x0f;
-    int dest_reg = (fetchdat >> 3) & 7;
-    int jump_skip;
-
-    /* Check CPU support: if illegal on this CPU, fall back to interpreter #UD handler */
-    if (x86_dynarec_opcodes_0f[opcode | op_32] == x86_dynarec_opcodes_0f[0x0b])
-        return 0;
-
-    codegen_mark_code_present(block, cs + op_pc, 1);
-    if ((fetchdat & 0xc0) == 0xc0) {
-        int src_reg = fetchdat & 7;
-        jump_skip = codegen_cond_jump_false(ir, cond);
-        uop_MOV(ir, IREG_32(dest_reg), IREG_32(src_reg));
-    } else {
-        x86seg *target_seg;
-
-        uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
-        target_seg = codegen_generate_ea(ir, op_ea_seg, fetchdat, op_ssegs, &op_pc, op_32, 0);
-        jump_skip = codegen_cond_jump_false(ir, cond);
-        codegen_check_seg_read(block, ir, target_seg);
-        uop_MEM_LOAD_REG(ir, IREG_32(dest_reg), ireg_seg_base(target_seg), IREG_eaaddr);
-    }
-
-    if (jump_skip != -1)
-        uop_set_jump_dest(ir, jump_skip);
-
-    return op_pc + 1;
+    return 0;
 }
+
 

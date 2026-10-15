@@ -686,7 +686,6 @@ uint32_t
 ropSETcc(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
 {
     int cond = opcode & 0x0f;
-    int jump_skip;
 
     /* Check CPU support: if illegal on this CPU, fall back to interpreter #UD handler */
     if (x86_dynarec_opcodes_0f[opcode | op_32] == x86_dynarec_opcodes_0f[0x0b])
@@ -696,11 +695,8 @@ ropSETcc(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, u
     if ((fetchdat & 0xc0) == 0xc0) {
         int dest_reg = fetchdat & 7;
 
-        uop_MOV_IMM(ir, IREG_8(dest_reg), 0);
-        jump_skip = codegen_cond_jump_false(ir, cond);
-        uop_MOV_IMM(ir, IREG_8(dest_reg), 1);
-        if (jump_skip != -1)
-            uop_set_jump_dest(ir, jump_skip);
+        uop_CALL_FUNC_RESULT(ir, IREG_temp0, jit_cond_helpers[cond & 0xf]);
+        uop_MOV(ir, IREG_8(dest_reg), IREG_temp0_B);
     } else {
         x86seg *target_seg;
 
@@ -709,12 +705,7 @@ ropSETcc(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, u
         codegen_check_seg_write(block, ir, target_seg);
         CHECK_SEG_LIMITS(block, ir, target_seg, IREG_eaaddr, 0);
 
-        uop_MOV_IMM(ir, IREG_temp0_B, 0);
-        jump_skip = codegen_cond_jump_false(ir, cond);
-        uop_MOV_IMM(ir, IREG_temp0_B, 1);
-        if (jump_skip != -1)
-            uop_set_jump_dest(ir, jump_skip);
-
+        uop_CALL_FUNC_RESULT(ir, IREG_temp0, jit_cond_helpers[cond & 0xf]);
         uop_MEM_STORE_REG(ir, ireg_seg_base(target_seg), IREG_eaaddr, IREG_temp0_B);
     }
 

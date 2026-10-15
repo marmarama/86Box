@@ -68,5 +68,8 @@ uint32_t ropLOOP(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fet
 uint32_t ropLOOPE(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc);
 uint32_t ropLOOPNE(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc);
 
+typedef int (*jit_cond_fn_t)(void);
+extern const jit_cond_fn_t jit_cond_helpers[16];
+
 int codegen_cond_jump_false(ir_data_t *ir, int cond);
 

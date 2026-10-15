@@ -16,10 +16,10 @@
 #include "codegen_ops_helpers.h"
 #include "codegen_ops_jit_wrappers.h"
 #include "codegen_ops_mov.h"
+#include "codegen_ops_branch.h"
 
 
-typedef int (*jit_cond_fn_t)(void);
-static const jit_cond_fn_t jit_cond_helpers[16] = {
+const jit_cond_fn_t jit_cond_helpers[16] = {
     jit_cond_O,   jit_cond_NO,  jit_cond_B,   jit_cond_NB,
     jit_cond_E,   jit_cond_NE,  jit_cond_BE,  jit_cond_NBE,
     jit_cond_S,   jit_cond_NS,  jit_cond_P,   jit_cond_NP,
