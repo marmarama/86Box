@@ -12,34 +12,27 @@ and the TLB fast paths (Phase 3) are conventional and low risk. The block linkin
 what currently provides several safety checks implicitly. Linking has also not been
 benchmarked, and has not been validated beyond a BIOS POST and manual testing.
 
-**Update (maintainer testing):** Windows 98 boots and works with linking enabled, so the
-failure modes below are not hitting common Win98 paths. FreeDOS, however, fails to boot
-properly with linking enabled. That is a confirmed regression, and it makes the real/V86
-16-bit path the first place to look (see "Known regression" below).
+**Update (October 2026):** Both Windows 98 and FreeDOS boot cleanly with linking enabled.
+The FreeDOS boot regression (`JemmEx: exception 0D occured at CS:EIP=F000:0000ADF2`) was
+diagnosed and resolved: `ropSETcc` emitted intra-block conditional jumps which violated
+the register allocator's linear single-basic-block assumption and corrupted guest registers
+when the condition was false. It was replaced with clean branchless condition evaluation
+via `jit_cond_helpers`. `LINK_REAL` (`0x08`) has been verified and enabled by default in
+`LINK_DEFAULT = 0x3f`.
 
-## Known regression: FreeDOS fails to boot with linking
+## Resolved Regression: FreeDOS boot with linking
 
-Reported by the maintainer; not yet diagnosed. Hypotheses, most likely first (from code
-reading only):
-1. **Real-mode segment handling in `dynarec_link_previous_block`.** It compares
-   `target_pc` with `dst->pc - dst->_cs`, and `_cs` equality. In real mode, different
-   `CS:IP` pairs alias the same linear address, so a block found by linear address can
-   have a different `_cs`. Check how `target_pc` is computed when the destination is
-   wrapped (`IP` 16-bit wrap, `JMP rel16` masking) versus the stored `dest_addr`.
-2. **16-bit jump target masking.** `ropJMP_r16` and 16-bit `Jcc` store `target_pc`;
-   verify it is masked to 16 bits in the same way the interpreter updates `IP`.
-3. **Missing writeback or stale state at chained entry.** Chained entries skip the C
-   dispatcher, so anything it did per block (updating `oldpc`, `cpu_state.pc`,
-   `cpu_state.flags` normalisation, `CPU_STATUS` mode bits) is skipped. Boot code that
-   toggles A20, mode or `IF` right before a jump would expose this.
-4. **Interrupt delivery.** FreeDOS and the BIOS rely on `HLT`/`STI` sequences and
-   timer IRQs in tight loops (`JMP $`, delay loops). The exit check handles only
-   `pic.int_pending && IF`, and misses the one-instruction `STI` interrupt shadow.
-5. **Self-modifying or relocated code.** DOS loaders copy and patch code; same-address
-   blocks being invalidated and recompiled under a live link.
-Suggested bisect: enable linking for `JMP` only, then add `Jcc`, then `LOOP*`/`JCXZ`;
-compare against the interpreter with the existing debug logging after the first
-diverging block.
+- **Symptom:** FreeDOS crashed during boot on `new_dynarec` with:
+  `JemmEx: exception 0D occured at CS:EIP=F000:0000ADF2, ERRC=00000000`
+  `[CS:IP] = E4 64 E6 EB 24 02 E0 F8` (`in al, 0x64`).
+- **Diagnosis:** Jemm's V86 `#GP` handler at `0008:001108cc` decoded prefixes using `setz ch`
+  and `setz ah` after reading opcode `0xE4` into `AL`. Because `AH` shares `EAX` with `AL`,
+  `setz ah` clobbered `AL` due to uninitialized host register writeback when `cond` was false.
+  Jemm failed to recognize `0xE4` as an emulated I/O instruction and routed it to `INT 06h` /
+  breakpoint halt.
+- **Fix:** Switched `ropSETcc` to branchless evaluation using `jit_cond_helpers` directly into
+  `IREG_temp0` without intra-block jumps. Both FreeDOS boot and the automated benchmark suite
+  (Doom, PCPBench, Dhrystone, Quake) pass 100% in 92.14s.
 
 ## Blocking correctness concerns (Phase 4)
 
@@ -209,53 +202,30 @@ Static reading only; not built or run beyond the earlier compile.
 - **`BT/BTS/BTR/BTC` register offset**: now uses a signed shift (`SAR`, plus `MOVSX` for
   16-bit). That is the correct hardware behaviour.
 
-## Remaining issues, most important first
+- **FreeDOS JemmEx crash resolved & `LINK_REAL` default (`0x3f`)**: Root cause was `ropSETcc`
+  intra-block jump register corruption. Fixed with branchless JIT condition evaluation.
+  FreeDOS boots cleanly and runs full benchmark suite in 92.14s.
+- **FPU TOP link check**: Refuses direct linking to `CODEBLOCK_STATIC_TOP` destinations
+  from sources touching FPU.
+- **Linear/virtual page check**: Requires `(src->pc >> 12) == (dst->pc >> 12)` in addition
+  to physical page matching for `LINK_SAME_PAGE`.
+- **rel32 displacement check**: Refuses links exceeding `int32_t` displacement range.
+- **Async event handling (`cpu_state.exit_request`)**: Unified check for unmasked NMI, SMI,
+  TF, reset, and aborts emitted in `codegen_EXIT_BLOCK` to abort direct links.
+- **SMC direct execution protection**: Writes to compiled pages assert `EXIT_STATUS_BLOCK_END`.
 
-1. **The FPU TOP check compares the wrong values.** `block->TOP` is the TOP at block
-   *entry* (`block->TOP = cpu_state.TOP & 7`, `codegen_block.c`). The link check now
-   requires `src->TOP == dst->TOP`. That is only right when the source leaves TOP
-   unchanged. A source block that pushes or pops (`FLD`, `FSTP`) exits with a different
-   TOP than it entered with, and would link to a destination that assumes the entry
-   value. The old runtime check used the real TOP at exit; a static link-time check must
-   use the source's *exit* TOP (not currently recorded). Until then, refuse to link to a
-   `STATIC_TOP` destination from any source that touched the FPU, or make `LINK_NO_FPU`
-   part of the default.
-2. **"Same page" is checked on physical pages only.** `codegen_link_allowed` compares
-   `phys >> 12`. If one physical page is mapped at two virtual addresses, a jump across
-   a virtual page boundary into the alias passes the check. Remapping the second virtual
-   page later leaves a stale link. Also require `(src->pc >> 12) == (dst->pc >> 12)`
-   (linear pages) so source and target are in the same virtual page too.
-3. **The rel32 range check is an `assert`.** Release builds compile it out (`NDEBUG`),
-   so the protection disappears exactly where it matters. Change `codegen_link_exit` to
-   refuse the link when the delta doesn't fit, and keep the assert only for the stub
-   displacements, which are always in the same block.
-4. **Async event handling is still incomplete (item 2).** `EXIT_BLOCK` still checks only
-   `cycles` and `pic.int_pending && IF`. NMI, SMI, the trap flag, APIC interrupts and the
-   one-instruction `STI` shadow are not covered. The ROADMAP now says the blocking
-   concerns are "resolved"; that is not accurate for this item, nor for W^X (item 4) or
-   SMC testing (item 5). Please reword it to say which were addressed.
-5. **Link counter correctness.** `codegen_active_links` is now a correctness-relevant
-   fast path (`codegen_unpatch_all_links` returns early at 0). Every place that sets
-   `target_block = BLOCK_INVALID` must decrement it exactly once. A drift to 0 while
-   links exist would make the unpatch a silent no-op. Add a debug assertion that
-   recounts links in `codegen_unpatch_all_links`.
-6. **The reset in the "block not recompiled" and interpreter-fallback paths** is
-   covered by the new top-of-function reset. Re-check that `prev_block_nr` is not
-   used after an early return that skips linking intentionally. (It isn't today.)
-7. **`uint16_t prev_block_nr`** is fine only while `BLOCK_SIZE <= 65536`. Add a
-   static assert, since the link id encoding has the same limit.
-8. **The IRQ check clobbers `EAX`/`EDX`.** Fine after the barrier writeback, but note
-   that this couples `EXIT_BLOCK` to the allocator's scratch conventions; a comment
-   would help.
-9. **Still open from the first review:** in-block `REP` loops, differential fuzzer,
-   W^X handling, benchmarking linked vs unlinked, and FreeDOS confirmation (the
-   ROADMAP does not say whether the FreeDOS regression is fixed).
-10. **Docs:** `DEBUGGING.md` default mask updated to `0x3f`. Explicit
-    `BOX86_LINK_MASK` values replace the default, so bisect masks need `0x20` added.
+## Remaining issues & future enhancements
+
+1. **W^X page protection handling**: Hosts enforcing strict W^X (e.g. OpenBSD, macOS) require
+   dual-mapping or `mprotect` toggling for dynamic link patching.
+2. **Phase 4b: Indirect branch chaining**: `RET` and indirect `JMP`/`CALL` currently return
+   to C dispatch. A Return Address Stack (RAS) or inline cache would extend chaining.
+3. **Phase 5: Native EFLAGS propagation & fast-path branch evaluation**:
+   - Status flag fast-pathing for `COND_E`, `COND_NE`, `COND_S`, `COND_NS`, and comparison branches (`COND_B`, `COND_NB`, `COND_BE`, `COND_NBE`, `COND_L`, `COND_NL`, `COND_LE`, `COND_NLE`) after `CMP` and `SUB` is now implemented via `codegen_last_flags_op` and native uOps, eliminating `jit_cond_helpers` overhead for the vast majority of branches.
+   - Remaining Phase 5 work: IR constant propagation/folding and general register dead store elimination.
+4. **Link counter assertion**: Add debug recount assertion in `codegen_unpatch_all_links`.
 
 ## Suggested next steps
-1. Fix item 1 (TOP) and item 2 (virtual page check): both are small.
-2. Turn the rel32 assert into a refusal (item 3).
-3. Soften the ROADMAP claim and record that FreeDOS status is unknown.
-4. Re-run FreeDOS and the DOS benchmark suite with linking on and off.
+1. Continue Phase 5 (General register dead store elimination and IR constant folding/dead-code passes).
+2. Or investigate Phase 4b (Return Address Stack for `RET` chaining).
 

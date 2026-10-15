@@ -34,6 +34,7 @@ int      codegen_flat_ds;
 int      codegen_flat_ss;
 int      mmx_ebx_ecx_loaded;
 int      codegen_flags_changed = 0;
+int      codegen_last_flags_op = FLAGS_UNKNOWN;
 int      codegen_fpu_entered   = 0;
 int      codegen_mmx_entered   = 0;
 int      codegen_fpu_loaded_iq[8];
@@ -891,6 +892,7 @@ codegen_block_start_recompile(codeblock_t *block)
     recomp_page = block->phys & ~0xfff;
 
     codegen_flags_changed = 0;
+    codegen_last_flags_op = FLAGS_UNKNOWN;
     codegen_fpu_entered   = 0;
     codegen_mmx_entered   = 0;
 
@@ -1112,14 +1114,22 @@ codegen_block_end_recompile(codeblock_t *block)
             int is_32  = (block->exit_cond == COND_LOOPE_32);
             int cx_reg = is_32 ? IREG_ECX : IREG_CX;
             jump_false = uop_CMP_IMM_JZ_DEST(ir_data, cx_reg, 0);
-            uop_CALL_FUNC_RESULT(ir_data, IREG_temp0, jit_ZF_SET);
-            jump_false_extra = uop_CMP_IMM_JZ_DEST(ir_data, IREG_temp0, 0);
+            if (codegen_flags_changed && is_zf_flags_res_op(codegen_last_flags_op)) {
+                jump_false_extra = uop_CMP_IMM_JNZ_DEST(ir_data, IREG_flags_res, 0);
+            } else {
+                uop_CALL_FUNC_RESULT(ir_data, IREG_temp0, jit_ZF_SET);
+                jump_false_extra = uop_CMP_IMM_JZ_DEST(ir_data, IREG_temp0, 0);
+            }
         } else if (block->exit_cond == COND_LOOPNE_16 || block->exit_cond == COND_LOOPNE_32) {
             int is_32  = (block->exit_cond == COND_LOOPNE_32);
             int cx_reg = is_32 ? IREG_ECX : IREG_CX;
             jump_false = uop_CMP_IMM_JZ_DEST(ir_data, cx_reg, 0);
-            uop_CALL_FUNC_RESULT(ir_data, IREG_temp0, jit_ZF_SET);
-            jump_false_extra = uop_CMP_IMM_JNZ_DEST(ir_data, IREG_temp0, 0);
+            if (codegen_flags_changed && is_zf_flags_res_op(codegen_last_flags_op)) {
+                jump_false_extra = uop_CMP_IMM_JZ_DEST(ir_data, IREG_flags_res, 0);
+            } else {
+                uop_CALL_FUNC_RESULT(ir_data, IREG_temp0, jit_ZF_SET);
+                jump_false_extra = uop_CMP_IMM_JNZ_DEST(ir_data, IREG_temp0, 0);
+            }
         }
 
         if (jump_false == -1) {

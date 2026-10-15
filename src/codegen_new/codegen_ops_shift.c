@@ -27,7 +27,7 @@ static inline void
 emit_flags_rebuild_zpna(ir_data_t *ir)
 {
     if (codegen_flags_changed) {
-        switch (cpu_state.flags_op) {
+        switch (codegen_last_flags_op) {
             case FLAGS_ROL8:  case FLAGS_ROL16: case FLAGS_ROL32:
             case FLAGS_ROR8:  case FLAGS_ROR16: case FLAGS_ROR32:
             case FLAGS_UNKNOWN:

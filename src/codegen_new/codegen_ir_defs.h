@@ -2,6 +2,10 @@
 #define _CODEGEN_IR_DEFS_
 
 #include "codegen_reg.h"
+#include "x86_flags.h"
+
+extern int codegen_flags_changed;
+extern int codegen_last_flags_op;
 
 #define UOP_REG(reg, size, version) ((reg) | (size) | (version << 8))
 
@@ -412,6 +416,11 @@ uop_alloc(ir_data_t *ir, uint32_t uop_type)
     if (uop_type & (UOP_TYPE_BARRIER | UOP_TYPE_ORDER_BARRIER))
         dirty_ir_regs[0] = dirty_ir_regs[1] = ~0ULL;
 
+    if ((uop_type & UOP_MASK) == (UOP_CALL_FUNC & UOP_MASK) ||
+        (uop_type & UOP_MASK) == (UOP_CALL_INSTRUCTION_FUNC & UOP_MASK) ||
+        (uop_type & UOP_MASK) == (UOP_CALL_FUNC_RESULT & UOP_MASK))
+        codegen_last_flags_op = FLAGS_UNKNOWN;
+
     return uop;
 }
 
@@ -439,6 +448,11 @@ uop_alloc_unroll(ir_data_t *ir, uint32_t uop_type)
 
     if (uop_type & (UOP_TYPE_BARRIER | UOP_TYPE_ORDER_BARRIER))
         codegen_reg_mark_as_required();
+
+    if ((uop_type & UOP_MASK) == (UOP_CALL_FUNC & UOP_MASK) ||
+        (uop_type & UOP_MASK) == (UOP_CALL_INSTRUCTION_FUNC & UOP_MASK) ||
+        (uop_type & UOP_MASK) == (UOP_CALL_FUNC_RESULT & UOP_MASK))
+        codegen_last_flags_op = FLAGS_UNKNOWN;
 
     return uop;
 }
@@ -501,6 +515,10 @@ uop_gen_reg_dst_imm(uint32_t uop_type, ir_data_t *ir, int dest_reg, uint32_t imm
     uop->type       = uop_type;
     uop->dest_reg_a = codegen_reg_write(dest_reg, ir->wr_pos - 1);
     uop->imm_data   = imm;
+    if (IREG_GET_REG(dest_reg) == IREG_flags_op) {
+        codegen_flags_changed = 1;
+        codegen_last_flags_op = imm;
+    }
 }
 
 static inline void

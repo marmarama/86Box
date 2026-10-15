@@ -29,6 +29,108 @@ const jit_cond_fn_t jit_cond_helpers[16] = {
 int
 codegen_cond_jump_false(ir_data_t *ir, int cond)
 {
+    if (codegen_flags_changed && codegen_last_flags_op != FLAGS_UNKNOWN) {
+        int cond_base = cond & 0xf;
+
+        /* Fast-path 1: Zero Flag (COND_E / COND_NE) for all operations where ZF is (flags_res == 0) */
+        if (is_zf_flags_res_op(codegen_last_flags_op)) {
+            if (cond_base == COND_E) {
+                /* Equal (ZF == 1 / flags_res == 0): jump false if not equal (flags_res != 0) */
+                return uop_CMP_IMM_JNZ_DEST(ir, IREG_flags_res, 0);
+            } else if (cond_base == COND_NE) {
+                /* Not Equal (ZF == 0 / flags_res != 0): jump false if equal (flags_res == 0) */
+                return uop_CMP_IMM_JZ_DEST(ir, IREG_flags_res, 0);
+            }
+        }
+
+        /* Fast-path 2: Comparison conditions (B, NB, BE, NBE, L, NL, LE, NLE) after CMP and SUB */
+        if (codegen_last_flags_op == FLAGS_SUB32 ||
+            codegen_last_flags_op == FLAGS_SUB16 ||
+            codegen_last_flags_op == FLAGS_SUB8) {
+            int op1 = (codegen_last_flags_op == FLAGS_SUB32) ? IREG_flags_op1 :
+                      (codegen_last_flags_op == FLAGS_SUB16) ? IREG_flags_op1_W : IREG_flags_op1_B;
+            int op2 = (codegen_last_flags_op == FLAGS_SUB32) ? IREG_flags_op2 :
+                      (codegen_last_flags_op == FLAGS_SUB16) ? IREG_flags_op2_W : IREG_flags_op2_B;
+
+            switch (cond_base) {
+                case COND_B:   /* op1 < op2 (unsigned) -> jump false if op1 >= op2 */
+                    return uop_CMP_JNB_DEST(ir, op1, op2);
+                case COND_NB:  /* op1 >= op2 (unsigned) -> jump false if op1 < op2 */
+                    return uop_CMP_JB_DEST(ir, op1, op2);
+                case COND_BE:  /* op1 <= op2 (unsigned) -> jump false if op1 > op2 */
+                    return uop_CMP_JNBE_DEST(ir, op1, op2);
+                case COND_NBE: /* op1 > op2 (unsigned) -> jump false if op1 <= op2 */
+                    return uop_CMP_JBE_DEST(ir, op1, op2);
+                case COND_L:   /* op1 < op2 (signed) -> jump false if op1 >= op2 */
+                    return uop_CMP_JNL_DEST(ir, op1, op2);
+                case COND_NL:  /* op1 >= op2 (signed) -> jump false if op1 < op2 */
+                    return uop_CMP_JL_DEST(ir, op1, op2);
+                case COND_LE:  /* op1 <= op2 (signed) -> jump false if op1 > op2 */
+                    return uop_CMP_JNLE_DEST(ir, op1, op2);
+                case COND_NLE: /* op1 > op2 (signed) -> jump false if op1 <= op2 */
+                    return uop_CMP_JLE_DEST(ir, op1, op2);
+                default:
+                    break;
+            }
+        }
+
+        /* Fast-path 3: Sign Flag (COND_S / COND_NS) */
+        if (cond_base == COND_S || cond_base == COND_NS) {
+            int res_sized = -1;
+            switch (codegen_last_flags_op) {
+                case FLAGS_ZN32:
+                case FLAGS_ADD32:
+                case FLAGS_SUB32:
+                case FLAGS_INC32:
+                case FLAGS_DEC32:
+                case FLAGS_ADC32:
+                case FLAGS_SBC32:
+                case FLAGS_SHL32:
+                case FLAGS_SHR32:
+                case FLAGS_SAR32:
+                case FLAGS_SHRD32:
+                    res_sized = IREG_flags_res;
+                    break;
+                case FLAGS_ZN16:
+                case FLAGS_ADD16:
+                case FLAGS_SUB16:
+                case FLAGS_INC16:
+                case FLAGS_DEC16:
+                case FLAGS_ADC16:
+                case FLAGS_SBC16:
+                case FLAGS_SHL16:
+                case FLAGS_SHR16:
+                case FLAGS_SAR16:
+                case FLAGS_SHRD16:
+                    res_sized = IREG_flags_res_W;
+                    break;
+                case FLAGS_ZN8:
+                case FLAGS_ADD8:
+                case FLAGS_SUB8:
+                case FLAGS_INC8:
+                case FLAGS_DEC8:
+                case FLAGS_ADC8:
+                case FLAGS_SBC8:
+                case FLAGS_SHL8:
+                case FLAGS_SHR8:
+                case FLAGS_SAR8:
+                    res_sized = IREG_flags_res_B;
+                    break;
+                default:
+                    break;
+            }
+            if (res_sized != -1) {
+                if (cond_base == COND_S) {
+                    /* Negative (SF == 1): jump false if positive (SF == 0) */
+                    return uop_TEST_JNS_DEST(ir, res_sized);
+                } else {
+                    /* Positive (SF == 0): jump false if negative (SF == 1) */
+                    return uop_TEST_JS_DEST(ir, res_sized);
+                }
+            }
+        }
+    }
+
     uop_CALL_FUNC_RESULT(ir, IREG_temp0, jit_cond_helpers[cond & 0xf]);
     return uop_CMP_IMM_JZ_DEST(ir, IREG_temp0, 0);
 }

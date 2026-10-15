@@ -4,6 +4,7 @@
 #include <86box/mem.h>
 #include <stddef.h>
 #include "x86_ops.h"
+#include "x86_flags.h"
 
 /*Handling self-modifying code (of which there is a lot on x86) :
 
@@ -426,6 +427,51 @@ extern uint32_t op_old_pc;
 /*Set to 1 if flags have been changed in the block being recompiled, and hence
   flags_op is known and can be relied on */
 extern int codegen_flags_changed;
+extern int codegen_last_flags_op;
+
+static inline int
+is_zf_flags_res_op(int flags_op)
+{
+    switch (flags_op) {
+        case FLAGS_ZN8:
+        case FLAGS_ZN16:
+        case FLAGS_ZN32:
+        case FLAGS_ADD8:
+        case FLAGS_ADD16:
+        case FLAGS_ADD32:
+        case FLAGS_SUB8:
+        case FLAGS_SUB16:
+        case FLAGS_SUB32:
+        case FLAGS_SHL8:
+        case FLAGS_SHL16:
+        case FLAGS_SHL32:
+        case FLAGS_SHR8:
+        case FLAGS_SHR16:
+        case FLAGS_SHR32:
+        case FLAGS_SAR8:
+        case FLAGS_SAR16:
+        case FLAGS_SAR32:
+        case FLAGS_INC8:
+        case FLAGS_INC16:
+        case FLAGS_INC32:
+        case FLAGS_DEC8:
+        case FLAGS_DEC16:
+        case FLAGS_DEC32:
+#ifdef USE_NEW_DYNAREC
+        case FLAGS_ADC8:
+        case FLAGS_ADC16:
+        case FLAGS_ADC32:
+        case FLAGS_SBC8:
+        case FLAGS_SBC16:
+        case FLAGS_SBC32:
+        case FLAGS_SHRD16:
+        case FLAGS_SHRD32:
+#endif
+            return 1;
+        default:
+            return 0;
+    }
+}
 
 extern int codegen_fpu_entered;
 extern int codegen_mmx_entered;

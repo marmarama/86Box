@@ -42,10 +42,13 @@ This document captures essential architectural knowledge, debugging workflows, t
   If `CX` never decrements, the loop spins indefinitely until a driver timeout triggers. `VMM32.VXD` fails initialization and returns error code `0` to `WIN.COM`, which invokes `INT 2Fh AX=160Eh BL=3` (clean shutdown) and halts.
 - **Rule**: In `codegen_ops_branch.c` and `codegen_block.c`, loop instructions **must** emit register decrements before condition checks.
 
-### 2. Runtime Lazy Flags vs. Speculative Compile-Time Evaluation
+### 2. Runtime Lazy Flags vs. Compile-Time Tracking (`codegen_last_flags_op`)
 - **Symptom**: Inverted conditional jumps, crashes, or premature loop exits.
-- **Root Cause**: Speculatively reading `cpu_state.flags_op` inside `codegen_cond_jump_false` at block compile-time.
-- **Rule**: `cpu_state.flags_op` represents the **runtime guest CPU state**, which changes dynamically during guest execution. Never evaluate flags with a compile-time C `switch (cpu_state.flags_op)`. Always emit runtime calls to `jit_cond_helpers[cond & 0xf]` or backend conditional branch uOps.
+- **Root Cause**: Speculatively reading `cpu_state.flags_op` inside `codegen_cond_jump_false`, `rebuild_c`, or `emit_flags_rebuild_zpna` at block compile-time.
+- **Rule**: `cpu_state.flags_op` represents the **runtime guest CPU state**, which changes dynamically during guest execution and is NOT updated by compiler code generation.
+  1. Never evaluate flags using `switch (cpu_state.flags_op)` at compile-time.
+  2. To fast-path flags evaluation across a single linear basic block, use the compiler's compile-time tracking variable `codegen_last_flags_op`, which tracks `uop_MOV_IMM(ir, IREG_flags_op, op)` within the block being compiled and invalidates to `FLAGS_UNKNOWN` on any function call.
+  3. Emit native conditional jump uOps (`uop_CMP_IMM_*_DEST`, `uop_CMP_*_DEST`, `uop_TEST_*_DEST`) when `codegen_last_flags_op` is known, or fall back to `jit_cond_helpers[cond & 0xf]`.
 
 ### 3. Real-Mode Address Masking (`CS:IP` vs `_cs`)
 - In real mode, `_cs = CS << 4` (linear base).

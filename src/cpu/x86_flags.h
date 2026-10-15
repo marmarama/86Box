@@ -1,4 +1,8 @@
+#ifndef _X86_FLAGS_H_
+#define _X86_FLAGS_H_
+
 extern int tempc;
+extern uint8_t znptable8[256];
 
 enum {
     FLAGS_UNKNOWN,
@@ -869,3 +873,5 @@ setsbc32(uint32_t a, uint32_t b)
 
 extern void cpu_386_flags_extract(void);
 extern void cpu_386_flags_rebuild(void);
+
+#endif /* _X86_FLAGS_H_ */

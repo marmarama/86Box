@@ -2273,7 +2273,7 @@ rebuild_c(ir_data_t *ir)
     int needs_rebuild = 1;
 
     if (codegen_flags_changed) {
-        switch (cpu_state.flags_op) {
+        switch (codegen_last_flags_op) {
             case FLAGS_INC8:
             case FLAGS_INC16:
             case FLAGS_INC32:
