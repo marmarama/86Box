@@ -222,10 +222,11 @@ Static reading only; not built or run beyond the earlier compile.
    to C dispatch. A Return Address Stack (RAS) or inline cache would extend chaining.
 3. **Phase 5: Native EFLAGS propagation & fast-path branch evaluation**:
    - Status flag fast-pathing for `COND_E`, `COND_NE`, `COND_S`, `COND_NS`, and comparison branches (`COND_B`, `COND_NB`, `COND_BE`, `COND_NBE`, `COND_L`, `COND_NL`, `COND_LE`, `COND_NLE`) after `CMP` and `SUB` is now implemented via `codegen_last_flags_op` and native uOps, eliminating `jit_cond_helpers` overhead for the vast majority of branches.
-   - Remaining Phase 5 work: IR constant propagation/folding and general register dead store elimination.
+   - General register dead store elimination is implemented for `IREG_EAX` through `IREG_EBX` in `codegen_reg.h`/`codegen_reg.c`.
+   - Remaining Phase 5 work: IR constant propagation & peephole folding in `codegen_ir.c`.
 4. **Link counter assertion**: Add debug recount assertion in `codegen_unpatch_all_links`.
 
 ## Suggested next steps
-1. Continue Phase 5 (General register dead store elimination and IR constant folding/dead-code passes).
+1. Complete Phase 5 Task 3 (IR constant propagation & peephole folding in `codegen_ir.c`).
 2. Or investigate Phase 4b (Return Address Stack for `RET` chaining).
 

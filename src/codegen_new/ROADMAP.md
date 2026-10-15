@@ -290,8 +290,11 @@ However, the x86-64 backend in `codegen_new` was ported without general REX pref
    - **Sign Flag Fast-Path (`COND_S` / `COND_NS`)**: Directly evaluate sign tests using native `uop_TEST_JNS_DEST` / `uop_TEST_JS_DEST` on sized `IREG_flags_res`.
    - **Safe Fallback**: Fall back to `jit_cond_helpers[cond & 0xf]` whenever flags are unknown across block boundaries or for rare parity (`PF`) and overflow (`OF`) tests.
    - **Verification**: Verified 100% test pass on automated benchmark suite (91.64s total wall-clock time) and confirmed full normal boot to Windows 98 SE graphical desktop with taskbar and icons.
-2. **[ ] General Register Dead Store Elimination**:
-   - Update `src/codegen_new/codegen_reg.h` to allow dead-store elimination for `IREG_EAX` through `IREG_EBX` within the basic block when a subsequent write precedes any read or block exit.
+2. **[x] General Register Dead Store Elimination**:
+   - Updated `src/codegen_new/codegen_reg.h` and `src/codegen_new/codegen_reg.c` to allow dead-store elimination for `IREG_EAX` through `IREG_EBX` within the basic block when a subsequent native-size write precedes any read or block exit.
+   - Preserved barrier and block-exit guarantees by marking `last_version` of `IREG_EAX` through `IREG_EBX` as `REG_FLAGS_REQUIRED` when `dirty_ir_regs` indicates a barrier occurred or at block termination via `codegen_reg_mark_as_required()`.
+   - Fixed dead-list propagation in `codegen_reg_process_dead_list()` to ensure source register refcounts are properly decremented when dead uOps are pruned without prematurely enqueuing version 0 or required registers.
+   - **Verification**: Verified 100% test pass on automated benchmark suite (91.14s total wall-clock time) and confirmed full normal boot to Windows 98 SE graphical desktop with taskbar and icons.
 3. **[ ] Constant Propagation & Folding in IR**:
    - Implement a simple peephole pass in `src/codegen_new/codegen_ir.c`:
      - `MOV_IMM` followed by `ADD_IMM` $\rightarrow$ folded into a single `MOV_IMM`.

@@ -218,9 +218,8 @@ static const uint8_t native_requested_sizes[9][8] =
 void
 codegen_reg_mark_as_required(void)
 {
-    /* This used to start from IREG_EAX, now only starts from IREG_ESP since the first 4 registers are never optimized out. */
-    /* It also no longer iterates through volatile registers unnecessarily. */
-    for (uint8_t reg = IREG_ESP; reg < IREG_temp0; reg++) {
+    /* Mark the last version of all permanent registers (including EAX..EBX) as required so they are flushed at block exit. */
+    for (uint8_t reg = IREG_EAX; reg < IREG_temp0; reg++) {
         int last_version = reg_last_version[reg];
 
         if (last_version > 0)
@@ -943,19 +942,19 @@ codegen_reg_process_dead_list(ir_data_t *ir)
             if (uop->src_reg_a.reg != IREG_INVALID) {
                 reg_version_t *src_regv = &reg_version[IREG_GET_REG(uop->src_reg_a.reg)][uop->src_reg_a.version];
                 src_regv->refcount--;
-                if (!src_regv->refcount)
+                if (!src_regv->refcount && uop->src_reg_a.version > 0 && !(src_regv->flags & REG_FLAGS_REQUIRED))
                     add_to_dead_list(src_regv, IREG_GET_REG(uop->src_reg_a.reg), uop->src_reg_a.version);
             }
             if (uop->src_reg_b.reg != IREG_INVALID) {
                 reg_version_t *src_regv = &reg_version[IREG_GET_REG(uop->src_reg_b.reg)][uop->src_reg_b.version];
                 src_regv->refcount--;
-                if (!src_regv->refcount)
+                if (!src_regv->refcount && uop->src_reg_b.version > 0 && !(src_regv->flags & REG_FLAGS_REQUIRED))
                     add_to_dead_list(src_regv, IREG_GET_REG(uop->src_reg_b.reg), uop->src_reg_b.version);
             }
             if (uop->src_reg_c.reg != IREG_INVALID) {
                 reg_version_t *src_regv = &reg_version[IREG_GET_REG(uop->src_reg_c.reg)][uop->src_reg_c.version];
                 src_regv->refcount--;
-                if (!src_regv->refcount)
+                if (!src_regv->refcount && uop->src_reg_c.version > 0 && !(src_regv->flags & REG_FLAGS_REQUIRED))
                     add_to_dead_list(src_regv, IREG_GET_REG(uop->src_reg_c.reg), uop->src_reg_c.version);
             }
             regv->flags |= REG_FLAGS_DEAD;

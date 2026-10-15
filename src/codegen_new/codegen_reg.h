@@ -381,14 +381,14 @@ codegen_reg_write(int reg, int uop_nr)
 
     if (dirty_ir_regs[(IREG_GET_REG(reg) >> 6) & 3] & (1ull << ((uint64_t)IREG_GET_REG(reg) & 0x3full))) {
         dirty_ir_regs[(IREG_GET_REG(reg) >> 6) & 3] &= ~(1ull << ((uint64_t)IREG_GET_REG(reg) & 0x3full));
-        if ((IREG_GET_REG(reg) > IREG_EBX && IREG_GET_REG(reg) < IREG_temp0) && last_version > 0) {
+        if (IREG_GET_REG(reg) < IREG_temp0 && last_version > 0) {
             reg_version[IREG_GET_REG(reg)][last_version].flags |= REG_FLAGS_REQUIRED;
         }
     }
     ireg.reg     = reg;
     ireg.version = last_version + 1;
 
-    if (IREG_GET_REG(reg) > IREG_EBX && last_version && !reg_version[IREG_GET_REG(reg)][last_version].refcount && !(reg_version[IREG_GET_REG(reg)][last_version].flags & REG_FLAGS_REQUIRED)) {
+    if (last_version && !reg_version[IREG_GET_REG(reg)][last_version].refcount && !(reg_version[IREG_GET_REG(reg)][last_version].flags & REG_FLAGS_REQUIRED)) {
         if (reg_is_native_size(ireg)) /*Non-native size registers have an implicit dependency on the previous version, so don't add to dead list*/
             add_to_dead_list(&reg_version[IREG_GET_REG(reg)][last_version], IREG_GET_REG(reg), last_version);
     }
