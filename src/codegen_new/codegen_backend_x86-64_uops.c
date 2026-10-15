@@ -1473,15 +1473,20 @@ codegen_MOV(codeblock_t *block, uop_t *uop)
     int src_size  = IREG_GET_SIZE(uop->src_reg_a_real);
 
     if (REG_IS_L(dest_size) && REG_IS_L(src_size)) {
-        host_x86_MOV32_REG_REG(block, dest_reg, src_reg);
+        if (dest_reg != src_reg)
+            host_x86_MOV32_REG_REG(block, dest_reg, src_reg);
     } else if (REG_IS_W(dest_size) && REG_IS_W(src_size)) {
-        host_x86_MOV16_REG_REG(block, dest_reg, src_reg);
+        if (dest_reg != src_reg)
+            host_x86_MOV16_REG_REG(block, dest_reg, src_reg);
     } else if (REG_IS_B(dest_size) && REG_IS_B(src_size)) {
-        host_x86_MOV8_REG_REG(block, dest_reg, src_reg);
+        if (dest_reg != src_reg)
+            host_x86_MOV8_REG_REG(block, dest_reg, src_reg);
     } else if (REG_IS_D(dest_size) && REG_IS_D(src_size)) {
-        host_x86_MOVQ_XREG_XREG(block, dest_reg, src_reg);
+        if (dest_reg != src_reg)
+            host_x86_MOVQ_XREG_XREG(block, dest_reg, src_reg);
     } else if (REG_IS_Q(dest_size) && REG_IS_Q(src_size)) {
-        host_x86_MOVQ_XREG_XREG(block, dest_reg, src_reg);
+        if (dest_reg != src_reg)
+            host_x86_MOVQ_XREG_XREG(block, dest_reg, src_reg);
     }
 #    ifdef RECOMPILER_DEBUG
     else

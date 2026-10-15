@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <string.h>
 #include <86box/86box.h>
 #include "cpu.h"
 #include <86box/mem.h>
@@ -62,6 +63,139 @@ duplicate_uop(ir_data_t *ir, uop_t *uop, int offset)
     }
 }
 
+static inline void
+peephole_release_src_reg(ir_reg_t ir_reg)
+{
+    if (ir_reg.reg != IREG_INVALID) {
+        reg_version_t *src_regv = &reg_version[IREG_GET_REG(ir_reg.reg)][ir_reg.version];
+        src_regv->refcount--;
+        if (!src_regv->refcount && ir_reg.version > 0 && !(src_regv->flags & REG_FLAGS_REQUIRED))
+            add_to_dead_list(src_regv, IREG_GET_REG(ir_reg.reg), ir_reg.version);
+    }
+}
+
+
+void
+codegen_ir_peephole(ir_data_t *ir)
+{
+    uint32_t const_val[IREG_COUNT];
+    uint8_t  const_version[IREG_COUNT];
+    uint8_t  const_valid[IREG_COUNT];
+
+    memset(const_valid, 0, sizeof(const_valid));
+
+    for (int c = 0; c < ir->wr_pos; c++) {
+        uop_t *uop = &ir->uops[c];
+
+        if ((uop->type & UOP_MASK) == UOP_INVALID)
+            continue;
+
+        /* Invalidate constants across barriers, branches, and loop boundaries */
+        if (uop->type & (UOP_TYPE_BARRIER | UOP_TYPE_ORDER_BARRIER | UOP_TYPE_JUMP_DEST | UOP_TYPE_JUMP)) {
+            memset(const_valid, 0, sizeof(const_valid));
+        }
+        if ((uop->type & UOP_MASK) == (UOP_LOOP_LABEL & UOP_MASK)) {
+            memset(const_valid, 0, sizeof(const_valid));
+            continue;
+        }
+
+        uint32_t uop_masked = uop->type & UOP_MASK;
+
+        /* 1. Self-cancelling operations: XOR R, R or SUB R, R -> MOV_IMM 0 (native size) */
+        if (uop_masked == (UOP_XOR & UOP_MASK) || uop_masked == (UOP_SUB & UOP_MASK)) {
+            if (uop->src_reg_a.reg != IREG_INVALID &&
+                reg_is_native_size(uop->dest_reg_a) &&
+                reg_is_native_size(uop->src_reg_a) &&
+                uop->src_reg_a.reg == uop->src_reg_b.reg &&
+                uop->src_reg_a.version == uop->src_reg_b.version) {
+                peephole_release_src_reg(uop->src_reg_a);
+                peephole_release_src_reg(uop->src_reg_b);
+                uop->type = (uop->type & ~UOP_MASK) | (UOP_MOV_IMM & UOP_MASK);
+                uop->type |= UOP_TYPE_PARAMS_IMM;
+                uop->imm_data  = 0;
+                uop->src_reg_a = invalid_ir_reg;
+                uop->src_reg_b = invalid_ir_reg;
+
+                int dreg            = IREG_GET_REG(uop->dest_reg_a.reg);
+                const_val[dreg]     = 0;
+                const_version[dreg] = uop->dest_reg_a.version;
+                const_valid[dreg]   = 1;
+                continue;
+            }
+        }
+
+        /* 2. Check if src_reg_a has a known constant (native size) */
+        int      src_a_is_const = 0;
+        uint32_t c_val_a        = 0;
+        if (uop->src_reg_a.reg != IREG_INVALID && reg_is_native_size(uop->src_reg_a)) {
+            int sreg = IREG_GET_REG(uop->src_reg_a.reg);
+            if (const_valid[sreg] && const_version[sreg] == uop->src_reg_a.version) {
+                src_a_is_const = 1;
+                c_val_a        = const_val[sreg];
+            }
+        }
+
+        /* 3. Constant propagation into immediate ALU operations (native size) */
+        if (src_a_is_const && (uop->dest_reg_a.reg != IREG_INVALID) &&
+            reg_is_native_size(uop->dest_reg_a)) {
+            int      folded = 0;
+            uint32_t res    = 0;
+
+            if (uop_masked == (UOP_ADD_IMM & UOP_MASK)) {
+                res    = c_val_a + uop->imm_data;
+                folded = 1;
+            } else if (uop_masked == (UOP_SUB_IMM & UOP_MASK)) {
+                res    = c_val_a - uop->imm_data;
+                folded = 1;
+            } else if (uop_masked == (UOP_AND_IMM & UOP_MASK)) {
+                res    = c_val_a & uop->imm_data;
+                folded = 1;
+            } else if (uop_masked == (UOP_OR_IMM & UOP_MASK)) {
+                res    = c_val_a | uop->imm_data;
+                folded = 1;
+            } else if (uop_masked == (UOP_XOR_IMM & UOP_MASK)) {
+                res    = c_val_a ^ uop->imm_data;
+                folded = 1;
+            } else if (uop_masked == (UOP_SHL_IMM & UOP_MASK)) {
+                res    = c_val_a << (uop->imm_data & 31);
+                folded = 1;
+            } else if (uop_masked == (UOP_SHR_IMM & UOP_MASK)) {
+                res    = c_val_a >> (uop->imm_data & 31);
+                folded = 1;
+            } else if (uop_masked == (UOP_SAR_IMM & UOP_MASK)) {
+                res    = (uint32_t) (((int32_t) c_val_a) >> (uop->imm_data & 31));
+                folded = 1;
+            }
+
+            if (folded) {
+                peephole_release_src_reg(uop->src_reg_a);
+                uop->type = (uop->type & ~UOP_MASK) | (UOP_MOV_IMM & UOP_MASK);
+                uop->type |= UOP_TYPE_PARAMS_IMM;
+                uop->imm_data  = res;
+                uop->src_reg_a = invalid_ir_reg;
+
+                int dreg            = IREG_GET_REG(uop->dest_reg_a.reg);
+                const_val[dreg]     = res;
+                const_version[dreg] = uop->dest_reg_a.version;
+                const_valid[dreg]   = 1;
+                continue;
+            }
+        }
+
+        /* 4. Update or invalidate constant tracking on write */
+        if (uop->dest_reg_a.reg != IREG_INVALID) {
+            int dreg = IREG_GET_REG(uop->dest_reg_a.reg);
+            if ((uop->type & UOP_MASK) == (UOP_MOV_IMM & UOP_MASK) && reg_is_native_size(uop->dest_reg_a)) {
+                const_val[dreg]     = uop->imm_data;
+                const_version[dreg] = uop->dest_reg_a.version;
+                const_valid[dreg]   = 1;
+            } else {
+                const_valid[dreg] = 0;
+            }
+        }
+    }
+}
+
 void
 codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
 {
@@ -85,6 +219,7 @@ codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
     }
 
     codegen_reg_mark_as_required();
+    codegen_ir_peephole(ir);
     codegen_reg_process_dead_list(ir);
     block_write_data = codeblock_allocator_get_ptr(block->head_mem_block);
     block_pos        = 0;
