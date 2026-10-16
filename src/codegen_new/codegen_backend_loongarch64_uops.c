@@ -2321,6 +2321,7 @@ const uOpFn uop_handlers[UOP_MAX] = {
 
     [UOP_JMP & UOP_MASK] = codegen_JMP,
     [UOP_EXIT_BLOCK & UOP_MASK] = codegen_EXIT_BLOCK,
+    [UOP_EXIT_BLOCK_RET & UOP_MASK] = codegen_EXIT_BLOCK,
 
     [UOP_LOAD_SEG & UOP_MASK] = codegen_LOAD_SEG,
 

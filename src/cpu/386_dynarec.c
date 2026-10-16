@@ -491,7 +491,7 @@ dynarec_link_previous_block(codeblock_t *dst_block, uint16_t prev_block_nr, int 
             uint32_t dst_pc = (src_block->status & CPU_STATUS_USE32) ?
                               (dst_block->pc - dst_block->_cs) :
                               ((dst_block->pc - dst_block->_cs) & 0xffff);
-            if (src_block->links[exit_idx].target_pc == dst_pc &&
+            if ((src_block->exit_type == BLOCK_EXIT_RET || src_block->links[exit_idx].target_pc == dst_pc) &&
                 !((src_block->status ^ dst_block->status) & (CPU_STATUS_FLAGS | CPU_STATUS_MASK)) &&
                 !(dst_block->flags & CODEBLOCK_STATIC_TOP) &&
                 !(dst_block->flags & CODEBLOCK_IN_DIRTY_LIST)) {

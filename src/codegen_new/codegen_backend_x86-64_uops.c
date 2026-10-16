@@ -1019,6 +1019,70 @@ codegen_EXIT_BLOCK(codeblock_t *block, uop_t *uop)
 }
 
 static int
+codegen_EXIT_BLOCK_RET(codeblock_t *block, uop_t *uop)
+{
+    int exit_idx = uop->imm_data;
+
+    block->links[exit_idx].target_pc = BLOCK_PC_INVALID;
+
+    codegen_alloc_bytes(block, 160);
+
+    /* 1. Compare popped return address in cpu_state.pc with predicted target_pc in block->links[exit_idx].target_pc: */
+    int pc_disp = (int) offsetof(cpu_state_t, pc) - 128;
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_EAX, REG_RBP, pc_disp);
+    host_x86_MOV32_REG_ABS(block, REG_EDX, &block->links[exit_idx].target_pc);
+    host_x86_CMP32_REG_REG(block, REG_EAX, REG_EDX);
+    uint32_t *jne_unlinked = host_x86_JNZ_long(block);
+
+    /* 2. Cycle check: */
+    int cycles_disp = (int) offsetof(cpu_state_t, _cycles) - 128;
+    host_x86_CMP32_BASE_OFFSET_IMM(block, REG_RBP, cycles_disp, 0);
+    uint32_t *jle_disp = host_x86_JLE_long(block);
+
+    /* 3. Asynchronous event check: */
+    int exit_disp = (int) offsetof(cpu_state_t, exit_request) - 128;
+    host_x86_CMP32_BASE_OFFSET_IMM(block, REG_RBP, exit_disp, 0);
+    uint32_t *jne_disp = host_x86_JNZ_long(block);
+
+    /* 4. Maskable hardware interrupt check: */
+    host_x86_MOVZX_REG_ABS_32_8(block, REG_EAX, &pic.int_pending);
+    host_x86_TEST32_REG(block, REG_EAX, REG_EAX);
+    uint8_t *no_irq = host_x86_JZ_short(block);
+
+    int flags_disp = (int) offsetof(cpu_state_t, flags) - 128;
+    host_x86_MOV16_REG_BASE_OFFSET(block, REG_EDX, REG_RBP, flags_disp);
+    host_x86_TEST32_REG_IMM(block, REG_EDX, I_FLAG);
+    uint32_t *jnz_irq = host_x86_JNZ_long(block);
+
+    *no_irq = (uint8_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) (no_irq + 1));
+
+    /* 5. Direct branch instruction (patched to target_block->direct_entry_pos when linked): */
+    block->links[exit_idx].jmp_disp_ptr = host_x86_JMP_long(block);
+
+    /* 6. Unlinked stub: */
+    uint8_t *unlinked_stub = &block_write_data[block_pos];
+    block->links[exit_idx].unlinked_target = unlinked_stub;
+
+    patch_disp32(jne_unlinked, unlinked_stub);
+    patch_disp32(block->links[exit_idx].jmp_disp_ptr, unlinked_stub);
+
+    host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, last_block_nr) - 128, get_block_nr(block));
+    host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, last_exit_idx) - 128, exit_idx);
+    host_x86_JMP(block, codegen_exit_rout);
+
+    /* 7. Exit due to cycle expiry, async event, or pending interrupt: */
+    uint8_t *exit_cycles_stub = &block_write_data[block_pos];
+    patch_disp32(jle_disp, exit_cycles_stub);
+    patch_disp32(jne_disp, exit_cycles_stub);
+    patch_disp32(jnz_irq, exit_cycles_stub);
+
+    host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, last_block_nr) - 128, 0);
+    host_x86_JMP(block, codegen_exit_rout);
+
+    return 0;
+}
+
+static int
 codegen_LOAD_FUNC_ARG0(codeblock_t *block, uop_t *uop)
 {
     int src_reg  = HOST_REG_GET(uop->src_reg_a_real);
@@ -3150,6 +3214,9 @@ const uOpFn uop_handlers[UOP_MAX] = {
     [UOP_EXIT_BLOCK &
         UOP_MASK]
     = codegen_EXIT_BLOCK,
+    [UOP_EXIT_BLOCK_RET &
+        UOP_MASK]
+    = codegen_EXIT_BLOCK_RET,
 
     [UOP_LOAD_SEG &
         UOP_MASK]

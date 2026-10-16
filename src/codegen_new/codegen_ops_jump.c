@@ -121,10 +121,11 @@ ropCALL_r32(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(ui
     sp_reg = LOAD_SP_WITH_OFFSET(ir, -4);
     uop_MEM_STORE_IMM_32(ir, IREG_SS_base, sp_reg, ret_addr);
     SUB_SP(ir, 4);
-    uop_MOV_IMM(ir, IREG_pc, dest_addr);
 
     codegen_mark_code_present(block, cs + op_pc, 4);
-    return -1;
+    block->exit_type          = BLOCK_EXIT_DIRECT_1;
+    block->links[0].target_pc = dest_addr;
+    return dest_addr;
 }
 
 uint32_t
@@ -144,7 +145,7 @@ ropRET_16(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNU
     return -1;
 }
 uint32_t
-ropRET_32(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), UNUSED(uint32_t op_pc))
+ropRET_32(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), UNUSED(uint32_t op_pc))
 {
     uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
 
@@ -155,6 +156,11 @@ ropRET_32(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNU
         uop_MEM_LOAD_REG(ir, IREG_pc, IREG_SS_base, IREG_eaaddr);
     }
     ADD_SP(ir, 4);
+
+    if ((msw & 1) && !(cpu_state.eflags & VM_FLAG) && (block->status & CPU_STATUS_USE32)) {
+        block->exit_type          = BLOCK_EXIT_RET;
+        block->links[0].target_pc = BLOCK_PC_INVALID;
+    }
 
     return -1;
 }
@@ -194,6 +200,12 @@ ropRET_imm_32(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(
     ADD_SP(ir, 4 + offset);
 
     codegen_mark_code_present(block, cs + op_pc, 2);
+
+    if ((msw & 1) && !(cpu_state.eflags & VM_FLAG) && (block->status & CPU_STATUS_USE32)) {
+        block->exit_type          = BLOCK_EXIT_RET;
+        block->links[0].target_pc = BLOCK_PC_INVALID;
+    }
+
     return -1;
 }
 

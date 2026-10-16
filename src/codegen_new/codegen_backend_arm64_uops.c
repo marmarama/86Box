@@ -3202,6 +3202,9 @@ const uOpFn uop_handlers[UOP_MAX] = {
     [UOP_EXIT_BLOCK &
         UOP_MASK]
     = codegen_EXIT_BLOCK,
+    [UOP_EXIT_BLOCK_RET &
+        UOP_MASK]
+    = codegen_EXIT_BLOCK,
 
     [UOP_LOAD_SEG &
         UOP_MASK]

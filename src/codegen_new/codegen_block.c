@@ -450,6 +450,8 @@ codegen_link_allowed(const codeblock_t *src_block, const codeblock_t *dst_block)
 
     if (src_block->exit_type == BLOCK_EXIT_DIRECT_1)
         kind = LINK_JMP;
+    else if (src_block->exit_type == BLOCK_EXIT_RET)
+        kind = LINK_RET;
     else if (src_block->exit_cond < COND_JCXZ_16)
         kind = LINK_JCC;
     else
@@ -515,6 +517,8 @@ codegen_unpatch_all_links(void)
             if (link->jmp_disp_ptr && link->unlinked_target)
                 patch_jmp_disp(link->jmp_disp_ptr, link->unlinked_target);
             link->target_block = BLOCK_INVALID;
+            if (block->exit_type == BLOCK_EXIT_RET)
+                link->target_pc = BLOCK_PC_INVALID;
             link->prev_link    = LINK_NONE;
             link->next_link    = LINK_NONE;
         }
@@ -590,6 +594,10 @@ codegen_link_exit(codeblock_t *src_block, int exit_idx, codeblock_t *dst_block)
     /* Record target block. */
     uint16_t src_block_nr = get_block_nr(src_block);
     link->target_block = get_block_nr(dst_block);
+    if (src_block->exit_type == BLOCK_EXIT_RET)
+        link->target_pc = (src_block->status & CPU_STATUS_USE32) ?
+                          (dst_block->pc - dst_block->_cs) :
+                          ((dst_block->pc - dst_block->_cs) & 0xffff);
     codegen_active_links++;
 
     /* Insert link into destination block's incoming link list. */
@@ -626,6 +634,8 @@ codegen_unlink_block(codeblock_t *block)
             patch_jmp_disp(link->jmp_disp_ptr, link->unlinked_target);
         }
         link->target_block = BLOCK_INVALID;
+        if (pred_block->exit_type == BLOCK_EXIT_RET)
+            link->target_pc = BLOCK_PC_INVALID;
         if (codegen_active_links > 0)
             codegen_active_links--;
 
@@ -1089,6 +1099,8 @@ codegen_block_end_recompile(codeblock_t *block)
     codegen_accumulate_flush(ir_data);
     if (block->exit_type == BLOCK_EXIT_DIRECT_1) {
         uop_EXIT_BLOCK(ir_data, 0, block->links[0].target_pc);
+    } else if (block->exit_type == BLOCK_EXIT_RET) {
+        uop_EXIT_BLOCK_RET(ir_data, 0);
     } else if (block->exit_type == BLOCK_EXIT_COND_2) {
         int jump_false = -1;
         int jump_false_extra = -1;

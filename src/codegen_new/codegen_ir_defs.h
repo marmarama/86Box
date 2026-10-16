@@ -60,6 +60,7 @@ extern int codegen_last_flags_op;
 #define UOP_NOP_BARRIER    (UOP_TYPE_BARRIER | 0x18)
 #define UOP_STORE_P_IMM_16 (UOP_TYPE_PARAMS_IMM | 0x19)
 #define UOP_EXIT_BLOCK     (UOP_TYPE_PARAMS_IMM | 0x1a | UOP_TYPE_BARRIER)
+#define UOP_EXIT_BLOCK_RET (UOP_TYPE_PARAMS_IMM | 0x1b | UOP_TYPE_BARRIER)
 
 #ifdef DEBUG_EXTRA
 /*UOP_LOG_INSTR - log non-recompiled instruction in imm_data*/
@@ -832,6 +833,15 @@ uop_EXIT_BLOCK(ir_data_t *ir, int exit_idx, uint32_t target_pc)
     uop->type = UOP_EXIT_BLOCK;
     uop->imm_data = exit_idx;
     uop->pc = target_pc;
+}
+
+static inline void
+uop_EXIT_BLOCK_RET(ir_data_t *ir, int exit_idx)
+{
+    uop_t *uop = uop_alloc(ir, UOP_EXIT_BLOCK_RET);
+    uop->type = UOP_EXIT_BLOCK_RET;
+    uop->imm_data = exit_idx;
+    uop->pc = (uint32_t) -1;
 }
 
 #define uop_LOAD_SEG(ir, p, src_reg)                                     uop_gen_reg_src_pointer(UOP_LOAD_SEG, ir, src_reg, p)
