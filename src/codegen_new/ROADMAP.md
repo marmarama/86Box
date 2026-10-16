@@ -288,6 +288,13 @@ However, the x86-64 backend in `codegen_new` was ported without general REX pref
 - **Verification**:
   - **Automated DOS Benchmark Suite**: 100% pass across all tests with wall-clock time reduced from 92.14s to 90.14s (Quake: 148.9 FPS, Doom: 5745.38 FPS, PCPBench: 208.7 FPS, Dhrystone: 400,000 Ops/sec).
   - **Windows 98 SE Graphical Boot**: Successfully booted to graphical desktop with full taskbar, desktop icons, and active mouse cursor with `BOX86_LINK_MASK=0xbf` and zero GPFs or faults.
+- **Future Work: Revisit 16-Bit Near CALL/RET Linking**:
+  - In mixed 16/32-bit environments like Windows 9x (where core subsystems like `USER.EXE` and `GDI.EXE` are 16-bit segmented code interacting with 32-bit system components), subroutine call/return overhead through the C dispatcher has a measurable performance impact on GUI redraws, message dispatch loops, and Win16 thunk calls.
+  - Enabling `ropCALL_r16` / `ropRET_16` linking previously triggered stack unwinding faults (e.g. `pmoderetf(): seg < CPL at 1777:000000E1` where far return stack expectations conflicted with 2-byte near call pushes on mixed stacks).
+  - Requirements for safely enabling 16-bit call/ret chaining:
+    1. **Stack Width Consistency**: Guard with `stack32 == 0` or require caller/callee stack attributes to match, preventing 16-bit pushes from leaving unaligned dwords on 32-bit stacks across thunking layers.
+    2. **Strict 16-Bit Target Address Masking**: Enforce `dest_addr = (op_pc + 2 + offset) & 0xFFFF` throughout link creation, displacement checks, and target comparisons to prevent 16-bit segment wrapping aliasing.
+    3. **Real-Mode CS Aliasing Validation**: Ensure segment base and selector consistency in `dynarec_link_previous_block` to prevent cross-segment aliasing where overlapping `CS:IP` pairs point to shared physical memory.
 
 ---
 
@@ -383,5 +390,6 @@ To ensure functional correctness alongside performance gains throughout all phas
   - Run self-modifying code torture tests (Doom engine self-patching, DOS/4GW installers) to verify block invalidation and unlinking.
   - Verify interrupt delivery latency and cycle accounting accuracy under block chaining.
   - **Revisit Enabling `LINK_REAL` by Default**: 16-bit real-mode linking (`LINK_REAL = 1 << 3`) is currently excluded from `LINK_DEFAULT` (`0x37`) after FreeDOS `COMMAND.COM` command matching regressions. Investigate `CS:IP` aliasing and 16-bit target address masking in `dynarec_link_previous_block` to re-enable real-mode block chaining by default without breaking DOS environments.
+  - **Revisit 16-Bit CALL/RET Linking**: Revisit enabling direct linking for 16-bit near calls (`ropCALL_r16`) and returns (`ropRET_16`, `ropRET_imm_16`) with `stack32 == 0` guards and 16-bit target masking to improve Windows 9x 16/32-bit mixed subsystem performance without thunking unwinding regressions.
 
 
