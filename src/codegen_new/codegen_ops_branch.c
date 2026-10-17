@@ -233,6 +233,7 @@ ropJCXZ(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32
         jump_uop = uop_CMP_IMM_JNZ_DEST(ir, IREG_CX, 0);
     uop_MOV_IMM(ir, IREG_pc, dest_addr);
     uop_JMP(ir, codegen_exit_rout);
+    uop_NOP_BARRIER(ir);
     uop_set_jump_dest(ir, jump_uop);
 
     codegen_mark_code_present(block, cs + op_pc, 1);
@@ -273,6 +274,7 @@ ropLOOP(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32
         ret_addr = op_pc + 1;
     }
     uop_JMP(ir, codegen_exit_rout);
+    uop_NOP_BARRIER(ir);
     uop_set_jump_dest(ir, jump_uop);
 
     codegen_mark_code_present(block, cs + op_pc, 1);

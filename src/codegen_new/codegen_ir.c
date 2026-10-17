@@ -237,6 +237,7 @@ codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
             uop->jump_dest = &block_write_data[block_pos];
 
         if (uop->type & UOP_TYPE_JUMP_DEST) {
+            codegen_reg_flush_invalidate(ir, block);
             uop_t *uop_dest = uop;
 
             while (uop_dest->jump_list_next != -1) {

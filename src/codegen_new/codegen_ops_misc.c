@@ -660,6 +660,7 @@ ropCLI_STI(ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uin
         uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
         uop_CALL_INSTRUCTION_FUNC(ir, x86_dynarec_opcodes[(opcode | op_32) & 0x3ff], fetchdat);
         uop_JMP(ir, codegen_exit_rout);
+        uop_NOP_BARRIER(ir);
         uop_set_jump_dest(ir, jump_uop);
     }
 
@@ -973,6 +974,7 @@ ropBS_common(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchda
         uop_MOV(ir, IREG_16(dest_reg), IREG_temp0_W);
 
     /* Zero path destination (ZF is set, dest_reg unmodified) */
+    uop_NOP_BARRIER(ir);
     uop_set_jump_dest(ir, jump_zero);
 
     codegen_flags_changed = 0;
@@ -1058,8 +1060,10 @@ ropCMPXCHG_common(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fe
         else
             uop_MOV(ir, IREG_32(rm_reg), IREG_32(src_reg));
 
+        uop_NOP_BARRIER(ir);
         int jump_end = uop_JMP_DEST(ir);
 
+        uop_NOP_BARRIER(ir);
         uop_set_jump_dest(ir, jump_neq);
         if (size == 0)
             uop_MOV(ir, IREG_AL, IREG_8(rm_reg));
@@ -1068,6 +1072,7 @@ ropCMPXCHG_common(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fe
         else
             uop_MOV(ir, IREG_EAX, IREG_32(rm_reg));
 
+        uop_NOP_BARRIER(ir);
         uop_set_jump_dest(ir, jump_end);
     } else {
         x86seg *target_seg;
@@ -1109,8 +1114,10 @@ ropCMPXCHG_common(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fe
         else
             uop_MEM_STORE_REG(ir, ireg_seg_base(target_seg), IREG_eaaddr, IREG_32(src_reg));
 
+        uop_NOP_BARRIER(ir);
         int jump_end = uop_JMP_DEST(ir);
 
+        uop_NOP_BARRIER(ir);
         uop_set_jump_dest(ir, jump_neq);
         if (size == 0)
             uop_MOV(ir, IREG_AL, IREG_temp0_B);
@@ -1119,6 +1126,7 @@ ropCMPXCHG_common(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fe
         else
             uop_MOV(ir, IREG_EAX, IREG_temp0);
 
+        uop_NOP_BARRIER(ir);
         uop_set_jump_dest(ir, jump_end);
     }
 

@@ -732,16 +732,58 @@ ropXLAT(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNUSE
     return op_pc;
 }
 
-uint32_t
-ropCMOVcc_16(UNUSED(codeblock_t *block), UNUSED(ir_data_t *ir), UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), UNUSED(uint32_t op_pc))
+static uint32_t
+ropCMOVcc_common(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc, int is_op32)
 {
-    return 0;
+    /* Check CPU support: if illegal on this CPU, fall back to interpreter #UD handler */
+    if (x86_dynarec_opcodes_0f[opcode | op_32] == x86_dynarec_opcodes_0f[0x0b])
+        return 0;
+
+    int cond     = opcode & 0x0f;
+    int dest_reg = (fetchdat >> 3) & 7;
+    int src_reg;
+
+    codegen_mark_code_present(block, cs + op_pc, 1);
+
+    if ((fetchdat & 0xc0) == 0xc0) {
+        int rm_reg = fetchdat & 7;
+        src_reg    = is_op32 ? IREG_32(rm_reg) : IREG_16(rm_reg);
+    } else {
+        x86seg *target_seg;
+
+        uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
+        target_seg = codegen_generate_ea(ir, op_ea_seg, fetchdat, op_ssegs, &op_pc, op_32, 0);
+        codegen_check_seg_read(block, ir, target_seg);
+        CHECK_SEG_LIMITS(block, ir, target_seg, IREG_eaaddr, is_op32 ? 3 : 1);
+
+        src_reg = is_op32 ? IREG_temp0 : IREG_temp0_W;
+        uop_MEM_LOAD_REG(ir, src_reg, ireg_seg_base(target_seg), IREG_eaaddr);
+    }
+
+    uop_CALL_FUNC_RESULT(ir, IREG_temp1, jit_cond_helpers[cond & 0xf]);
+    int jump_false = uop_CMP_IMM_JZ_DEST(ir, IREG_temp1, 0);
+
+    if (is_op32)
+        uop_MOV(ir, IREG_32(dest_reg), src_reg);
+    else
+        uop_MOV(ir, IREG_16(dest_reg), src_reg);
+
+    uop_NOP_BARRIER(ir);
+    uop_set_jump_dest(ir, jump_false);
+
+    return op_pc + 1;
 }
 
 uint32_t
-ropCMOVcc_32(UNUSED(codeblock_t *block), UNUSED(ir_data_t *ir), UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), UNUSED(uint32_t op_pc))
+ropCMOVcc_16(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
 {
-    return 0;
+    return ropCMOVcc_common(block, ir, opcode, fetchdat, op_32, op_pc, 0);
+}
+
+uint32_t
+ropCMOVcc_32(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
+{
+    return ropCMOVcc_common(block, ir, opcode, fetchdat, op_32, op_pc, 1);
 }
 
 

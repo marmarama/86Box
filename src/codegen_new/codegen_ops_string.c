@@ -250,6 +250,7 @@ ropREP_STOS_common(codeblock_t *block, ir_data_t *ir, uint32_t op_32, uint32_t o
     uop_MOV_IMM(ir, IREG_pc, cpu_state.oldpc);
     uop_JMP(ir, codegen_exit_rout);
 
+    uop_NOP_BARRIER(ir);
     uop_set_jump_dest(ir, jump_zero);
     uop_set_jump_dest(ir, jump_cnt_zero);
 
@@ -287,6 +288,7 @@ ropREP_LODS_common(codeblock_t *block, ir_data_t *ir, uint32_t op_32, uint32_t o
     uop_MOV_IMM(ir, IREG_pc, cpu_state.oldpc);
     uop_JMP(ir, codegen_exit_rout);
 
+    uop_NOP_BARRIER(ir);
     uop_set_jump_dest(ir, jump_zero);
     uop_set_jump_dest(ir, jump_cnt_zero);
 
@@ -324,6 +326,7 @@ ropREP_MOVS_common(codeblock_t *block, ir_data_t *ir, uint32_t op_32, uint32_t o
     uop_MOV_IMM(ir, IREG_pc, cpu_state.oldpc);
     uop_JMP(ir, codegen_exit_rout);
 
+    uop_NOP_BARRIER(ir);
     uop_set_jump_dest(ir, jump_zero);
     uop_set_jump_dest(ir, jump_cnt_zero);
 
@@ -362,6 +365,7 @@ ropREPE_SCAS_common(codeblock_t *block, ir_data_t *ir, uint32_t op_32, uint32_t 
     uop_MOV_IMM(ir, IREG_pc, cpu_state.oldpc);
     uop_JMP(ir, codegen_exit_rout);
 
+    uop_NOP_BARRIER(ir);
     uop_set_jump_dest(ir, jump_zero);
     uop_set_jump_dest(ir, jump_mismatch);
     uop_set_jump_dest(ir, jump_cnt_zero);
@@ -401,6 +405,7 @@ ropREPNE_SCAS_common(codeblock_t *block, ir_data_t *ir, uint32_t op_32, uint32_t
     uop_MOV_IMM(ir, IREG_pc, cpu_state.oldpc);
     uop_JMP(ir, codegen_exit_rout);
 
+    uop_NOP_BARRIER(ir);
     uop_set_jump_dest(ir, jump_zero);
     uop_set_jump_dest(ir, jump_match);
     uop_set_jump_dest(ir, jump_cnt_zero);
@@ -440,6 +445,7 @@ ropREPE_CMPS_common(codeblock_t *block, ir_data_t *ir, uint32_t op_32, uint32_t 
     uop_MOV_IMM(ir, IREG_pc, cpu_state.oldpc);
     uop_JMP(ir, codegen_exit_rout);
 
+    uop_NOP_BARRIER(ir);
     uop_set_jump_dest(ir, jump_zero);
     uop_set_jump_dest(ir, jump_mismatch);
     uop_set_jump_dest(ir, jump_cnt_zero);
@@ -479,6 +485,7 @@ ropREPNE_CMPS_common(codeblock_t *block, ir_data_t *ir, uint32_t op_32, uint32_t
     uop_MOV_IMM(ir, IREG_pc, cpu_state.oldpc);
     uop_JMP(ir, codegen_exit_rout);
 
+    uop_NOP_BARRIER(ir);
     uop_set_jump_dest(ir, jump_zero);
     uop_set_jump_dest(ir, jump_match);
     uop_set_jump_dest(ir, jump_cnt_zero);
