@@ -121,11 +121,12 @@ ropCALL_r32(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(ui
     sp_reg = LOAD_SP_WITH_OFFSET(ir, -4);
     uop_MEM_STORE_IMM_32(ir, IREG_SS_base, sp_reg, ret_addr);
     SUB_SP(ir, 4);
+    uop_MOV_IMM(ir, IREG_pc, dest_addr);
 
     codegen_mark_code_present(block, cs + op_pc, 4);
     block->exit_type          = BLOCK_EXIT_DIRECT_1;
     block->links[0].target_pc = dest_addr;
-    return dest_addr;
+    return -1;
 }
 
 uint32_t

@@ -718,6 +718,9 @@ generate_call:
         goto codegen_skip;
 
     if (recomp_op_table && recomp_op_table[(opcode | op_32) & recomp_opcode_mask]) {
+#ifndef NDEBUG
+        int start_wr_pos = ir->wr_pos;
+#endif
         uint32_t new_pc = recomp_op_table[(opcode | op_32) & recomp_opcode_mask](block, ir, opcode, fetchdat, op_32, op_pc);
         if (cpu_dyn_accurate_fpu_env && is_fpu) {
             uop_MOV_IMM(ir, IREG_fpu_op, x87_op);
@@ -740,6 +743,11 @@ generate_call:
 
             return;
         }
+#ifndef NDEBUG
+        if (ir->wr_pos != start_wr_pos)
+            fatal("codegen: opcode 0x%02x (op_32=0x%x) returned 0 (fallback) but emitted %d uops\n",
+                  opcode, op_32, ir->wr_pos - start_wr_pos);
+#endif
     }
 
 codegen_skip:
