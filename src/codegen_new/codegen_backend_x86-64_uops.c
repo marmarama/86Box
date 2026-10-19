@@ -1271,12 +1271,17 @@ codegen_MEM_LOAD_REG(codeblock_t *block, uop_t *uop)
     int addr_reg  = HOST_REG_GET(uop->src_reg_b_real);
     int dest_size = IREG_GET_SIZE(uop->dest_reg_a_real);
 
-    host_x86_LEA_REG_REG(block, REG_ESI, seg_reg, addr_reg);
     if (uop->imm_data) {
-        host_x86_ADD32_REG_IMM(block, REG_ESI, uop->imm_data);
         if (uop->is_a16) {
+            host_x86_LEA_REG_IMM(block, REG_ESI, addr_reg, uop->imm_data);
             host_x86_AND32_REG_IMM(block, REG_ESI, 0x0000ffff);
+            host_x86_ADD32_REG_REG(block, REG_ESI, seg_reg);
+        } else {
+            host_x86_LEA_REG_REG(block, REG_ESI, seg_reg, addr_reg);
+            host_x86_ADD32_REG_IMM(block, REG_ESI, uop->imm_data);
         }
+    } else {
+        host_x86_LEA_REG_REG(block, REG_ESI, seg_reg, addr_reg);
     }
     if (REG_IS_Q(dest_size)) {
         host_x86_CALL(block, codegen_mem_load_quad);

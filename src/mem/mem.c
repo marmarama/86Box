@@ -272,17 +272,21 @@ flushmmucache_nopc(void)
 }
 
 void
-mem_flush_write_page(uint32_t addr, uint32_t virt)
+mem_flush_write_page(uint32_t addr, UNUSED(uint32_t virt))
 {
     const page_t *page_target = &pages[addr >> 12];
+    uintptr_t     mem_target  = (uintptr_t) pages[addr >> 12].mem;
 
     for (uint16_t c = 0; c < 256; c++) {
         if (writelookup[c] != (int) 0xffffffff) {
-            uintptr_t target = (uintptr_t) &ram[(uintptr_t) (addr & ~0xfff) - (virt & ~0xfff)];
-            if (writelookup2[writelookup[c]] == target || page_lookup[writelookup[c]] == page_target) {
-                writelookup2[writelookup[c]] = LOOKUP_INV;
-                page_lookup[writelookup[c]]  = NULL;
-                writelookup[c]               = 0xffffffff;
+            uint32_t virt_page = writelookup[c];
+            if (page_lookup[virt_page] == page_target ||
+                (mem_target != (uintptr_t) page_ff &&
+                 writelookup2[virt_page] != (uintptr_t) LOOKUP_INV &&
+                 (writelookup2[virt_page] + ((uintptr_t) virt_page << 12)) == mem_target)) {
+                writelookup2[virt_page] = LOOKUP_INV;
+                page_lookup[virt_page]  = NULL;
+                writelookup[c]          = 0xffffffff;
             }
         }
     }
@@ -2128,6 +2132,8 @@ mem_read_raml(uint32_t addr, UNUSED(void *priv))
 }
 
 #ifdef USE_NEW_DYNAREC
+extern void codegen_note_code_write(page_t *page);
+
 static inline int
 page_index(page_t *page)
 {
@@ -2138,6 +2144,7 @@ static inline void
 codegen_notify_code_write(page_t *page)
 {
     cpu_state.exit_request |= EXIT_STATUS_BLOCK_END;
+    codegen_note_code_write(page);
     if (!page_in_evict_list(page))
         page_add_to_evict_list(page);
 }

@@ -493,6 +493,7 @@ dynarec_link_previous_block(codeblock_t *dst_block, uint16_t prev_block_nr, int 
                               ((dst_block->pc - dst_block->_cs) & 0xffff);
             if ((src_block->exit_type == BLOCK_EXIT_RET || src_block->links[exit_idx].target_pc == dst_pc) &&
                 !((src_block->status ^ dst_block->status) & (CPU_STATUS_FLAGS | CPU_STATUS_MASK)) &&
+                !(src_block->flags & CODEBLOCK_IN_DIRTY_LIST) &&
                 !(dst_block->flags & CODEBLOCK_STATIC_TOP) &&
                 !(dst_block->flags & CODEBLOCK_IN_DIRTY_LIST)) {
                 codegen_link_exit(src_block, exit_idx, dst_block);
@@ -510,11 +511,13 @@ static __inline void
 exec386_dynarec_dyn(void)
 {
 #ifdef USE_NEW_DYNAREC
+    x86_was_reset = 0;
+    cpu_update_exit_request();
+    if (codegen_code_write_pending)
+        codegen_flush_code_writes();
     uint16_t prev_block_nr = cpu_state.last_block_nr;
     int      prev_exit_idx = cpu_state.last_exit_idx;
     cpu_state.last_block_nr = 0;
-    x86_was_reset = 0;
-    cpu_update_exit_request();
 #endif
     uint32_t start_pc  = 0;
     uint32_t phys_addr = get_phys(cs + cpu_state.pc);

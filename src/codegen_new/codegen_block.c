@@ -237,6 +237,58 @@ codegen_init(void)
 #endif
 }
 
+/* Pages that received a guest write to code since the last dispatcher entry.
+
+   A write only sets a sticky dirty bit; the blocks it affects are normally
+   invalidated lazily, when the dispatcher next looks one up. A directly linked
+   jump never goes through the dispatcher, so a block that is dirty but not yet
+   invalidated stays reachable via its incoming links, and would execute stale
+   code (EXIT_STATUS_BLOCK_END only forces one exit to the dispatcher, which may
+   then pick an unrelated clean block). So flush written pages eagerly at the
+   next dispatcher entry, which also unlinks every block it invalidates. */
+#define CODE_WRITE_PAGE_MAX 8
+int                codegen_code_write_pending = 0;
+static uint32_t    code_write_pages[CODE_WRITE_PAGE_MAX];
+static int         code_write_page_count = 0;
+static int         code_write_overflow   = 0;
+
+void
+codegen_note_code_write(page_t *page)
+{
+    uint32_t idx = (uint32_t) (page - pages);
+
+    codegen_code_write_pending = 1;
+    for (int i = 0; i < code_write_page_count; i++) {
+        if (code_write_pages[i] == idx)
+            return;
+    }
+    if (code_write_page_count < CODE_WRITE_PAGE_MAX)
+        code_write_pages[code_write_page_count++] = idx;
+    else
+        code_write_overflow = 1;
+}
+
+void
+codegen_flush_code_writes(void)
+{
+    int      count    = code_write_page_count;
+    int      overflow = code_write_overflow;
+    uint32_t list[CODE_WRITE_PAGE_MAX];
+
+    memcpy(list, code_write_pages, sizeof(list));
+    codegen_code_write_pending = 0;
+    code_write_page_count      = 0;
+    code_write_overflow        = 0;
+
+    if (overflow) {
+        /* Too many pages to track: cut every link; the dispatcher validates
+           each block again and relinks as it goes. */
+        codegen_unpatch_all_links();
+    }
+    for (int i = 0; i < count; i++)
+        codegen_check_flush(&pages[list[i]], 0, 0);
+}
+
 void
 codegen_reset(void)
 {
@@ -265,6 +317,9 @@ codegen_reset(void)
     cpu_state.last_block_nr = 0;
     cpu_state.last_exit_idx = 0;
     codegen_active_links    = 0;
+    codegen_code_write_pending = 0;
+    code_write_page_count      = 0;
+    code_write_overflow        = 0;
 }
 
 void

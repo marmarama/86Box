@@ -274,3 +274,186 @@ is the classic fingerprint of "uops emitted *and* interpreter fallback called". 
 **Related items worth a look:** `BLOCK_PC_INVALID` (used for RET targets) should be a value that can
 never be a legitimate popped PC, and any other place comparing PCs to `0` or `-1` as "none"
 (for example `links[].target_pc` defaults) is the same trap.
+
+---
+
+## Bug 2: Windows 98 SE Device Manager General Protection Fault (Stale Dynamic Blit Code / Unflushed `writelookup2`)
+
+- **Status**: RESOLVED & VERIFIED
+- **Component**: `src/mem/mem.c` (`mem_flush_write_page`)
+- **Severity**: High (Intermittent #GP faults in Windows 98 SE Device Manager, DIB engine, and self-modifying code pages)
+- **First Discovered**: October 2026
+- **Resolution**: `mem_flush_write_page` updated to match the physical page memory pointer (`(writelookup2[virt_page] + (virt_page << 12)) == mem_target`) rather than relying on matching guest virtual addresses (`virt`).
+
+---
+
+### 1. Symptom
+
+Opening the **Device Manager** tab in Windows 98 SE (`SYSDM.CPL` via `RUNDLL32`) intermittently triggers a General Protection Fault (`#GP`):
+```text
+RUNDLL32 caused a general protection fault in module <unknown> at 04df:0000093e.
+```
+- The faulting instruction is `mov es:[edi], eax` (`26 89 07`) with `ES.limit = 0x9ff` (2559 bytes, a 2560-byte row buffer) and `EDI = 0x00000a00`.
+- Storing 4 bytes at `0xa00` addresses `0xa00..0xa03`, exceeding `ES.limit` by 1..4 bytes.
+- The Dynarec segment limit check correctly triggers `#GP`, showing the fault itself is architectural.
+
+---
+
+### 2. Runtime Forensic Evidence
+
+From guest memory dump and crash logs:
+- `CS = 0x04df` (Base `0x803385c0`, Limit `0x313f`, USE32).
+- `ES = 0x10ef` (Base `0x81cf0fd8`, Limit `0x9ff`, Data R/W).
+- The code at `04df:0934` is a dynamically generated blit routine emitted by the Windows 98 DIB engine into RAM to composite transparent device tree icons:
+  - Buffer width is 64 bytes (`add edi, -64`).
+  - Total buffer size is 40 scanlines: `40 * 64 = 2560 = 0xa00` bytes.
+  - The loop was intended to blit 40 rows. However, an extra iteration was executed, causing `EDI` to reach `0x0a00`.
+
+---
+
+### 3. Root Cause: `writelookup2` Failed to Flush Across Different Virtual Mappings
+
+Windows writes newly generated machine code into RAM using data pointers (`DS`, `ES`, or global heap selectors) whose linear virtual addresses differ from the code segment selector (`CS`).
+
+In `src/mem/mem.c`, writes to RAM are accelerated by `writelookup2`. For untracked pages, direct stores bypass page dirty tracking. When code is compiled or removed in a physical page, `mem_flush_write_page(uint32_t addr, uint32_t virt)` is called to invalidate cached `writelookup2` entries for that physical page.
+
+The original implementation:
+```c
+uintptr_t target = (uintptr_t) &ram[(uintptr_t) (addr & ~0xfff) - (virt & ~0xfff)];
+if (writelookup2[writelookup[c]] == target || page_lookup[writelookup[c]] == page_target) {
+    writelookup2[writelookup[c]] = LOOKUP_INV;
+    page_lookup[writelookup[c]]  = NULL;
+    writelookup[c]               = 0xffffffff;
+}
+```
+
+This failed in two critical ways:
+1. When called from `codegen_block.c:354, 375` (`remove_from_block_list`), `virt` was passed as `0`. When `virt == 0`, `target` was computed using virtual address 0. On any paged operating system, `writelookup[c]` holds a high virtual address (`0x8xxxxxxx`), so `writelookup2[...] == target` **never matched**.
+2. When called from `codegen_block.c:816` (`codegen_block_init`), `virt` was passed as `cs + cpu_state.pc`. However, the guest writes generated code using **data pointers** whose virtual page differs from `CS`. Because the virtual addresses did not match, `target` differed from `writelookup2[writelookup[c]]`.
+
+As a result, `writelookup2` entries pointing to the physical RAM page were **never invalidated**. Subsequent writes from the guest's blit compiler went directly into RAM without updating `dirty_mask` or notifying the dynarec. The dynarec continued executing the previously compiled blit routine (which had different row/stride dimensions), resulting in out-of-bounds writes and the `#GP`.
+
+---
+
+### 4. The Fix
+
+For any entry `virt_page = writelookup[c]`, `writelookup2[virt_page]` is initialized as `&ram[(phys & ~0xfff) - (virt_page << 12)]`. Therefore, the physical RAM address pointed to by that entry is always:
+```c
+writelookup2[virt_page] + ((uintptr_t) virt_page << 12)
+```
+In `mem_flush_write_page`, we compare this against `pages[addr >> 12].mem` directly:
+```c
+void
+mem_flush_write_page(uint32_t addr, UNUSED(uint32_t virt))
+{
+    const page_t *page_target = &pages[addr >> 12];
+    uintptr_t     mem_target  = (uintptr_t) pages[addr >> 12].mem;
+
+    for (uint16_t c = 0; c < 256; c++) {
+        if (writelookup[c] != (int) 0xffffffff) {
+            uint32_t virt_page = writelookup[c];
+            if (page_lookup[virt_page] == page_target ||
+                (mem_target != (uintptr_t) page_ff &&
+                 writelookup2[virt_page] != (uintptr_t) LOOKUP_INV &&
+                 (writelookup2[virt_page] + ((uintptr_t) virt_page << 12)) == mem_target)) {
+                writelookup2[virt_page] = LOOKUP_INV;
+                page_lookup[virt_page]  = NULL;
+                writelookup[c]          = 0xffffffff;
+            }
+        }
+    }
+}
+```
+This correctly flushes the entry regardless of what `virt` address is passed or which virtual mapping was used to write to the physical page.
+
+---
+
+## Bug 3: Windows 98 SE Device Manager `#GP` in `DIBENG.DLL` (`is_a16` Overwrite & Segment Base Truncation in 16-bit Far Pointer Loads)
+
+- **Status**: RESOLVED & DEPLOYED (Awaiting user VM verification)
+- **Component**: `src/codegen_new/codegen_ir_defs.h`, `src/codegen_new/codegen_backend_x86-64_uops.c`, `src/codegen_new/codegen_backend_arm64_uops.c`, `src/codegen_new/codegen_backend_loongarch64_uops.c`
+- **Severity**: Critical (Causes General Protection Faults in 16-bit segmented Windows graphics code loading far pointers via `LES`/`LDS` with 16-bit addressing)
+- **First Discovered**: October 2026
+- **Note**: The `is_a16` fix below is real but was NOT the cause of the Device Manager crash. See Bug 4.
+
+---
+
+## Bug 4: Stale blocks reachable via direct links after code writes (real cause of the Device Manager `#GP`)
+
+- **Status**: RESOLVED (verified: Device Manager opens in Win98 SE)
+- **Component**: `codegen_block.c` (`codegen_note_code_write`, `codegen_flush_code_writes`), `mem.c` (`codegen_notify_code_write`), `386_dynarec.c` (`exec386_dynarec_dyn`)
+
+### Cause
+A guest write to a code page only sets a sticky dirty bit; blocks are invalidated lazily when the dispatcher looks one up (`codegen_check_flush`). `EXIT_STATUS_BLOCK_END` forces one exit to the dispatcher, but `cpu_update_exit_request()` then clears it, and the dispatcher may pick an unrelated clean block on the same page, so nothing is flushed. If that block is already directly linked to the dirty-but-not-invalidated block, the patched `jmp rel32` enters it with no dirty check and runs stale code. In Win98, `DIBENG.DLL` regenerates its blit routine in place; the stale routine used the old stride/row count and ran past `ES.limit`.
+
+### Fix
+`codegen_notify_code_write` records the written page (8-entry queue, overflow falls back to `codegen_unpatch_all_links()`). `exec386_dynarec_dyn` calls `codegen_flush_code_writes()` right after `cpu_update_exit_request()`, which runs `codegen_check_flush` on those pages, invalidating and unlinking affected blocks before any lookup or link.
+
+### Residual risk
+Blocks spanning two pages still skip the `phys_2` check when entered via a link.
+
+---
+
+
+### 1. Symptom
+
+Opening the **Device Manager** tab in Windows 98 SE (`SYSDM.CPL` via `RUNDLL32`) triggers a General Protection Fault (`#GP`) at `04df:0000093e` (`mov [es:edi], eax`):
+- `ES.base = 0x81cf0fd8`, `ES.limit = 0x09ff`, `EDI = 0x00000a00`.
+- Under the interpreter (`cpu_force_interpreter = 1`), Device Manager opens 100% cleanly without fault.
+- Under dynarec with `codegen_link_mask = 0`, the fault did not occur.
+
+---
+
+### 2. Forensic Analysis & Root Cause
+
+In Segment 14 of `DIBENG.DLL` (16-bit code segment), transparent icon blitting sets up destination and source buffers via:
+```asm
+00002517  66C4BEF6FE        les edi, dword [bp-0x10a]
+```
+- `66` is the 32-bit operand size override prefix (`ropLES_32`).
+- The code segment uses 16-bit addressing (`[bp-0x10a]`).
+- In `codegen_ops_misc.c`, `ropLES_32` handles the 16-bit addressing mode by passing `IREG_eaa16` to `uop_MEM_LOAD_REG_OFFSET(..., 4)` to read the 16-bit segment selector into `IREG_temp1_W` following the 32-bit offset into `EDI`.
+
+Two distinct defects in the dynarec code generator corrupted this operation:
+
+1. **`uop->is_a16` Flag Clobbered in IR Definition**:
+   In `src/codegen_new/codegen_ir_defs.h`:
+   ```c
+   static inline void
+   uop_gen_reg_dst_src2_imm(uint32_t uop_type, ir_data_t *ir, int dest_reg, int src_reg_a, int src_reg_b, uint32_t imm)
+   {
+       ...
+       if (src_reg_b == IREG_eaa16) {
+           uop->src_reg_b = codegen_reg_read(IREG_eaaddr);
+           uop->is_a16    = 1;
+       } else
+           uop->src_reg_b = codegen_reg_read(src_reg_b);
+       uop->is_a16        = 0;  // <-- BUG: unconditionally wiped out uop->is_a16 = 1!
+   ```
+   This clobbered `is_a16` back to `0`, preventing backend emitters from knowing the address offset required 16-bit wrapping.
+
+2. **Segment Base Truncation in Backend Address Calculation**:
+   In `src/codegen_new/codegen_backend_x86-64_uops.c` (and ARM64/LoongArch64), `codegen_MEM_LOAD_REG` computed:
+   ```c
+   host_x86_LEA_REG_REG(block, REG_ESI, seg_reg, addr_reg);
+   if (uop->imm_data) {
+       host_x86_ADD32_REG_IMM(block, REG_ESI, uop->imm_data);
+       if (uop->is_a16)
+           host_x86_AND32_REG_IMM(block, REG_ESI, 0x0000ffff);
+   }
+   ```
+   Applying `AND 0xffff` to `REG_ESI` masked the entire 32-bit linear address `(seg_base + addr + imm) & 0xffff`, completely zeroing the upper 16 bits of the segment base (`0x81cf0000 -> 0x00000000`)!
+
+Together, these defects corrupted selector and pointer loads in mixed 16/32-bit Windows code, leading to an invalid selector or corrupted buffer pointers being used in the dynamic blit loop.
+
+---
+
+### 3. The Fix
+
+1. Removed the stray `uop->is_a16 = 0;` overwrite in `codegen_ir_defs.h`.
+2. Fixed `codegen_MEM_LOAD_REG` across all backends (`x86-64`, `arm64`, `loongarch64`) to compute:
+   ```c
+   seg_reg + ((addr_reg + imm_data) & 0xffff)
+   ```
+   preserving the full 32-bit segment base while accurately wrapping the 16-bit effective address offset.
+

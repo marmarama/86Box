@@ -1000,11 +1000,18 @@ codegen_MEM_LOAD_REG(codeblock_t *block, uop_t *uop)
     int addr_reg  = HOST_REG_GET(uop->src_reg_b_real);
     int dest_size = IREG_GET_SIZE(uop->dest_reg_a_real);
 
-    host_arm64_ADD_REG(block, REG_X0, seg_reg, addr_reg, 0);
-    if (uop->imm_data)
-        host_arm64_ADD_IMM(block, REG_X0, REG_X0, uop->imm_data);
-    if (uop->is_a16)
-        host_arm64_AND_IMM(block, REG_X0, REG_X0, 0xffff);
+    if (uop->imm_data) {
+        if (uop->is_a16) {
+            host_arm64_ADD_IMM(block, REG_X0, addr_reg, uop->imm_data);
+            host_arm64_AND_IMM(block, REG_X0, REG_X0, 0xffff);
+            host_arm64_ADD_REG(block, REG_X0, seg_reg, REG_X0, 0);
+        } else {
+            host_arm64_ADD_REG(block, REG_X0, seg_reg, addr_reg, 0);
+            host_arm64_ADD_IMM(block, REG_X0, REG_X0, uop->imm_data);
+        }
+    } else {
+        host_arm64_ADD_REG(block, REG_X0, seg_reg, addr_reg, 0);
+    }
     if (REG_IS_B(dest_size) || REG_IS_BH(dest_size)) {
         host_arm64_call(block, codegen_mem_load_byte);
     } else if (REG_IS_W(dest_size)) {

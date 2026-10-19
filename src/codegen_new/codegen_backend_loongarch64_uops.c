@@ -835,13 +835,20 @@ codegen_MEM_LOAD_REG(codeblock_t *block, uop_t *uop)
     int addr_reg  = HOST_REG_GET(uop->src_reg_b_real);
     int dest_size = IREG_GET_SIZE(uop->dest_reg_a_real);
 
-    host_loong64_ADDX_REG(block, REG_A0, seg_reg, addr_reg);
-    if (uop->imm_data)
-        host_loong64_ADD_W_IMM(block, REG_A0, REG_A0, (uint32_t) uop->imm_data);
-    if (uop->is_a16)
-        host_loong64_UBFX_D(block, REG_A0, REG_A0, 0, 16);
-    else
+    if (uop->imm_data) {
+        if (uop->is_a16) {
+            host_loong64_ADD_W_IMM(block, REG_A0, addr_reg, (uint32_t) uop->imm_data);
+            host_loong64_UBFX_D(block, REG_A0, REG_A0, 0, 16);
+            host_loong64_ADDX_REG(block, REG_A0, seg_reg, REG_A0);
+        } else {
+            host_loong64_ADDX_REG(block, REG_A0, seg_reg, addr_reg);
+            host_loong64_ADD_W_IMM(block, REG_A0, REG_A0, (uint32_t) uop->imm_data);
+            host_loong64_UBFX_D(block, REG_A0, REG_A0, 0, 32);
+        }
+    } else {
+        host_loong64_ADDX_REG(block, REG_A0, seg_reg, addr_reg);
         host_loong64_UBFX_D(block, REG_A0, REG_A0, 0, 32);
+    }
     if (REG_IS_B(dest_size) || REG_IS_BH(dest_size)) {
         host_loong64_call(block, codegen_mem_load_byte);
     } else if (REG_IS_W(dest_size)) {
