@@ -1,19 +1,21 @@
 #define REP_OPS(size, CNT_REG, SRC_REG, DEST_REG)                                                                 \
     static int opREP_INSB_##size(UNUSED(uint32_t fetchdat))                                                       \
     {                                                                                                             \
+        int cycles_end = cycles - ((is386 && cpu_use_dynarec) ? 1000 : 100);                                      \
         addr64 = 0x00000000;                                                                                      \
-                                                                                                                  \
-        if (CNT_REG > 0) {                                                                                        \
+        if (trap)                                                                                                 \
+            cycles_end = cycles + 1;                                                                              \
+        while (CNT_REG > 0) {                                                                                     \
             uint8_t temp;                                                                                         \
                                                                                                                   \
             check_io_perm(DX, 1);                                                                                 \
                                                                                                                   \
-            SEG_CHECK_WRITE(&cpu_state.seg_es);                                                                   \
-            CHECK_WRITE(&cpu_state.seg_es, DEST_REG, DEST_REG);                                                   \
+            SEG_CHECK_WRITE_REP(&cpu_state.seg_es);                                                               \
+            CHECK_WRITE_REP(&cpu_state.seg_es, DEST_REG, DEST_REG);                                               \
             high_page = 0;                                                                                        \
             do_mmut_wb(es, DEST_REG, &addr64);                                                                    \
             if (cpu_state.abrt)                                                                                   \
-                return 1;                                                                                         \
+                break;                                                                                            \
                                                                                                                   \
             temp = inb(DX);                                                                                       \
             writememb_n(es, DEST_REG, addr64, temp);                                                              \
@@ -24,6 +26,8 @@
                 DEST_REG++;                                                                                       \
             CNT_REG--;                                                                                            \
             cycles -= 15;                                                                                         \
+            if (cycles < cycles_end || cpu_state.exit_request)                                                    \
+                break;                                                                                            \
         }                                                                                                         \
         if (CNT_REG > 0) {                                                                                        \
             CPU_BLOCK_END();                                                                                      \
@@ -34,19 +38,21 @@
     }                                                                                                             \
     static int opREP_INSW_##size(UNUSED(uint32_t fetchdat))                                                       \
     {                                                                                                             \
+        int cycles_end = cycles - ((is386 && cpu_use_dynarec) ? 1000 : 100);                                      \
         addr64a[0] = addr64a[1] = 0x00000000;                                                                     \
-                                                                                                                  \
-        if (CNT_REG > 0) {                                                                                        \
+        if (trap)                                                                                                 \
+            cycles_end = cycles + 1;                                                                              \
+        while (CNT_REG > 0) {                                                                                     \
             uint16_t temp;                                                                                        \
                                                                                                                   \
             check_io_perm(DX, 2);                                                                                 \
                                                                                                                   \
-            SEG_CHECK_WRITE(&cpu_state.seg_es);                                                                   \
-            CHECK_WRITE(&cpu_state.seg_es, DEST_REG, DEST_REG + 1UL);                                             \
+            SEG_CHECK_WRITE_REP(&cpu_state.seg_es);                                                               \
+            CHECK_WRITE_REP(&cpu_state.seg_es, DEST_REG, DEST_REG + 1UL);                                         \
             high_page = 0;                                                                                        \
             do_mmut_ww(es, DEST_REG, addr64a);                                                                    \
             if (cpu_state.abrt)                                                                                   \
-                return 1;                                                                                         \
+                break;                                                                                            \
                                                                                                                   \
             temp = inw(DX);                                                                                       \
             writememw_n(es, DEST_REG, addr64a, temp);                                                             \
@@ -57,6 +63,8 @@
                 DEST_REG += 2;                                                                                    \
             CNT_REG--;                                                                                            \
             cycles -= 15;                                                                                         \
+            if (cycles < cycles_end || cpu_state.exit_request)                                                    \
+                break;                                                                                            \
         }                                                                                                         \
         if (CNT_REG > 0) {                                                                                        \
             CPU_BLOCK_END();                                                                                      \
@@ -67,19 +75,21 @@
     }                                                                                                             \
     static int opREP_INSL_##size(UNUSED(uint32_t fetchdat))                                                       \
     {                                                                                                             \
+        int cycles_end = cycles - ((is386 && cpu_use_dynarec) ? 1000 : 100);                                      \
         addr64a[0] = addr64a[1] = addr64a[2] = addr64a[3] = 0x00000000;                                           \
-                                                                                                                  \
-        if (CNT_REG > 0) {                                                                                        \
+        if (trap)                                                                                                 \
+            cycles_end = cycles + 1;                                                                              \
+        while (CNT_REG > 0) {                                                                                     \
             uint32_t temp;                                                                                        \
                                                                                                                   \
             check_io_perm(DX, 4);                                                                                 \
                                                                                                                   \
-            SEG_CHECK_WRITE(&cpu_state.seg_es);                                                                   \
-            CHECK_WRITE(&cpu_state.seg_es, DEST_REG, DEST_REG + 3UL);                                             \
+            SEG_CHECK_WRITE_REP(&cpu_state.seg_es);                                                               \
+            CHECK_WRITE_REP(&cpu_state.seg_es, DEST_REG, DEST_REG + 3UL);                                         \
             high_page = 0;                                                                                        \
             do_mmut_wl(es, DEST_REG, addr64a);                                                                    \
             if (cpu_state.abrt)                                                                                   \
-                return 1;                                                                                         \
+                break;                                                                                            \
                                                                                                                   \
             temp = inl(DX);                                                                                       \
             writememl_n(es, DEST_REG, addr64a, temp);                                                             \
@@ -90,6 +100,8 @@
                 DEST_REG += 4;                                                                                    \
             CNT_REG--;                                                                                            \
             cycles -= 15;                                                                                         \
+            if (cycles < cycles_end || cpu_state.exit_request)                                                    \
+                break;                                                                                            \
         }                                                                                                         \
         if (CNT_REG > 0) {                                                                                        \
             CPU_BLOCK_END();                                                                                      \
@@ -101,17 +113,19 @@
                                                                                                                   \
     static int opREP_OUTSB_##size(UNUSED(uint32_t fetchdat))                                                      \
     {                                                                                                             \
+        int cycles_end = cycles - ((is386 && cpu_use_dynarec) ? 1000 : 100);                                      \
         addr64 = 0x00000000;                                                                                      \
-                                                                                                                  \
-        if (CNT_REG > 0) {                                                                                        \
+        if (trap)                                                                                                 \
+            cycles_end = cycles + 1;                                                                              \
+        while (CNT_REG > 0) {                                                                                     \
             uint8_t temp;                                                                                         \
                                                                                                                   \
-            SEG_CHECK_READ(cpu_state.ea_seg);                                                                     \
-            CHECK_READ(cpu_state.ea_seg, SRC_REG, SRC_REG);                                                       \
+            SEG_CHECK_READ_REP(cpu_state.ea_seg);                                                                 \
+            CHECK_READ_REP(cpu_state.ea_seg, SRC_REG, SRC_REG);                                                   \
             high_page = 0;                                                                                        \
             do_mmut_rb(cpu_state.ea_seg->base, SRC_REG, &addr64);                                                 \
             if (cpu_state.abrt)                                                                                   \
-                return 1;                                                                                         \
+                break;                                                                                            \
             check_io_perm(DX, 1);                                                                                 \
                                                                                                                   \
             temp = readmemb_n(cpu_state.ea_seg->base, SRC_REG, addr64);                                           \
@@ -123,6 +137,8 @@
                 SRC_REG++;                                                                                        \
             CNT_REG--;                                                                                            \
             cycles -= 14;                                                                                         \
+            if (cycles < cycles_end || cpu_state.exit_request)                                                    \
+                break;                                                                                            \
         }                                                                                                         \
         if (CNT_REG > 0) {                                                                                        \
             CPU_BLOCK_END();                                                                                      \
@@ -133,17 +149,19 @@
     }                                                                                                             \
     static int opREP_OUTSW_##size(UNUSED(uint32_t fetchdat))                                                      \
     {                                                                                                             \
+        int cycles_end = cycles - ((is386 && cpu_use_dynarec) ? 1000 : 100);                                      \
         addr64a[0] = addr64a[1] = 0x00000000;                                                                     \
-                                                                                                                  \
-        if (CNT_REG > 0) {                                                                                        \
+        if (trap)                                                                                                 \
+            cycles_end = cycles + 1;                                                                              \
+        while (CNT_REG > 0) {                                                                                     \
             uint16_t temp;                                                                                        \
                                                                                                                   \
-            SEG_CHECK_READ(cpu_state.ea_seg);                                                                     \
-            CHECK_READ(cpu_state.ea_seg, SRC_REG, SRC_REG + 1UL);                                                 \
+            SEG_CHECK_READ_REP(cpu_state.ea_seg);                                                                 \
+            CHECK_READ_REP(cpu_state.ea_seg, SRC_REG, SRC_REG + 1UL);                                             \
             high_page = 0;                                                                                        \
             do_mmut_rw(cpu_state.ea_seg->base, SRC_REG, addr64a);                                                 \
             if (cpu_state.abrt)                                                                                   \
-                return 1;                                                                                         \
+                break;                                                                                            \
             check_io_perm(DX, 2);                                                                                 \
                                                                                                                   \
             temp = readmemw_n(cpu_state.ea_seg->base, SRC_REG, addr64a);                                          \
@@ -155,6 +173,8 @@
                 SRC_REG += 2;                                                                                     \
             CNT_REG--;                                                                                            \
             cycles -= 14;                                                                                         \
+            if (cycles < cycles_end || cpu_state.exit_request)                                                    \
+                break;                                                                                            \
         }                                                                                                         \
         if (CNT_REG > 0) {                                                                                        \
             CPU_BLOCK_END();                                                                                      \
@@ -165,17 +185,19 @@
     }                                                                                                             \
     static int opREP_OUTSL_##size(UNUSED(uint32_t fetchdat))                                                      \
     {                                                                                                             \
+        int cycles_end = cycles - ((is386 && cpu_use_dynarec) ? 1000 : 100);                                      \
         addr64a[0] = addr64a[1] = addr64a[2] = addr64a[3] = 0x00000000;                                           \
-                                                                                                                  \
-        if (CNT_REG > 0) {                                                                                        \
+        if (trap)                                                                                                 \
+            cycles_end = cycles + 1;                                                                              \
+        while (CNT_REG > 0) {                                                                                     \
             uint32_t temp;                                                                                        \
                                                                                                                   \
-            SEG_CHECK_READ(cpu_state.ea_seg);                                                                     \
-            CHECK_READ(cpu_state.ea_seg, SRC_REG, SRC_REG + 3UL);                                                 \
+            SEG_CHECK_READ_REP(cpu_state.ea_seg);                                                                 \
+            CHECK_READ_REP(cpu_state.ea_seg, SRC_REG, SRC_REG + 3UL);                                             \
             high_page = 0;                                                                                        \
             do_mmut_rl(cpu_state.ea_seg->base, SRC_REG, addr64a);                                                 \
             if (cpu_state.abrt)                                                                                   \
-                return 1;                                                                                         \
+                break;                                                                                            \
             check_io_perm(DX, 4);                                                                                 \
                                                                                                                   \
             temp = readmeml_n(cpu_state.ea_seg->base, SRC_REG, addr64a);                                          \
@@ -187,6 +209,8 @@
                 SRC_REG += 4;                                                                                     \
             CNT_REG--;                                                                                            \
             cycles -= 14;                                                                                         \
+            if (cycles < cycles_end || cpu_state.exit_request)                                                    \
+                break;                                                                                            \
         }                                                                                                         \
         if (CNT_REG > 0) {                                                                                        \
             CPU_BLOCK_END();                                                                                      \

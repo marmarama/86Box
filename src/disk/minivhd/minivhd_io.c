@@ -56,9 +56,9 @@
  *
  * http://www.mathcs.emory.edu/~cheung/Courses/255/Syllabus/1-C-intro/bit-array.html
  */
-#define VHD_SETBIT(A,k)     ( A[(k>>3)] |= (0x80 >> (k&7)) )
-#define VHD_CLEARBIT(A,k)   ( A[(k>>3)] &= ~(0x80 >> (k&7)) )
-#define VHD_TESTBIT(A,k)    ( A[(k>>3)] & (0x80 >> (k&7)) )
+#define VHD_SETBIT(A,k)     ( (A)[((k) >> 3)] |= (0x80 >> ((k) & 7)) )
+#define VHD_CLEARBIT(A,k)   ( (A)[((k) >> 3)] &= ~(0x80 >> ((k) & 7)) )
+#define VHD_TESTBIT(A,k)    ( (A)[((k) >> 3)] & (0x80 >> ((k) & 7)) )
 
 /**
  * \brief Check that we will not be overflowing buffers
@@ -245,40 +245,52 @@ mvhd_sparse_read(MVHDMeta *vhdm, uint32_t offset, int num_sectors, void *out_buf
 
     check_sectors(offset, num_sectors, total_sectors, &transfer_sectors, &truncated_sectors);
 
-    uint8_t* buff = (uint8_t*)out_buff;
-    int64_t addr = 0ULL;
-    uint32_t s = 0;
-    uint32_t ls = 0;
-    int blk = 0;
-    int prev_blk = -1;
-    int sib = 0;
-    ls = offset + transfer_sectors;
+    uint8_t *buff = (uint8_t *) out_buff;
+    int64_t  addr = 0ULL;
+    uint32_t s    = offset;
+    uint32_t ls   = offset + transfer_sectors;
 
-    for (s = offset; s < ls; s++) {
-        blk = s / vhdm->sect_per_block;
-        sib = s % vhdm->sect_per_block;
-        if (blk != prev_blk) {
-            prev_blk = blk;
-            if (vhdm->bitmap.curr_block != blk) {
-                read_sect_bitmap(vhdm, blk);
-                if (mvhd_fseeko64(vhdm->f, (uint64_t)sib * MVHD_SECTOR_SIZE, SEEK_CUR) == -1)
+    while (s < ls) {
+        int blk = s / vhdm->sect_per_block;
+        int sib = s % vhdm->sect_per_block;
+        int sectors_in_blk = vhdm->sect_per_block - sib;
+        int run = MIN((int) (ls - s), sectors_in_blk);
+
+        if (vhdm->block_offset[blk] == MVHD_SPARSE_BLK) {
+            memset(buff, 0, (size_t) run * MVHD_SECTOR_SIZE);
+            buff += run * MVHD_SECTOR_SIZE;
+            s    += run;
+            continue;
+        }
+
+        if (vhdm->bitmap.curr_block != blk) {
+            read_sect_bitmap(vhdm, blk);
+        }
+
+        addr = (((int64_t) vhdm->block_offset[blk]) + vhdm->bitmap.sector_count + sib) * MVHD_SECTOR_SIZE;
+        if (mvhd_fseeko64(vhdm->f, addr, SEEK_SET) == -1)
+            vhdm->error = 1;
+
+        while (run > 0) {
+            int bit = VHD_TESTBIT(vhdm->bitmap.curr_bitmap, sib);
+            int sub_run = 1;
+            while (sub_run < run && VHD_TESTBIT(vhdm->bitmap.curr_bitmap, sib + sub_run) == bit)
+                sub_run++;
+
+            if (bit) {
+                if (!fread(buff, (size_t) sub_run * MVHD_SECTOR_SIZE, 1, vhdm->f) && !feof(vhdm->f))
                     vhdm->error = 1;
-            } else if (vhdm->block_offset[blk] != MVHD_SPARSE_BLK) {
-                addr = (((int64_t) vhdm->block_offset[blk]) + vhdm->bitmap.sector_count + sib) *
-                       MVHD_SECTOR_SIZE;
-                if (mvhd_fseeko64(vhdm->f, addr, SEEK_SET) == -1)
+            } else {
+                memset(buff, 0, (size_t) sub_run * MVHD_SECTOR_SIZE);
+                if (mvhd_fseeko64(vhdm->f, (uint64_t) sub_run * MVHD_SECTOR_SIZE, SEEK_CUR) == -1)
                     vhdm->error = 1;
             }
-        }
 
-        if (VHD_TESTBIT(vhdm->bitmap.curr_bitmap, sib)) {
-            if (!fread(buff, MVHD_SECTOR_SIZE, 1, vhdm->f) && !feof(vhdm->f))
-                vhdm->error = 1;
-        } else {
-            memset(buff, 0, MVHD_SECTOR_SIZE);
-            mvhd_fseeko64(vhdm->f, MVHD_SECTOR_SIZE, SEEK_CUR);
+            buff += sub_run * MVHD_SECTOR_SIZE;
+            s    += sub_run;
+            sib  += sub_run;
+            run  -= sub_run;
         }
-        buff += MVHD_SECTOR_SIZE;
     }
 
     return truncated_sectors;
@@ -361,20 +373,19 @@ mvhd_sparse_diff_write(MVHDMeta *vhdm, uint32_t offset, int num_sectors, void *i
 
     check_sectors(offset, num_sectors, total_sectors, &transfer_sectors, &truncated_sectors);
 
-    uint8_t* buff = (uint8_t *) in_buff;
-    int64_t addr = 0ULL;
-    uint32_t s = 0;
-    uint32_t ls = 0;
-    int blk = 0;
-    int prev_blk = -1;
-    int sib = 0;
-    ls = offset + transfer_sectors;
+    uint8_t *buff = (uint8_t *) in_buff;
+    int64_t  addr = 0ULL;
+    uint32_t s    = offset;
+    uint32_t ls   = offset + transfer_sectors;
 
     if (offset < total_sectors) {
-        for (s = offset; s < ls; s++) {
-            blk = s / vhdm->sect_per_block;
-            sib = s % vhdm->sect_per_block;
-            if (vhdm->bitmap.curr_block != blk && prev_blk >= 0) {
+        while (s < ls) {
+            int blk = s / vhdm->sect_per_block;
+            int sib = s % vhdm->sect_per_block;
+            int sectors_in_blk = vhdm->sect_per_block - sib;
+            int run = MIN((int) (ls - s), sectors_in_blk);
+
+            if (vhdm->bitmap.curr_block != blk && vhdm->bitmap.curr_block >= 0) {
                 /* Write the sector bitmap for the previous block, before we replace it. */
                 write_curr_sect_bitmap(vhdm);
             }
@@ -386,31 +397,29 @@ mvhd_sparse_diff_write(MVHDMeta *vhdm, uint32_t offset, int num_sectors, void *i
                 create_block(vhdm, blk);
             }
 
-            if (blk != prev_blk) {
-                if (vhdm->bitmap.curr_block != blk) {
-                    read_sect_bitmap(vhdm, blk);
-                    if (mvhd_fseeko64(vhdm->f, (uint64_t)sib * MVHD_SECTOR_SIZE, SEEK_CUR) == -1)
-                        vhdm->error = 1;
-                } else {
-                    addr = (((int64_t) vhdm->block_offset[blk]) + vhdm->bitmap.sector_count + sib) *
-                           MVHD_SECTOR_SIZE;
-                    if (mvhd_fseeko64(vhdm->f, addr, SEEK_SET) == -1)
-                        vhdm->error = 1;
-                }
-                prev_blk = blk;
+            if (vhdm->bitmap.curr_block != blk) {
+                read_sect_bitmap(vhdm, blk);
             }
 
-            if (!fwrite(buff, MVHD_SECTOR_SIZE, 1, vhdm->f))
+            addr = (((int64_t) vhdm->block_offset[blk]) + vhdm->bitmap.sector_count + sib) *
+                   MVHD_SECTOR_SIZE;
+            if (mvhd_fseeko64(vhdm->f, addr, SEEK_SET) == -1)
                 vhdm->error = 1;
-            VHD_SETBIT(vhdm->bitmap.curr_bitmap, sib);
-            buff += MVHD_SECTOR_SIZE;
+
+            if (!fwrite(buff, (size_t) run * MVHD_SECTOR_SIZE, 1, vhdm->f))
+                vhdm->error = 1;
+
+            for (int i = 0; i < run; i++)
+                VHD_SETBIT(vhdm->bitmap.curr_bitmap, sib + i);
+
+            buff += run * MVHD_SECTOR_SIZE;
+            s    += run;
         }
+
+        /* And write the sector bitmap for the last block we visited to disk */
+        write_curr_sect_bitmap(vhdm);
+        fflush(vhdm->f);
     }
-
-    /* And write the sector bitmap for the last block we visited to disk */
-    write_curr_sect_bitmap(vhdm);
-
-    fflush(vhdm->f);
 
     return truncated_sectors;
 }

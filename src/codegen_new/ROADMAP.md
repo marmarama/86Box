@@ -5,10 +5,12 @@ This document outlines a phased plan to modernize and optimize the x86-64 backen
 ```mermaid
 graph TD
     P0["Phase 0: Quick Wins & Prologue Cleanup [DONE]"] --> P1["Phase 1: REX Prefixes & Register Expansion (8 Regs) [DONE]"]
-    P1 --> P2["Phase 2: Missing Opcode Recompilation (CMOV, SETcc, String, etc.) [DONE]"]
+    P1 --> P2["Phase 2: Missing Opcode Recompilation (SETcc, String, etc.) [DONE]"]
     P2 --> P3["Phase 3: Memory Load/Store Fast-Path Inlining [DONE]"]
     P3 --> P4["Phase 4: Direct Block Chaining (Block Linking) [DONE]"]
-    P4 --> P5["Phase 5: Native EFLAGS & IR Middle-End Optimization [NEXT]"]
+    P4 --> P5["Phase 5: Native EFLAGS & IR Middle-End Optimization [DONE]"]
+    P5 --> P6["Phase 6: Disk Access & Host I/O Subsystem Optimization [DONE]"]
+    P6 --> P7["Phase 7: CMOVcc Branchless Inlining & 16-bit CALL/RET [NEXT]"]
 ```
 
 ---
@@ -16,22 +18,31 @@ graph TD
 ## Current Status & Empirical Results (October 2026)
 
 ### Status Summary
-- **Phase 0**: **COMPLETED**. Dead prologue/epilogue stack traffic eliminated, bounds check redundancies streamlined. (XMM6/XMM7 preservation on Win64 is currently *unconditional* in the prologue/exit routine: linked blocks must share one uniform stack frame, so the earlier "only if `CODEBLOCK_HAS_FPU`" optimisation was intentionally dropped.)
+- **Phase 0**: **COMPLETED**. Dead prologue/epilogue stack traffic eliminated, bounds check redundancies streamlined.
 - **Phase 1 (General Host Registers)**: **COMPLETED (8 Regs)**.
   - General allocatable host registers expanded from 3 to 8 (`RAX, RBX, RDX, R10, R11, R13, R14, R15`).
   - Generalized REX prefix generation (`rex_byte`, `host_x86_rex_emit`) implemented across instruction emitters.
   - Register allocator updated with bit 3 preservation (`HOST_REG_GET & 15`).
-- **Phase 2 (Missing Opcode Recompilation)**: **COMPLETED**.
-  - Conditional moves (`CMOVcc`, 0F 40–4F), Set byte on condition (`SETcc`, 0F 90–9F), Bit tests/scans (`BT/BTS/BTR/BTC`, `BSF/BSR`), Byte swap (`BSWAP`), Atomic operations (`CMPXCHG`, `XADD`), and String operations (`MOVS`, `STOS`, `LODS`, `SCAS`, `CMPS` with `REP/REPE/REPNE`). Verified full DOS benchmark suite and stable Windows 98 guest boot to desktop.
+- **Phase 2 (Missing Opcode Recompilation)**: **COMPLETED** (CMOVcc stubs deferred to Phase 7).
+  - Set byte on condition (`SETcc`, 0F 90–9F), Bit tests/scans (`BT/BTS/BTR/BTC`, `BSF/BSR`), Byte swap (`BSWAP`), Atomic operations (`CMPXCHG`, `XADD`), and String operations (`MOVS`, `STOS`, `LODS`, `SCAS`, `CMPS` with `REP/REPE/REPNE`). Verified full DOS benchmark suite and stable Windows 98 guest boot to desktop.
 - **Phase 3 (Memory Load/Store Fast-Path Inlining)**: **COMPLETED**.
   - Host register `R12` pinned to `readlookup2` base, inlined TLB check and direct host RAM read/write fast paths across all integer load and store uOps.
-- **Phase 4 (Direct Block Chaining)**: **COMPLETED & OPERATIONAL (`LINK_DEFAULT = 0x3f`)**.
+- **Phase 4 (Direct Block Chaining)**: **COMPLETED & OPERATIONAL (`LINK_DEFAULT = 0xbf`)**.
   - Core link structures (`codeblock_link_t`, `first_incoming_link`, `links[2]`), ID encoding, and incoming doubly-linked lists implemented.
   - Safe unlinking (`codegen_unlink_block`) on block invalidation, deletion, dirty list flush, and recompilation wired.
   - Cycle check, pending-interrupt check, and unified asynchronous event check (`cpu_state.exit_request`) implemented in `codegen_EXIT_BLOCK` with `UOP_TYPE_BARRIER` register writeback.
-  - `JMP rel8/16/32` and `Jcc`/`JCXZ`/`LOOP*` set block exit types and chain directly on host machine code.
+  - `JMP rel8/16/32`, `Jcc`/`JCXZ`/`LOOP*`, direct subroutine `CALL rel32`, and monomorphic protected-mode `RET` chain directly on host machine code.
   - **SMC & FreeDOS Resolution**: Self-modifying code invalidation during direct execution resolved by asserting `EXIT_STATUS_BLOCK_END` on dirty code writes. FreeDOS JemmEx crash diagnosed to `ropSETcc` intra-block jumping and resolved with clean branchless condition evaluation.
-  - **Full Policy Verification**: `LINK_REAL` validated and enabled by default in `LINK_DEFAULT` (`0x3f`). Verified 100% stable across Windows 98 SE desktop boot and full DOS benchmark suite.
+  - **Full Policy Verification**: `LINK_REAL` validated and enabled by default in `LINK_DEFAULT`. Verified 100% stable across Windows 98 SE desktop boot and full DOS benchmark suite.
+- **Phase 5 (Fast-Path Native Flag Evaluation & IR Middle-End)**: **COMPLETED**.
+  - Fast-path direct ZF/CF/SF branch evaluation from `IREG_flags_res` and `IREG_flags_op1/2`, bypassing `jit_cond_helpers`.
+  - Intra-block dead store elimination for general registers (`IREG_EAX`–`IREG_EBX`).
+  - IR peephole optimizer (`codegen_ir_peephole`): self-cancelling `XOR/SUB` folding to `MOV 0` and compile-time linear constant folding.
+- **Phase 6 (Disk Access & Host I/O Subsystem Optimization)**: **COMPLETED**.
+  - Dynarec PIO `REP INSB/W/L` & `REP OUTSB/W/L` batching loop: bounded `while (CNT_REG > 0)` loops in `src/cpu/x86_ops_rep_dyn.h` eliminating per-word block exit and dispatcher thrashing during DOS disk access (Scandisk RT 50% $\rightarrow$ near 100%).
+  - Direct DMA memory transfers (`mem_read_phys_block`, `mem_write_phys_block`) replacing 4-byte granular loops and per-DWORD cache snooping in `dma.c`.
+  - Code-aware page invalidation (`page_has_code()`): `mem_invalidate_range()` only dirties and evicts pages actually containing compiled code blocks, preventing DMA disk loads from flushing clean data buffers and thrashing newly loaded DLL code.
+  - MiniVHD bulk sector run batching: `mvhd_sparse_read` and `mvhd_sparse_diff_write` scan block bitmaps for contiguous sector spans, replacing scalar 512-byte per-sector loops with single large `fread`/`fwrite` operations and fixing bit macro parentheses.
 - **Automated Full-System Benchmark Suite**: **COMPLETED & OPERATIONAL** ([`benchmarks/run_benchmarks.py`](file:///home/marm/src/86Box/benchmarks/run_benchmarks.py)).
   - End-to-end headless execution across 4 guest benchmark workloads with real-time serial telemetry and disk log harvesting.
   - Breakpoint and inspection support (`--break-before`, `--break-after`, `--stop-after`, `--per-test-timeout`, `--interactive`).
@@ -325,6 +336,49 @@ However, the x86-64 backend in `codegen_new` was ported without general REX pref
      - **Barrier Safety**: Constants are strictly invalidated across barriers (`UOP_TYPE_BARRIER`, `UOP_TYPE_ORDER_BARRIER`), branch targets (`UOP_TYPE_JUMP_DEST`), jumps (`UOP_TYPE_JUMP`), and loop labels (`UOP_LOOP_LABEL`).
      - **Dead Store Safeguard**: Added explicit check in `codegen_reg_process_dead_list()` ensuring any register version marked with `REG_FLAGS_REQUIRED` is never converted to `UOP_INVALID`.
    - **Verification**: Verified 100% test pass on automated benchmark suite (92.14s total wall-clock time; Quake: 148.9 FPS, Doom: 5745.38 FPS, PCPBench: 208.7 FPS, Dhrystone: 400,000 Ops/sec) and confirmed full normal boot to Windows 98 SE graphical desktop with taskbar and icons.
+
+---
+
+## Phase 6: Disk Access & Host I/O Subsystem Optimization [COMPLETED]
+
+**Goal**: Eliminate massive Real Time (RT) performance degradation during guest disk access in both DOS mode (e.g. Scandisk dropping to ~50% RT) and Windows 98 (Control Panel CPL loading stalling the emulator).
+
+### Architecture & Implementation
+1. **PIO String I/O Loop Batching (`src/cpu/x86_ops_rep_dyn.h`)**:
+   - **Problem**: `opREP_INSB/W/L` and `opREP_OUTSB/W/L` had single-iteration bodies (`if (CNT_REG > 0) ... CPU_BLOCK_END()`). Each 2-byte word read during a 256-word PIO sector read caused a full dynarec block exit, returning to the C dispatcher and executing a hash lookup 256 times per sector.
+   - **Resolution**: Replaced with a bounded `while (CNT_REG > 0)` loop (matching `MOVS`), breaking on `cycles < cycles_end || cpu_state.exit_request`. Reads/writes run at full C loop speed (~66 words per dynarec block execution), eliminating ~98% of dispatch overhead during DOS PIO disk reads.
+2. **Direct DMA Physical Memory Block Transfers (`src/mem/mem.c`, `src/dma.c`)**:
+   - **Problem**: `dma_bm_read` and `dma_bm_write` operated via a 4-byte scalar loop calling `mem_read_phys` and `mem_write_phys` per DWORD. Each 4 bytes performed memory map lookups and called `cpu_cache_snoop()`, resulting in thousands of redundant cache tag snoop iterations per disk transfer.
+   - **Resolution**: Implemented `mem_read_phys_block()` and `mem_write_phys_block()` with page-sliced bulk `memcpy` direct to RAM (`map->exec`), performing a single batched `cpu_cache_snoop(addr, len)` per DMA transfer.
+3. **Code-Aware Dynarec Page Invalidation (`src/mem/mem.c`)**:
+   - **Problem**: On every DMA write, `dma_bm_write` called `mem_invalidate_range`, which unconditionally set `dirty_mask = ~0ULL` and queued every page into `purgable_page_list_head`. Clean data buffers were never purged (because `code_present_mask & dirty_mask == 0`), permanently polluting the eviction queue and causing newly compiled DLL code loaded by Windows 98 to be repeatedly discarded and recompiled on every dispatch.
+   - **Resolution**: Added `page_has_code()` filter (`code_present_mask`, `block`, `block_2`, `head`, or `byte_code_present_mask`). Only pages containing actual compiled code blocks are marked dirty and notified via `codegen_notify_code_write(page)`. Clean data buffer pages bypass dynarec invalidation entirely.
+4. **MiniVHD Dynamic Sector Run Batching (`src/disk/minivhd/minivhd_io.c`)**:
+   - **Problem**: When reading/writing dynamic VHD disk images (`windows98.vhd`), `mvhd_sparse_read` and `mvhd_sparse_diff_write` iterated sector-by-sector (`for (s = offset; s < ls; s++)`) calling libc `fread`/`fwrite` 512 bytes at a time. A single 64–128 KB transfer issued 128–256 separate libc I/O calls with file locking and buffer flushing overhead.
+   - **Resolution**: Rewrote `mvhd_sparse_read` and `mvhd_sparse_diff_write` to scan the block allocation bitmap for contiguous allocated sector spans, reading/writing all consecutive sectors in a single `fread`/`fwrite` call per block. Also parenthesized macro arguments in `VHD_SETBIT`, `VHD_CLEARBIT`, and `VHD_TESTBIT`.
+
+---
+
+## Phase 7: Next Priorities & Backlog [NEXT]
+
+**Goal**: Complete remaining deferred opcodes, expand linking to 16-bit calling conventions, and tackle display/timing bottlenecks.
+
+### 1. Branchless `CMOVcc` Recompilation (`0F 40`–`4F`)
+- **Current State**: `ropCMOVcc_16` and `ropCMOVcc_32` in `src/codegen_new/codegen_ops_mov.c` are currently stubs that return 0, forcing Pentium Pro / Pentium II+ binaries to fall back to the C interpreter.
+- **Requirement**: Must be implemented branchlessly without intra-block jumps (`codegen_cond_jump_false`), which break the register allocator's single-basic-block assumption.
+- **Approach**: Evaluate the condition into a temporary register (via `jit_cond_helpers` or ALU comparison) and emit a conditional select (host `CMOVcc` on x86-64, `CSEL` on ARM64) or branchless bitmask blend: `dest = (cond) ? src : dest`.
+
+### 2. 16-Bit Near `CALL` / `RET` Chaining
+- **Current State**: 32-bit protected-mode `CALL rel32` and `RET` chain directly (`LINK_DEFAULT = 0xbf`), but 16-bit near calls (`ropCALL_r16`) and returns (`ropRET_16`, `ropRET_imm_16`) return to C dispatch.
+- **Impact**: Windows 9x core subsystems (`USER.EXE`, `GDI.EXE`, shell thunking) heavily utilize 16-bit segmented near calls/returns.
+- **Tasks**:
+  1. Enforce `stack32 == 0` guards to avoid stack misalignments across mixed thunking frames.
+  2. Apply strict 16-bit address masking (`dest = (op_pc + 2 + offset) & 0xFFFF`) in link generation and runtime target matching to prevent segment wrap aliasing.
+  3. Validate real-mode CS/base consistency to prevent cross-segment aliasing in shared physical memory.
+
+### 3. Display Subsystem / VSync Spin-Loop Optimization
+- **Current State**: In PCPBench, framerate jumped from 60.4 to 208.7 FPS because vsync polling loops (`in al, 03DAh` testing bit 3 of the Input Status #1 register) run unthrottled in fast dynarec blocks without waiting for simulated vertical retrace.
+- **Tasks**: Investigate I/O spin-loop detection for video status polling or cycle-accurate CGA/EGA/VGA status register timing to ensure vsync-dependent guest code paces correctly without runaway simulation.
 
 ---
 

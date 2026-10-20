@@ -2009,6 +2009,36 @@ mem_read_phys(void *dest, uint32_t addr, int transfer_size)
 }
 
 void
+mem_read_phys_block(void *dest, uint32_t addr, uint32_t len, int transfer_size)
+{
+    uint8_t *d = (uint8_t *) dest;
+
+    while (len) {
+        uint32_t page_offset = addr & MEM_GRANULARITY_MASK;
+        uint32_t chunk       = MIN(len, MEM_GRANULARITY_SIZE - page_offset);
+        mem_mapping_t *map   = read_mapping_bus[addr >> MEM_GRANULARITY_BITS];
+
+        if (cpu_use_exec && map && map->exec) {
+            memcpy(d, &(map->exec[(addr - map->base) & map->mask]), chunk);
+        } else {
+            int ts = (transfer_size > 0) ? transfer_size : 4;
+            uint32_t n  = chunk & ~(ts - 1);
+            uint32_t n2 = chunk - n;
+            for (uint32_t i = 0; i < n; i += ts)
+                mem_read_phys((void *) &(d[i]), addr + i, ts);
+            if (n2) {
+                uint8_t bytes[4] = { 0, 0, 0, 0 };
+                mem_read_phys((void *) bytes, addr + n, ts);
+                memcpy((void *) &(d[n]), bytes, n2);
+            }
+        }
+        addr += chunk;
+        d += chunk;
+        len -= chunk;
+    }
+}
+
+void
 mem_writeb_phys(uint32_t addr, uint8_t val)
 {
     mem_mapping_t *map = write_mapping_bus[addr >> MEM_GRANULARITY_BITS];
@@ -2083,6 +2113,40 @@ mem_write_phys(void *src, uint32_t addr, int transfer_size)
     } else if (transfer_size == 1) {
         pb = (uint8_t *) src;
         mem_writeb_phys(addr, *pb);
+    }
+}
+
+void
+mem_write_phys_block(const void *src, uint32_t addr, uint32_t len, int transfer_size)
+{
+    const uint8_t *s = (const uint8_t *) src;
+
+    cpu_cache_snoop(addr, len);
+    mem_logical_addr = 0xffffffff;
+
+    while (len) {
+        uint32_t page_offset = addr & MEM_GRANULARITY_MASK;
+        uint32_t chunk       = MIN(len, MEM_GRANULARITY_SIZE - page_offset);
+        mem_mapping_t *map   = write_mapping_bus[addr >> MEM_GRANULARITY_BITS];
+
+        if (cpu_use_exec && map && map->exec) {
+            memcpy(&(map->exec[(addr - map->base) & map->mask]), s, chunk);
+        } else {
+            int ts = (transfer_size > 0) ? transfer_size : 4;
+            uint32_t n  = chunk & ~(ts - 1);
+            uint32_t n2 = chunk - n;
+            for (uint32_t i = 0; i < n; i += ts)
+                mem_write_phys((void *) &(s[i]), addr + i, ts);
+            if (n2) {
+                uint8_t bytes[4] = { 0, 0, 0, 0 };
+                mem_read_phys((void *) bytes, addr + n, ts);
+                memcpy(bytes, (void *) &(s[n]), n2);
+                mem_write_phys((void *) bytes, addr + n, ts);
+            }
+        }
+        addr += chunk;
+        s += chunk;
+        len -= chunk;
     }
 }
 
@@ -2492,6 +2556,22 @@ mem_write_remappedl2(uint32_t addr, uint32_t val, UNUSED(void *priv))
         *(uint32_t *) &ram[addr] = val;
 }
 
+#ifdef USE_NEW_DYNAREC
+static inline int
+page_has_code(const page_t *page)
+{
+    if (page->code_present_mask || page->block || page->block_2 || page->head)
+        return 1;
+    if (page->byte_code_present_mask) {
+        for (int c = 0; c < 64; c++) {
+            if (page->byte_code_present_mask[c])
+                return 1;
+        }
+    }
+    return 0;
+}
+#endif
+
 void
 mem_invalidate_range(uint32_t start_addr, uint32_t end_addr)
 {
@@ -2506,14 +2586,13 @@ mem_invalidate_range(uint32_t start_addr, uint32_t end_addr)
             break;
 
         page = &pages[start_addr >> 12];
-        if (page) {
+        if (page && page_has_code(page)) {
             page->dirty_mask = 0xffffffffffffffffULL;
 
             if ((page->mem != page_ff) && page->byte_dirty_mask)
                 memset(page->byte_dirty_mask, 0xff, 64 * sizeof(uint64_t));
 
-            if (!page_in_evict_list(page))
-                page_add_to_evict_list(page);
+            codegen_notify_code_write(page);
         }
     }
 #else

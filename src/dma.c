@@ -3420,48 +3420,13 @@ dma_mode(int channel)
 void
 dma_bm_read(uint32_t PhysAddress, uint8_t *DataRead, uint32_t TotalSize, int TransferSize)
 {
-    uint32_t n;
-    uint32_t n2;
-    uint8_t  bytes[4] = { 0, 0, 0, 0 };
-
-    n  = TotalSize & ~(TransferSize - 1);
-    n2 = TotalSize - n;
-
-    /* Do the divisible block, if there is one. */
-    if (n) {
-        for (uint32_t i = 0; i < n; i += TransferSize)
-            mem_read_phys((void *) &(DataRead[i]), PhysAddress + i, TransferSize);
-    }
-
-    /* Do the non-divisible block, if there is one. */
-    if (n2) {
-        mem_read_phys((void *) bytes, PhysAddress + n, TransferSize);
-        memcpy((void *) &(DataRead[n]), bytes, n2);
-    }
+    mem_read_phys_block(DataRead, PhysAddress, TotalSize, TransferSize);
 }
 
 void
 dma_bm_write(uint32_t PhysAddress, const uint8_t *DataWrite, uint32_t TotalSize, int TransferSize)
 {
-    uint32_t n;
-    uint32_t n2;
-    uint8_t  bytes[4] = { 0, 0, 0, 0 };
-
-    n  = TotalSize & ~(TransferSize - 1);
-    n2 = TotalSize - n;
-
-    /* Do the divisible block, if there is one. */
-    if (n) {
-        for (uint32_t i = 0; i < n; i += TransferSize)
-            mem_write_phys((void *) &(DataWrite[i]), PhysAddress + i, TransferSize);
-    }
-
-    /* Do the non-divisible block, if there is one. */
-    if (n2) {
-        mem_read_phys((void *) bytes, PhysAddress + n, TransferSize);
-        memcpy(bytes, (void *) &(DataWrite[n]), n2);
-        mem_write_phys((void *) bytes, PhysAddress + n, TransferSize);
-    }
+    mem_write_phys_block(DataWrite, PhysAddress, TotalSize, TransferSize);
 
     if (dma_at)
         mem_invalidate_range(PhysAddress, PhysAddress + TotalSize - 1);
