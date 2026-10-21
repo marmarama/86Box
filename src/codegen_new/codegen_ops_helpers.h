@@ -131,3 +131,40 @@ codegen_can_unroll(codeblock_t *block, ir_data_t *ir, uint32_t next_pc, uint32_t
 
     return codegen_can_unroll_full(block, ir, next_pc, dest_addr);
 }
+
+static inline int
+codegen_get_condition_fastpath(int cond, int *out_op1, int *out_op2)
+{
+    if (!codegen_flags_changed || codegen_last_flags_op == FLAGS_UNKNOWN)
+        return 0;
+
+    int cond_base = cond & 0xf;
+
+    /* Fast-path 1: Zero Flag (COND_E / COND_NE) for all operations where ZF is (flags_res == 0) */
+    if (is_zf_flags_res_op(codegen_last_flags_op)) {
+        if (cond_base == COND_E || cond_base == COND_NE) {
+            *out_op1 = IREG_flags_res;
+            *out_op2 = -1; /* compare with 0 */
+            return 1;
+        }
+    }
+
+    /* Fast-path 2: Comparison conditions after CMP and SUB */
+    if (codegen_last_flags_op == FLAGS_SUB32 ||
+        codegen_last_flags_op == FLAGS_SUB16 ||
+        codegen_last_flags_op == FLAGS_SUB8) {
+        if (cond_base == COND_B || cond_base == COND_NB ||
+            cond_base == COND_E || cond_base == COND_NE ||
+            cond_base == COND_BE || cond_base == COND_NBE ||
+            cond_base == COND_L || cond_base == COND_NL ||
+            cond_base == COND_LE || cond_base == COND_NLE) {
+            *out_op1 = (codegen_last_flags_op == FLAGS_SUB32) ? IREG_flags_op1 :
+                       (codegen_last_flags_op == FLAGS_SUB16) ? IREG_flags_op1_W : IREG_flags_op1_B;
+            *out_op2 = (codegen_last_flags_op == FLAGS_SUB32) ? IREG_flags_op2 :
+                       (codegen_last_flags_op == FLAGS_SUB16) ? IREG_flags_op2_W : IREG_flags_op2_B;
+            return 1;
+        }
+    }
+
+    return 0;
+}

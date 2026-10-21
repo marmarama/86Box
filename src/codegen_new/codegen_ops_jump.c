@@ -25,10 +25,11 @@ ropJMP_r8(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint
 
     if (offset < 0)
         codegen_can_unroll(block, ir, op_pc + 1, dest_addr);
+    uop_MOV_IMM(ir, IREG_pc, dest_addr);
     codegen_mark_code_present(block, cs + op_pc, 1);
     block->exit_type          = BLOCK_EXIT_DIRECT_1;
     block->links[0].target_pc = dest_addr;
-    return dest_addr;
+    return -1;
 }
 uint32_t
 ropJMP_r16(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), uint32_t op_pc)
@@ -40,10 +41,11 @@ ropJMP_r16(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uin
 
     if (offset < 0)
         codegen_can_unroll(block, ir, op_pc + 1, dest_addr);
+    uop_MOV_IMM(ir, IREG_pc, dest_addr);
     codegen_mark_code_present(block, cs + op_pc, 2);
     block->exit_type          = BLOCK_EXIT_DIRECT_1;
     block->links[0].target_pc = dest_addr;
-    return dest_addr;
+    return -1;
 }
 uint32_t
 ropJMP_r32(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), uint32_t op_pc)
@@ -53,10 +55,11 @@ ropJMP_r32(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uin
 
     if (offset < 0)
         codegen_can_unroll(block, ir, op_pc + 1, dest_addr);
+    uop_MOV_IMM(ir, IREG_pc, dest_addr);
     codegen_mark_code_present(block, cs + op_pc, 4);
     block->exit_type          = BLOCK_EXIT_DIRECT_1;
     block->links[0].target_pc = dest_addr;
-    return dest_addr;
+    return -1;
 }
 
 uint32_t

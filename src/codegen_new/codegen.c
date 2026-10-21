@@ -730,8 +730,8 @@ generate_call:
             if ((x87_op & 0xff) < 0xc0)
                 uop_CALL_FUNC(ir, fpu_postamble);
         }
-        if (new_pc) {
-            if (new_pc != -1)
+        if (new_pc || block->exit_type != BLOCK_EXIT_NONE) {
+            if (new_pc && new_pc != -1)
                 uop_MOV_IMM(ir, IREG_pc, new_pc);
 
             codegen_endpc = (cs + cpu_state.pc) + 8;

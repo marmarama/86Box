@@ -2317,12 +2317,94 @@ codegen_BSWAP(codeblock_t *block, uop_t *uop)
     return 0;
 }
 
+static int
+codegen_SETCC(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg   = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_reg_a  = HOST_REG_GET(uop->src_reg_a_real);
+    int src_reg_b  = HOST_REG_GET(uop->src_reg_b_real);
+    int src_size_a = IREG_GET_SIZE(uop->src_reg_a_real);
+    int src_size_b = IREG_GET_SIZE(uop->src_reg_b_real);
+    int cond       = (int) uop->imm_data;
+    int ra, rb, res;
+
+    switch (cond & 0xf) {
+        case COND_E:
+            res = cmp_equal_reg(block, src_size_a, src_size_b, src_reg_a, src_reg_b);
+            host_loong64_MOV_D(block, dest_reg, res);
+            break;
+        case COND_NE:
+            res = cmp_equal_reg(block, src_size_a, src_size_b, src_reg_a, src_reg_b);
+            host_loong64_XORI(block, dest_reg, res, 1);
+            break;
+        case COND_B:
+            cmp_zext_pair(block, src_size_a, src_size_b, src_reg_a, src_reg_b, &ra, &rb);
+            host_loong64_SLTU(block, dest_reg, ra, rb);
+            break;
+        case COND_NB:
+            cmp_zext_pair(block, src_size_a, src_size_b, src_reg_a, src_reg_b, &ra, &rb);
+            host_loong64_SLTU(block, dest_reg, ra, rb);
+            host_loong64_XORI(block, dest_reg, dest_reg, 1);
+            break;
+        case COND_BE:
+            cmp_zext_pair(block, src_size_a, src_size_b, src_reg_a, src_reg_b, &ra, &rb);
+            host_loong64_SLTU(block, dest_reg, rb, ra);
+            host_loong64_XORI(block, dest_reg, dest_reg, 1);
+            break;
+        case COND_NBE:
+            cmp_zext_pair(block, src_size_a, src_size_b, src_reg_a, src_reg_b, &ra, &rb);
+            host_loong64_SLTU(block, dest_reg, rb, ra);
+            break;
+        case COND_L:
+            cmp_sext_pair(block, src_size_a, src_size_b, src_reg_a, src_reg_b, &ra, &rb);
+            host_loong64_SLT(block, dest_reg, ra, rb);
+            break;
+        case COND_NL:
+            cmp_sext_pair(block, src_size_a, src_size_b, src_reg_a, src_reg_b, &ra, &rb);
+            host_loong64_SLT(block, dest_reg, ra, rb);
+            host_loong64_XORI(block, dest_reg, dest_reg, 1);
+            break;
+        case COND_LE:
+            cmp_sext_pair(block, src_size_a, src_size_b, src_reg_a, src_reg_b, &ra, &rb);
+            host_loong64_SLT(block, dest_reg, rb, ra);
+            host_loong64_XORI(block, dest_reg, dest_reg, 1);
+            break;
+        case COND_NLE:
+            cmp_sext_pair(block, src_size_a, src_size_b, src_reg_a, src_reg_b, &ra, &rb);
+            host_loong64_SLT(block, dest_reg, rb, ra);
+            break;
+        default:
+            fatal("codegen_SETCC unhandled cond %d\n", cond);
+    }
+    return 0;
+}
+
+static int
+codegen_CMOV(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_old  = HOST_REG_GET(uop->src_reg_a_real);
+    int src_new  = HOST_REG_GET(uop->src_reg_b_real);
+    int cond_reg = HOST_REG_GET(uop->src_reg_c_real);
+
+    if (dest_reg != src_old)
+        host_loong64_MOV_D(block, dest_reg, src_old);
+
+    uint8_t *skip = host_loong64_BEQ_(block, cond_reg, REG_ZERO);
+    host_loong64_MOV_D(block, dest_reg, src_new);
+    *skip = (uint8_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) skip) - 4;
+
+    return 0;
+}
+
 const uOpFn uop_handlers[UOP_MAX] = {
     /*Any uop without a handler below lands here and fatal()s in both
       debug and release builds.*/
     [0 ... UOP_MAX - 1] = codegen_UOP_UNIMPLEMENTED,
 
     [UOP_CALL_FUNC & UOP_MASK]         = codegen_CALL_FUNC,
+    [UOP_CMOV & UOP_MASK]              = codegen_CMOV,
+    [UOP_SETCC & UOP_MASK]             = codegen_SETCC,
     [UOP_CALL_FUNC_RESULT & UOP_MASK]  = codegen_CALL_FUNC_RESULT,
     [UOP_CALL_INSTRUCTION_FUNC & UOP_MASK] = codegen_CALL_INSTRUCTION_FUNC,
 

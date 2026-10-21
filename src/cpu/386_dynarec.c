@@ -57,15 +57,13 @@ int inrecomp                = 0;
 int cpu_block_end           = 0;
 int cpu_end_block_after_ins = 0;
 
-#if defined(__aarch64__) || defined(_M_ARM64)
-/* ARM64-only epoch: monotonically advances on dirty-list transitions so
-   per-block retry state can distinguish dense bursts from stale retries. */
+#ifdef USE_NEW_DYNAREC
+/* Monotonically advances on dirty-list transitions so per-block retry state
+   can distinguish dense bursts from stale retries across all architectures. */
 static uint32_t dynarec_s03e_dirty_epoch             = 0;
-#endif
 
-#if defined(__aarch64__) || defined(_M_ARM64)
-/* ARM64-only policy: require repeated BYTE_MASK dirty-list hits before
-   NO_IMMEDIATES promotion to avoid premature slow-immediate escalation. */
+/* Policy: require repeated BYTE_MASK dirty-list hits before NO_IMMEDIATES
+   promotion to avoid premature slow-immediate escalation. */
 /* Tuning: raise threshold to 3 consecutive dirty-list retries so transient
    churn is more likely to recover via retry-decay before forcing NO_IMMEDIATES. */
 #    define DYNAREC_S03B_NO_IMM_THRESHOLD 3
@@ -636,31 +634,25 @@ exec386_dynarec_dyn(void)
             }
         }
 #    ifdef USE_NEW_DYNAREC
-        /* ARM64-only: if a BYTE_MASK block executes stably outside the dirty
+        /* If a BYTE_MASK block executes stably outside the dirty
            list, clear stale retry debt so a distant future dirty hit does not
            trigger premature NO_IMMEDIATES promotion. */
-#        if defined(__aarch64__) || defined(_M_ARM64)
         if (valid_block && !(block->flags & CODEBLOCK_IN_DIRTY_LIST) && (block->flags & CODEBLOCK_BYTE_MASK)
             && !(block->flags & CODEBLOCK_NO_IMMEDIATES) && block->dirty_list_recompile_hits) {
             block->dirty_list_recompile_hits = 0;
             block->dirty_list_last_epoch     = 0;
         }
-#        endif
 
         if (valid_block && (block->flags & CODEBLOCK_IN_DIRTY_LIST)) {
-            const int had_byte_mask     = !!(block->flags & CODEBLOCK_BYTE_MASK);
-            const int had_no_immediates = !!(block->flags & CODEBLOCK_NO_IMMEDIATES);
-#if defined(__aarch64__) || defined(_M_ARM64)
+            const int had_byte_mask          = !!(block->flags & CODEBLOCK_BYTE_MASK);
+            const int had_no_immediates      = !!(block->flags & CODEBLOCK_NO_IMMEDIATES);
             const uint16_t last_epoch_before = block->dirty_list_last_epoch;
-#endif
+
             block->flags &= ~CODEBLOCK_WAS_RECOMPILED;
             if (had_byte_mask) {
                 if (!had_no_immediates) {
-#if defined(__aarch64__) || defined(_M_ARM64)
-                    /* ARM64-only: wait for repeated dirty-list BYTE_MASK
-                       hits before NO_IMMEDIATES promotion. */
-                    /* Require retries to occur in a dense burst window;
-                       stale widely-spaced retries are reset. */
+                    /* Wait for repeated dirty-list BYTE_MASK hits before NO_IMMEDIATES promotion.
+                       Require retries to occur in a dense burst window; stale widely-spaced retries are reset. */
                     dynarec_s03e_dirty_epoch++;
                     {
                         const uint16_t cur_epoch = (uint16_t) dynarec_s03e_dirty_epoch;
@@ -678,15 +670,10 @@ exec386_dynarec_dyn(void)
                         block->flags |= CODEBLOCK_NO_IMMEDIATES;
                         block->dirty_list_last_epoch = 0;
                     }
-#else
-                    block->flags |= CODEBLOCK_NO_IMMEDIATES;
-#endif
                 }
             } else {
-#if defined(__aarch64__) || defined(_M_ARM64)
                 block->dirty_list_recompile_hits = 0;
                 block->dirty_list_last_epoch     = 0;
-#endif
                 block->flags |= CODEBLOCK_BYTE_MASK;
             }
         }

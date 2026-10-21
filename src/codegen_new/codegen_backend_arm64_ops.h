@@ -70,6 +70,7 @@ void host_arm64_CMP_REG_LSL(codeblock_t *block, int src_n_reg, int src_m_reg, in
 
 void host_arm64_CSEL_CC(codeblock_t *block, int dst_reg, int src_n_reg, int src_m_reg);
 void host_arm64_CSEL_EQ(codeblock_t *block, int dst_reg, int src_n_reg, int src_m_reg);
+void host_arm64_CSEL_NE(codeblock_t *block, int dst_reg, int src_n_reg, int src_m_reg);
 void host_arm64_CSEL_VS(codeblock_t *block, int dst_reg, int src_n_reg, int src_m_reg);
 
 void host_arm64_DUP_V2S(codeblock_t *block, int dst_reg, int src_n_reg, int element);

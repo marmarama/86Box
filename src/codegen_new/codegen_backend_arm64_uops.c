@@ -3194,8 +3194,77 @@ codegen_BSWAP(codeblock_t *block, uop_t *uop)
     return 0;
 }
 
+static int
+codegen_SETCC(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg   = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_reg_a  = HOST_REG_GET(uop->src_reg_a_real);
+    int src_reg_b  = HOST_REG_GET(uop->src_reg_b_real);
+    int src_size_a = IREG_GET_SIZE(uop->src_reg_a_real);
+    int src_size_b = IREG_GET_SIZE(uop->src_reg_b_real);
+    int cond       = (int) uop->imm_data;
+
+    if (REG_IS_L(src_size_a) && REG_IS_L(src_size_b)) {
+        host_arm64_CMP_REG(block, src_reg_a, src_reg_b);
+    } else if (REG_IS_W(src_size_a) && REG_IS_W(src_size_b)) {
+        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 16);
+        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 16);
+    } else if (REG_IS_B(src_size_a) && REG_IS_B(src_size_b)) {
+        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 24);
+        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 24);
+    }
+
+    /* Convert x86 condition to ARM64 condition and emit CSET: CSINC Rd, WZR, WZR, ~cond */
+    static const uint8_t x86_to_arm64_inv_cond[16] = {
+        0x7, /* O -> VC (invert of VS) */
+        0x6, /* NO -> VS */
+        0x2, /* B -> CS (invert of CC) */
+        0x3, /* NB -> CC */
+        0x1, /* E -> NE (invert of EQ) */
+        0x0, /* NE -> EQ */
+        0x8, /* BE -> HI (invert of LS) */
+        0x9, /* NBE -> LS */
+        0x5, /* S -> PL (invert of MI) */
+        0x4, /* NS -> MI */
+        0x7, /* P -> VC */
+        0x6, /* NP -> VS */
+        0xa, /* L -> GE (invert of LT) */
+        0xb, /* NL -> LT */
+        0xc, /* LE -> GT (invert of LE) */
+        0xd  /* NLE -> LE */
+    };
+    uint8_t inv_arm_cond = x86_to_arm64_inv_cond[cond & 0xf];
+    codegen_addlong(block, 0x1a9f07e0 | (inv_arm_cond << 12) | dest_reg);
+    return 0;
+}
+
+static int
+codegen_CMOV(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg  = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_old   = HOST_REG_GET(uop->src_reg_a_real);
+    int src_new   = HOST_REG_GET(uop->src_reg_b_real);
+    int cond_reg  = HOST_REG_GET(uop->src_reg_c_real);
+    int cond_size = IREG_GET_SIZE(uop->src_reg_c_real);
+
+    if (REG_IS_L(cond_size)) {
+        host_arm64_CMP_IMM(block, cond_reg, 0);
+    } else if (REG_IS_W(cond_size)) {
+        host_arm64_MOV_REG(block, REG_TEMP, cond_reg, 16);
+        host_arm64_CMP_IMM(block, REG_TEMP, 0);
+    } else {
+        host_arm64_MOV_REG(block, REG_TEMP, cond_reg, 24);
+        host_arm64_CMP_IMM(block, REG_TEMP, 0);
+    }
+
+    host_arm64_CSEL_NE(block, dest_reg, src_new, src_old);
+    return 0;
+}
+
 const uOpFn uop_handlers[UOP_MAX] = {
     [UOP_CALL_FUNC & UOP_MASK] = codegen_CALL_FUNC,
+    [UOP_CMOV & UOP_MASK]      = codegen_CMOV,
+    [UOP_SETCC & UOP_MASK]     = codegen_SETCC,
     [UOP_CALL_FUNC_RESULT &
         UOP_MASK]
     = codegen_CALL_FUNC_RESULT,

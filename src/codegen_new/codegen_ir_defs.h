@@ -206,6 +206,11 @@ extern int codegen_last_flags_op;
 /*UOP_TEST_JS_DEST - if (src_reg_a positive) then jump to ptr*/
 #define UOP_TEST_JS_DEST (UOP_TYPE_PARAMS_REGS | UOP_TYPE_PARAMS_IMM | UOP_TYPE_PARAMS_POINTER | 0x71 | UOP_TYPE_ORDER_BARRIER | UOP_TYPE_JUMP)
 
+/*UOP_CMOV - dest_reg = (src_reg_c != 0) ? src_reg_b : src_reg_a*/
+#define UOP_CMOV (UOP_TYPE_PARAMS_REGS | 0x74)
+/*UOP_SETCC - dest_reg = (src_reg_a <cond> src_reg_b) ? 1 : 0*/
+#define UOP_SETCC (UOP_TYPE_PARAMS_REGS | UOP_TYPE_PARAMS_IMM | 0x75)
+
 /*UOP_FP_ENTER - must be called before any FPU register accessed*/
 #define UOP_FP_ENTER (UOP_TYPE_PARAMS_IMM | 0x80 | UOP_TYPE_BARRIER)
 /*UOP_FADD - (floating point) dest_reg = src_reg_a + src_reg_b*/
@@ -963,6 +968,9 @@ uop_LOOP_JMP(ir_data_t *ir, int loop_label_uop)
 
 #define uop_TEST_JNS_DEST(ir, src_reg)                                   uop_gen_reg_src1(UOP_TEST_JNS_DEST, ir, src_reg)
 #define uop_TEST_JS_DEST(ir, src_reg)                                    uop_gen_reg_src1(UOP_TEST_JS_DEST, ir, src_reg)
+
+#define uop_CMOV(ir, dest_reg, src_old, src_new, cond_reg)               uop_gen_reg_dst_src3(UOP_CMOV, ir, dest_reg, src_old, src_new, cond_reg)
+#define uop_SETCC(ir, dest_reg, src_reg_a, src_reg_b, cond)              uop_gen_reg_dst_src2_imm(UOP_SETCC, ir, dest_reg, src_reg_a, src_reg_b, cond)
 
 #ifdef DEBUG_EXTRA
 #    define uop_LOG_INSTR(ir, imm) uop_gen_imm(UOP_LOG_INSTR, ir, imm)

@@ -19,6 +19,10 @@
 
 #include "386_common.h"
 
+#if defined(__APPLE__) && defined(__aarch64__)
+#    include <pthread.h>
+#endif
+
 #include "codegen.h"
 #include "codegen_accumulate.h"
 #include "codegen_allocator.h"
@@ -525,6 +529,11 @@ codegen_link_allowed(const codeblock_t *src_block, const codeblock_t *dst_block)
     if ((mask & LINK_NO_FPU) && ((src_block->flags | dst_block->flags) & CODEBLOCK_HAS_FPU))
         return 0;
 
+    /* A block spanning two pages requires physical address translation and dirty
+       checks on its second page in exec386_dynarec_dyn. Disallow direct links. */
+    if (dst_block->page_mask2 != 0)
+        return 0;
+
     return 1;
 }
 
@@ -532,9 +541,21 @@ static inline void
 patch_jmp_disp(uint32_t *jmp_disp_ptr, const void *target)
 {
     intptr_t delta = (intptr_t) ((const uint8_t *) target - ((const uint8_t *) jmp_disp_ptr + 4));
-    assert(delta >= INT32_MIN && delta <= INT32_MAX);
+    if (delta < INT32_MIN || delta > INT32_MAX)
+        fatal("patch_jmp_disp: delta %" PRIiPTR " out of 32-bit range\n", delta);
     uint32_t disp = (uint32_t) delta;
+#if defined(__APPLE__) && defined(__aarch64__)
+    if (__builtin_available(macOS 11.0, *))
+        pthread_jit_write_protect_np(0);
+#endif
     memcpy(jmp_disp_ptr, &disp, sizeof(disp));
+#if defined(__loongarch_lp64) || defined(__aarch64__) || defined(_M_ARM64)
+    __builtin___clear_cache((char *) jmp_disp_ptr, (char *) jmp_disp_ptr + sizeof(disp));
+#endif
+#if defined(__APPLE__) && defined(__aarch64__)
+    if (__builtin_available(macOS 11.0, *))
+        pthread_jit_write_protect_np(1);
+#endif
 }
 
 /* Restore every patched exit to its unlinked stub, keeping the stubs so exits can
@@ -884,12 +905,10 @@ codegen_block_init(uint32_t phys_addr)
     block->pc          = cs + cpu_state.pc;
     block->_cs         = cs;
     block->phys        = phys_addr;
-#if defined(__aarch64__) || defined(_M_ARM64) || defined(__loongarch_lp64)
-    /* ARM64/LoongArch64 state initialization for delayed NO_IMMEDIATES policy. */
+    /* State initialization for delayed NO_IMMEDIATES policy. */
     block->dirty_list_recompile_hits = 0;
     /* Zero epoch so the first dirty-list hit starts a new burst. */
     block->dirty_list_last_epoch     = 0;
-#endif
     block->dirty_mask  = &page->dirty_mask;
     block->dirty_mask2 = NULL;
     block->next = block->prev = BLOCK_INVALID;

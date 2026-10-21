@@ -836,6 +836,11 @@ host_arm64_CSEL_EQ(codeblock_t *block, int dst_reg, int src_n_reg, int src_m_reg
     codegen_addlong(block, OPCODE_CSEL | CSEL_COND(COND_EQ) | Rd(dst_reg) | Rn(src_n_reg) | Rm(src_m_reg));
 }
 void
+host_arm64_CSEL_NE(codeblock_t *block, int dst_reg, int src_n_reg, int src_m_reg)
+{
+    codegen_addlong(block, OPCODE_CSEL | CSEL_COND(COND_NE) | Rd(dst_reg) | Rn(src_n_reg) | Rm(src_m_reg));
+}
+void
 host_arm64_CSEL_VS(codeblock_t *block, int dst_reg, int src_n_reg, int src_m_reg)
 {
     codegen_addlong(block, OPCODE_CSEL | CSEL_COND(COND_VS) | Rd(dst_reg) | Rn(src_n_reg) | Rm(src_m_reg));

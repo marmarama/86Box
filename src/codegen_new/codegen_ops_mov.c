@@ -745,6 +745,21 @@ ropCMOVcc_common(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fet
 
     codegen_mark_code_present(block, cs + op_pc, 1);
 
+    /* 1. Evaluate condition:
+     * Fast-path: if flags were updated in this block, evaluate the condition inline.
+     * Fallback: invoke helper barrier call. */
+    int fastpath_op1 = -1, fastpath_op2 = -1;
+    if (codegen_get_condition_fastpath(cond, &fastpath_op1, &fastpath_op2)) {
+        if (fastpath_op2 == -1) {
+            uop_MOV_IMM(ir, IREG_temp0, 0);
+            fastpath_op2 = IREG_temp0;
+        }
+        uop_SETCC(ir, IREG_temp1, fastpath_op1, fastpath_op2, cond);
+    } else {
+        uop_CALL_FUNC_RESULT(ir, IREG_temp1, jit_cond_helpers[cond & 0xf]);
+    }
+
+    /* 2. Resolve source operand (register or memory) */
     if ((fetchdat & 0xc0) == 0xc0) {
         int rm_reg = fetchdat & 7;
         src_reg    = is_op32 ? IREG_32(rm_reg) : IREG_16(rm_reg);
@@ -760,16 +775,9 @@ ropCMOVcc_common(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fet
         uop_MEM_LOAD_REG(ir, src_reg, ireg_seg_base(target_seg), IREG_eaaddr);
     }
 
-    uop_CALL_FUNC_RESULT(ir, IREG_temp1, jit_cond_helpers[cond & 0xf]);
-    int jump_false = uop_CMP_IMM_JZ_DEST(ir, IREG_temp1, 0);
-
-    if (is_op32)
-        uop_MOV(ir, IREG_32(dest_reg), src_reg);
-    else
-        uop_MOV(ir, IREG_16(dest_reg), src_reg);
-
-    uop_NOP_BARRIER(ir);
-    uop_set_jump_dest(ir, jump_false);
+    /* 3. Native conditional move: dest = (cond != 0) ? src : dest */
+    int dst_ireg = is_op32 ? IREG_32(dest_reg) : IREG_16(dest_reg);
+    uop_CMOV(ir, dst_ireg, dst_ireg, src_reg, IREG_temp1);
 
     return op_pc + 1;
 }

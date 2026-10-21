@@ -693,11 +693,21 @@ ropSETcc(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, u
         return 0;
 
     codegen_mark_code_present(block, cs + op_pc, 1);
+
+    int fastpath_op1 = -1, fastpath_op2 = -1;
+    if (codegen_get_condition_fastpath(cond, &fastpath_op1, &fastpath_op2)) {
+        if (fastpath_op2 == -1) {
+            uop_MOV_IMM(ir, IREG_temp0, 0);
+            fastpath_op2 = IREG_temp0;
+        }
+        uop_SETCC(ir, IREG_temp1, fastpath_op1, fastpath_op2, cond);
+    } else {
+        uop_CALL_FUNC_RESULT(ir, IREG_temp1, jit_cond_helpers[cond & 0xf]);
+    }
+
     if ((fetchdat & 0xc0) == 0xc0) {
         int dest_reg = fetchdat & 7;
-
-        uop_CALL_FUNC_RESULT(ir, IREG_temp0, jit_cond_helpers[cond & 0xf]);
-        uop_MOV(ir, IREG_8(dest_reg), IREG_temp0_B);
+        uop_MOV(ir, IREG_8(dest_reg), IREG_temp1_B);
     } else {
         x86seg *target_seg;
 
@@ -706,8 +716,7 @@ ropSETcc(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, u
         codegen_check_seg_write(block, ir, target_seg);
         CHECK_SEG_LIMITS(block, ir, target_seg, IREG_eaaddr, 0);
 
-        uop_CALL_FUNC_RESULT(ir, IREG_temp0, jit_cond_helpers[cond & 0xf]);
-        uop_MEM_STORE_REG(ir, ireg_seg_base(target_seg), IREG_eaaddr, IREG_temp0_B);
+        uop_MEM_STORE_REG(ir, ireg_seg_base(target_seg), IREG_eaaddr, IREG_temp1_B);
     }
 
     return op_pc + 1;

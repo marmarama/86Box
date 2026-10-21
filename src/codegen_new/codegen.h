@@ -83,17 +83,12 @@ typedef struct codeblock_t {
     uint16_t flags;
     uint8_t  ins;
     uint8_t  TOP;
-#if defined(__aarch64__) || defined(_M_ARM64) || defined(__loongarch_lp64)
-    /* ARM64/LoongArch64: per-block retry counter used to delay
-       NO_IMMEDIATES promotion until churn repeats, reducing premature
-       slow-immediate mode. (The 386_dynarec.c policy consuming these
-       fields is currently ARM64-only; LoongArch64 wires it up in M5.) */
+    /* Per-block retry counter used to delay NO_IMMEDIATES promotion until
+       churn repeats, reducing premature slow-immediate mode. */
     uint8_t  dirty_list_recompile_hits;
-    /* ARM64/LoongArch64: tracks the most recent dirty-list epoch seen by
-       this block so promotion can require a dense burst, not stale
-       spaced-out hits. */
+    /* Tracks the most recent dirty-list epoch seen by this block so promotion
+       can require a dense burst, not stale spaced-out hits. */
     uint16_t dirty_list_last_epoch;
-#endif
     int      valid;
 
     /* Direct block chaining data */

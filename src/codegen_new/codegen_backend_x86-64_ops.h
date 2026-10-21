@@ -200,3 +200,7 @@ void host_x86_XOR16_REG_REG(codeblock_t *block, int dst_reg, int src_reg);
 void host_x86_XOR32_REG_REG(codeblock_t *block, int dst_reg, int src_reg);
 
 void host_x86_BSWAP32_REG(codeblock_t *block, int reg);
+
+void host_x86_SETcc_REG(codeblock_t *block, int cond, int dst_reg);
+void host_x86_CMOVcc16_REG_REG(codeblock_t *block, int cond, int dst_reg, int src_reg);
+void host_x86_CMOVcc32_REG_REG(codeblock_t *block, int cond, int dst_reg, int src_reg);
