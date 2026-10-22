@@ -73,3 +73,9 @@ benchmark_results.log
 *.patch
 *.*.orig
 *.*.rej
+
+.vscode-ctags
+perf.data
+__pycache__/
+*.pyc
+scratch/

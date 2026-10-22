@@ -298,7 +298,7 @@ codegen_JMP(codeblock_t *block, uop_t *uop)
 static int
 codegen_EXIT_BLOCK(codeblock_t *block, uop_t *uop)
 {
-    host_loong64_MOV_IMM(block, REG_TEMP, uop->pc);
+    host_loong64_MOVX_IMM(block, REG_TEMP, uop->pc);
     host_loong64_STR_W_IMM(block, REG_TEMP, REG_CPUSTATE, (uintptr_t) &cpu_state.pc - (uintptr_t) &cpu_state);
     host_loong64_B(block, codegen_exit_rout);
 
@@ -447,14 +447,14 @@ codegen_CMP_IMM_JLE_DEST(codeblock_t *block, uop_t *uop)
     int src_size = IREG_GET_SIZE(uop->src_reg_a_real);
 
     if (REG_IS_L(src_size)) {
-        host_loong64_SEXT_W(block, REG_TEMP, src_reg);
+        host_loong64_MOV_W(block, REG_TEMP, src_reg);
     } else if (REG_IS_W(src_size)) {
         host_loong64_SEXT_H(block, REG_TEMP, src_reg);
     } else
         fatal("CMP_IMM_JLE_DEST %02x\n", uop->src_reg_a_real);
 
     host_loong64_mov_imm_w(block, REG_TEMP2, (uint32_t) uop->imm_data);
-    host_loong64_SEXT_W(block, REG_TEMP2, REG_TEMP2);
+    host_loong64_MOV_W(block, REG_TEMP2, REG_TEMP2);
     uop->p = host_loong64_BGE_(block, REG_TEMP2, REG_TEMP);
 
     return 0;
@@ -2331,11 +2331,11 @@ codegen_SETCC(codeblock_t *block, uop_t *uop)
     switch (cond & 0xf) {
         case COND_E:
             res = cmp_equal_reg(block, src_size_a, src_size_b, src_reg_a, src_reg_b);
-            host_loong64_MOV_D(block, dest_reg, res);
+            host_loong64_MOV_REG(block, dest_reg, res);
             break;
         case COND_NE:
             res = cmp_equal_reg(block, src_size_a, src_size_b, src_reg_a, src_reg_b);
-            host_loong64_XORI(block, dest_reg, res, 1);
+            host_loong64_XOR_IMM(block, dest_reg, res, 1);
             break;
         case COND_B:
             cmp_zext_pair(block, src_size_a, src_size_b, src_reg_a, src_reg_b, &ra, &rb);
@@ -2344,12 +2344,12 @@ codegen_SETCC(codeblock_t *block, uop_t *uop)
         case COND_NB:
             cmp_zext_pair(block, src_size_a, src_size_b, src_reg_a, src_reg_b, &ra, &rb);
             host_loong64_SLTU(block, dest_reg, ra, rb);
-            host_loong64_XORI(block, dest_reg, dest_reg, 1);
+            host_loong64_XOR_IMM(block, dest_reg, dest_reg, 1);
             break;
         case COND_BE:
             cmp_zext_pair(block, src_size_a, src_size_b, src_reg_a, src_reg_b, &ra, &rb);
             host_loong64_SLTU(block, dest_reg, rb, ra);
-            host_loong64_XORI(block, dest_reg, dest_reg, 1);
+            host_loong64_XOR_IMM(block, dest_reg, dest_reg, 1);
             break;
         case COND_NBE:
             cmp_zext_pair(block, src_size_a, src_size_b, src_reg_a, src_reg_b, &ra, &rb);
@@ -2362,12 +2362,12 @@ codegen_SETCC(codeblock_t *block, uop_t *uop)
         case COND_NL:
             cmp_sext_pair(block, src_size_a, src_size_b, src_reg_a, src_reg_b, &ra, &rb);
             host_loong64_SLT(block, dest_reg, ra, rb);
-            host_loong64_XORI(block, dest_reg, dest_reg, 1);
+            host_loong64_XOR_IMM(block, dest_reg, dest_reg, 1);
             break;
         case COND_LE:
             cmp_sext_pair(block, src_size_a, src_size_b, src_reg_a, src_reg_b, &ra, &rb);
             host_loong64_SLT(block, dest_reg, rb, ra);
-            host_loong64_XORI(block, dest_reg, dest_reg, 1);
+            host_loong64_XOR_IMM(block, dest_reg, dest_reg, 1);
             break;
         case COND_NLE:
             cmp_sext_pair(block, src_size_a, src_size_b, src_reg_a, src_reg_b, &ra, &rb);
@@ -2382,17 +2382,22 @@ codegen_SETCC(codeblock_t *block, uop_t *uop)
 static int
 codegen_CMOV(codeblock_t *block, uop_t *uop)
 {
-    int dest_reg = HOST_REG_GET(uop->dest_reg_a_real);
-    int src_old  = HOST_REG_GET(uop->src_reg_a_real);
-    int src_new  = HOST_REG_GET(uop->src_reg_b_real);
-    int cond_reg = HOST_REG_GET(uop->src_reg_c_real);
+    int dest_reg  = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_old   = HOST_REG_GET(uop->src_reg_a_real);
+    int src_new   = HOST_REG_GET(uop->src_reg_b_real);
+    int cond_reg  = HOST_REG_GET(uop->src_reg_c_real);
+    int dest_size = IREG_GET_SIZE(uop->dest_reg_a_real);
 
     if (dest_reg != src_old)
-        host_loong64_MOV_D(block, dest_reg, src_old);
+        host_loong64_MOV_REG(block, dest_reg, src_old);
 
-    uint8_t *skip = host_loong64_BEQ_(block, cond_reg, REG_ZERO);
-    host_loong64_MOV_D(block, dest_reg, src_new);
-    *skip = (uint8_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) skip) - 4;
+    uint32_t *skip = host_loong64_BEQ_(block, cond_reg, REG_ZERO);
+    if (REG_IS_W(dest_size)) {
+        host_loong64_BFI_W(block, dest_reg, src_new, 0, 16);
+    } else {
+        host_loong64_MOV_REG(block, dest_reg, src_new);
+    }
+    host_loong64_branch_set_offset(skip, &block_write_data[block_pos]);
 
     return 0;
 }

@@ -286,7 +286,7 @@ codegen_CMP_IMM_JLE_DEST(codeblock_t *block, uop_t *uop)
     if (REG_IS_L(src_size)) {
         host_arm64_CMP_IMM(block, src_reg, uop->imm_data);
     } else if (REG_IS_W(src_size)) {
-        host_arm64_SXTH(block, REG_TEMP, src_reg);
+        host_arm64_SBFX(block, REG_TEMP, src_reg, 0, 16);
         host_arm64_CMP_IMM(block, REG_TEMP, uop->imm_data);
     } else
         fatal("CMP_IMM_JLE_DEST %02x\n", uop->src_reg_a_real);
@@ -878,8 +878,8 @@ codegen_JMP(codeblock_t *block, uop_t *uop)
 static int
 codegen_EXIT_BLOCK(codeblock_t *block, uop_t *uop)
 {
-    host_arm64_MOV_IMM(block, REG_TEMP, uop->pc, 32);
-    host_arm64_STR_IMM(block, REG_TEMP, REG_CPUSTATE, (uintptr_t) &cpu_state.pc - (uintptr_t) &cpu_state);
+    host_arm64_mov_imm(block, REG_TEMP, uop->pc);
+    host_arm64_STR_IMM_W(block, REG_TEMP, REG_CPUSTATE, (uintptr_t) &cpu_state.pc - (uintptr_t) &cpu_state);
     host_arm64_B(block, codegen_exit_rout);
 
     return 0;
@@ -3246,6 +3246,7 @@ codegen_CMOV(codeblock_t *block, uop_t *uop)
     int src_new   = HOST_REG_GET(uop->src_reg_b_real);
     int cond_reg  = HOST_REG_GET(uop->src_reg_c_real);
     int cond_size = IREG_GET_SIZE(uop->src_reg_c_real);
+    int dest_size = IREG_GET_SIZE(uop->dest_reg_a_real);
 
     if (REG_IS_L(cond_size)) {
         host_arm64_CMP_IMM(block, cond_reg, 0);
@@ -3257,7 +3258,13 @@ codegen_CMOV(codeblock_t *block, uop_t *uop)
         host_arm64_CMP_IMM(block, REG_TEMP, 0);
     }
 
-    host_arm64_CSEL_NE(block, dest_reg, src_new, src_old);
+    if (REG_IS_W(dest_size)) {
+        host_arm64_MOV_REG(block, REG_TEMP2, src_old, 0);
+        host_arm64_BFI(block, REG_TEMP2, src_new, 0, 16);
+        host_arm64_CSEL_NE(block, dest_reg, REG_TEMP2, src_old);
+    } else {
+        host_arm64_CSEL_NE(block, dest_reg, src_new, src_old);
+    }
     return 0;
 }
 

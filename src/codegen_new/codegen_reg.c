@@ -880,7 +880,10 @@ codegen_reg_flush(UNUSED(ir_data_t *ir), codeblock_t *block)
         if (!ir_reg_is_invalid(reg_set->regs[c]) && reg_set->dirty[c]) {
             codegen_reg_writeback(reg_set, block, c, 0);
         }
-        if (reg_set->reg_list[c].flags & HOST_REG_FLAG_VOLATILE) {
+        if ((reg_set->reg_list[c].flags & HOST_REG_FLAG_VOLATILE) ||
+            (!ir_reg_is_invalid(reg_set->regs[c]) &&
+             (IREG_GET_REG(reg_set->regs[c].reg) == IREG_cycles ||
+              IREG_GET_REG(reg_set->regs[c].reg) == IREG_exit_request))) {
             reg_set->regs[c]  = invalid_ir_reg;
             reg_set->dirty[c] = 0;
         }
@@ -891,7 +894,10 @@ codegen_reg_flush(UNUSED(ir_data_t *ir), codeblock_t *block)
         if (!ir_reg_is_invalid(reg_set->regs[c]) && reg_set->dirty[c]) {
             codegen_reg_writeback(reg_set, block, c, 0);
         }
-        if (reg_set->reg_list[c].flags & HOST_REG_FLAG_VOLATILE) {
+        if ((reg_set->reg_list[c].flags & HOST_REG_FLAG_VOLATILE) ||
+            (!ir_reg_is_invalid(reg_set->regs[c]) &&
+             (IREG_GET_REG(reg_set->regs[c].reg) == IREG_cycles ||
+              IREG_GET_REG(reg_set->regs[c].reg) == IREG_exit_request))) {
             reg_set->regs[c]  = invalid_ir_reg;
             reg_set->dirty[c] = 0;
         }

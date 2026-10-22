@@ -526,6 +526,7 @@ ropC1_l(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetc
         new_pc = shift_common_variable_32(ir, fetchdat, op_pc, target_seg, IREG_temp2) + 1;
         uop_NOP_BARRIER(ir);
         uop_set_jump_dest(ir, jump_uop);
+        codegen_last_flags_op = FLAGS_UNKNOWN;
         return new_pc;
     } else {
         uint8_t imm = fastreadb(cs + op_pc + 1) & 0x1f;

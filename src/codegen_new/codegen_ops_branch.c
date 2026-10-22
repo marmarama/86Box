@@ -137,7 +137,7 @@ codegen_cond_jump_false(ir_data_t *ir, int cond)
 
 #define ropJ(cond, cond_enum)                                           \
     uint32_t ropJ##cond##_8(codeblock_t *block,                         \
-                            UNUSED(ir_data_t *ir),                      \
+                            ir_data_t *ir,                              \
                             UNUSED(uint8_t opcode),                     \
                             UNUSED(uint32_t fetchdat),                  \
                             uint32_t op_32,                             \
@@ -151,16 +151,17 @@ codegen_cond_jump_false(ir_data_t *ir, int cond)
             dest_addr &= 0xffff;                                        \
             next_pc   &= 0xffff;                                        \
         }                                                               \
+        uop_MOV_IMM(ir, IREG_pc, next_pc);                              \
         codegen_mark_code_present(block, cs + op_pc, 1);                \
         block->exit_type          = BLOCK_EXIT_COND_2;                  \
         block->exit_cond          = (cond_enum);                        \
         block->links[0].target_pc = dest_addr;                          \
         block->links[1].target_pc = next_pc;                            \
         CPU_BLOCK_END();                                                \
-        return next_pc;                                                 \
+        return -1;                                                      \
     }                                                                   \
     uint32_t ropJ##cond##_16(codeblock_t *block,                        \
-                             UNUSED(ir_data_t *ir),                     \
+                             ir_data_t *ir,                             \
                              UNUSED(uint8_t opcode),                    \
                              UNUSED(uint32_t fetchdat),                 \
                              UNUSED(uint32_t op_32),                    \
@@ -170,16 +171,17 @@ codegen_cond_jump_false(ir_data_t *ir, int cond)
         uint32_t dest_addr = (op_pc + 2 + offset) & 0xffff;             \
         uint32_t next_pc   = (op_pc + 2) & 0xffff;                      \
                                                                         \
+        uop_MOV_IMM(ir, IREG_pc, next_pc);                              \
         codegen_mark_code_present(block, cs + op_pc, 2);                \
         block->exit_type          = BLOCK_EXIT_COND_2;                  \
         block->exit_cond          = (cond_enum);                        \
         block->links[0].target_pc = dest_addr;                          \
         block->links[1].target_pc = next_pc;                            \
         CPU_BLOCK_END();                                                \
-        return next_pc;                                                 \
+        return -1;                                                      \
     }                                                                   \
     uint32_t ropJ##cond##_32(codeblock_t *block,                        \
-                             UNUSED(ir_data_t *ir),                     \
+                             ir_data_t *ir,                             \
                              UNUSED(uint8_t opcode),                    \
                              UNUSED(uint32_t fetchdat),                 \
                              UNUSED(uint32_t op_32),                    \
@@ -189,13 +191,14 @@ codegen_cond_jump_false(ir_data_t *ir, int cond)
         uint32_t dest_addr = op_pc + 4 + offset;                        \
         uint32_t next_pc   = op_pc + 4;                                 \
                                                                         \
+        uop_MOV_IMM(ir, IREG_pc, next_pc);                              \
         codegen_mark_code_present(block, cs + op_pc, 4);                \
         block->exit_type          = BLOCK_EXIT_COND_2;                  \
         block->exit_cond          = (cond_enum);                        \
         block->links[0].target_pc = dest_addr;                          \
         block->links[1].target_pc = next_pc;                            \
         CPU_BLOCK_END();                                                \
-        return next_pc;                                                 \
+        return -1;                                                      \
     }
 
 // clang-format off

@@ -10,7 +10,8 @@ graph TD
     P3 --> P4["Phase 4: Direct Block Chaining (Block Linking) [DONE]"]
     P4 --> P5["Phase 5: Native EFLAGS & IR Middle-End Optimization [DONE]"]
     P5 --> P6["Phase 6: Disk Access & Host I/O Subsystem Optimization [DONE]"]
-    P6 --> P7["Phase 7: CMOVcc Branchless Inlining & 16-bit CALL/RET [NEXT]"]
+    P6 --> P7["Phase 7: Native CMOV/SETCC, FPU Fix & REVIEW3 Hardening [IN PROGRESS]"]
+    P7 --> P8["Phase 8: Structural Overhaul (Persistent JIT Frame & In-JIT Dispatcher) [PLANNED]"]
 ```
 
 ---
@@ -364,17 +365,36 @@ However, the x86-64 backend in `codegen_new` was ported without general REX pref
 
 ---
 
-## Phase 7: Next Priorities & Backlog [NEXT]
+## Phase 7: Native `UOP_CMOV`/`UOP_SETCC`, FPU Indexing Fix & `REVIEW3` Hardening [IN PROGRESS]
 
-**Goal**: Complete remaining deferred opcodes, expand linking to 16-bit calling conventions, and tackle display/timing bottlenecks.
+**Goal**: Replace C helper and multi-uOp condition paths with native backend uOps, resolve FPU and multi-page correctness hazards, and close the remaining bugs identified in [`REVIEW3.md`](file:///home/marm/src/86Box/src/codegen_new/REVIEW3.md).
 
-### 1. **[x] Branchless `CMOVcc` Recompilation (`0F 40`–`4F`)**
-- **Implementation**: Fully implemented in `src/codegen_new/codegen_ops_mov.c` for both 16-bit and 32-bit operands.
-- **Branchless Design**: Evaluates conditions into `IREG_temp1` via `jit_cond_helpers[cond & 0xf]`, generates an arithmetic mask via `0 - cond` into `IREG_temp2`, and multiplexes the destination register branchlessly using `dest = dest ^ ((src ^ dest) & mask)` via IR uOps (`uop_MOV`, `uop_XOR`, `uop_AND`).
-- **Invariants Preserved**: Zero intra-block conditional branches, preserving the register allocator's linear single-basic-block assumption.
-- **Validation**: Built cleanly with Ninja, deployed to `/home/marm/Emulation/86Box/86Box`, and validated against the automated full-system benchmark suite.
+### 1. **[x] Native `UOP_CMOV` and `UOP_SETCC` with Condition Fastpath (`5e07e1cd6`)**
+- **Implementation**: Added `UOP_SETCC` and `UOP_CMOV` across x86-64, ARM64, and LoongArch64 backends, paired with `codegen_get_condition_fastpath()` in `src/codegen_new/codegen_ops_helpers.h`.
+- **Impact**: Replaces the 7-uOp bitwise multiplexing sequence in `ropCMOVcc_common` and the C helper call in `ropSETcc` with native conditional select (`CMOVNE` / `CSEL`) and `SETcc` instructions whenever `codegen_last_flags_op` is a known `CMP`/`SUB`/`ADD`/logic operation.
 
-### 2. 16-Bit Near `CALL` / `RET` Chaining
+### 2. **[x] Critical FPU Register Indexing & `TOP` Wrapping Fix (`69616ef05`)**
+- **Root Cause**: Adding `IREG_exit_request` to the `IREG_*` enum in `src/codegen_new/codegen_reg.h` shifted `IREG_ST0` (`66`), `IREG_tag0` (`74`), and `IREG_ST0_i64` (`82`) off `8n` alignment, causing `ir_reg.reg & 7` in `codegen_reg_load` and `codegen_reg_writeback` (`src/codegen_new/codegen_reg.c`) to permute FPU/MMX registers and mismatch `offsetof(cpu_state, ST[i])` when `CODEBLOCK_STATIC_TOP` was clear.
+- **Resolution**: Replaced `ir_reg.reg & 7` with `IREG_GET_REG(ir_reg.reg) - IREG_ST0` (and `- IREG_tag0`, `- IREG_ST0_i64`), and masked `IREG_FPU_TOP` updates in `fpu_POP`, `fpu_POP2`, and `fpu_PUSH` (`src/codegen_new/codegen_ops_helpers.h`) with `& 7`.
+
+### 3. **[x] Multi-Page Block Linking, W^X Patching & Jump-Dest Barrier Hardening (`5e07e1cd6`)**
+- **2-Page Target Guard**: `codegen_link_allowed` (`src/codegen_new/codegen_block.c`) now rejects linking to blocks with `dst_block->page_mask2 != 0`, preventing linked jumps from bypassing the second-page physical/dirty check in `exec386_dynarec_dyn`.
+- **W^X & I-Cache Maintenance**: `patch_jmp_disp` wraps live displacement patching with `pthread_jit_write_protect_np(0)/(1)` on macOS ARM64 and calls `__builtin___clear_cache` on ARM64 and LoongArch64.
+- **Intra-Block Jump Destination Barrier**: `codegen_ir_compile` (`src/codegen_new/codegen_ir.c`) now calls `codegen_reg_flush_invalidate` at `UOP_TYPE_JUMP_DEST` merge points.
+
+### 4. **[ ] Remaining `REVIEW3.md` Bug-Fix Checklist**
+- **[ ] [C-1] Fix LoongArch64 `codegen_CMOV` Instruction Corruption (`src/codegen_new/codegen_backend_loongarch64_uops.c:831-833`)**:
+  - Replace the x86-style 1-byte write (`*skip = (uint8_t)...`, which overwrites the `rd`/`rj` register bits of the 32-bit `BEQ` instruction) with `uint32_t *skip = host_loong64_BEQ_(...)` and `host_loong64_branch_set_offset(skip, &block_write_data[block_pos])`.
+- **[ ] [C-2] Fix 16-Bit `CMOVcc` (`IREG_SIZE_W`) Upper-Word Clobber on ARM64 & LoongArch64**:
+  - Preserve bits `31:16` of the destination 32-bit GPR when `REG_IS_W(IREG_GET_SIZE(uop->dest_reg_a))` in `codegen_CMOV` on ARM64 and LoongArch64 (matching x86-64's `host_x86_CMOVcc16_REG_REG`).
+- **[ ] [C-3] Preserve MMIO / SVGA Wait-State Cycle Deductions Across In-Block `REP` String Loops (`src/codegen_new/codegen_ops_string.c`)**:
+  - `IREG_cycles` is currently held in a persistent host register across `UOP_MEM_LOAD_REG` and `UOP_MEM_STORE_REG` (`UOP_TYPE_ORDER_BARRIER`), so `uop_SUB_IMM(ir, IREG_cycles, IREG_cycles, step_cycles)` overwrites any video/bus wait states (`cycles -= video_timing_write_l`) deducted from `cpu_state._cycles` by C memory handlers (explaining the PCPBench `60.4 -> 208.7` FPS anomaly). Synchronize or reload `IREG_cycles` around slow-path memory helper calls.
+- **[ ] [C-4] Reset `codegen_last_flags_op = FLAGS_UNKNOWN` After Dynamic Shift-Count Skip in `ropC1_l` (`src/codegen_new/codegen_ops_shift.c:528`)**:
+  - Under `CODEBLOCK_NO_IMMEDIATES`, `ropC1_l` jumps over `shift_common_variable_32` at runtime when the dynamic shift count is `0`, leaving `IREG_flags_op` unchanged while compile-time `codegen_last_flags_op` was unconditionally updated.
+- **[ ] [C-5] Eliminate Residual `new_pc` Sentinel Ambiguity (`src/codegen_new/codegen.c:731`, `src/codegen_new/codegen_ops_branch.c:160,179,198`)**:
+  - Emit `uop_MOV_IMM(ir, IREG_pc, next_pc)` explicitly in `ropJcc_8`, `ropJcc_16`, and `ropJcc_32` and return `-1` so legitimate fallthrough PCs wrapping to `0x00000000` or `0xffffffff` are never skipped by `if (new_pc && new_pc != -1)`.
+
+### 5. **[ ] 16-Bit Near `CALL` / `RET` Chaining**
 - **Current State**: 32-bit protected-mode `CALL rel32` and `RET` chain directly (`LINK_DEFAULT = 0xbf`), but 16-bit near calls (`ropCALL_r16`) and returns (`ropRET_16`, `ropRET_imm_16`) return to C dispatch.
 - **Impact**: Windows 9x core subsystems (`USER.EXE`, `GDI.EXE`, shell thunking) heavily utilize 16-bit segmented near calls/returns.
 - **Tasks**:
@@ -382,9 +402,98 @@ However, the x86-64 backend in `codegen_new` was ported without general REX pref
   2. Apply strict 16-bit address masking (`dest = (op_pc + 2 + offset) & 0xFFFF`) in link generation and runtime target matching to prevent segment wrap aliasing.
   3. Validate real-mode CS/base consistency to prevent cross-segment aliasing in shared physical memory.
 
-### 3. Display Subsystem / VSync Spin-Loop Optimization
-- **Current State**: In PCPBench, framerate jumped from 60.4 to 208.7 FPS because vsync polling loops (`in al, 03DAh` testing bit 3 of the Input Status #1 register) run unthrottled in fast dynarec blocks without waiting for simulated vertical retrace.
-- **Tasks**: Investigate I/O spin-loop detection for video status polling or cycle-accurate CGA/EGA/VGA status register timing to ensure vsync-dependent guest code paces correctly without runaway simulation.
+---
+
+## Phase 8: Structural Architecture Overhaul (Eliminating the Per-Block C-Function Boundary) [PLANNED]
+
+**Goal**: Re-architect `codegen_new` from a collection of isolated C-callable basic blocks (`void (*fn)(void)`) into a persistent JIT execution region with pinned guest registers, an in-JIT native assembly dispatch stub, and event-driven cycle accounting.
+
+### Diagnosis: Why the Current Block-Boundary Model Is Structurally Inefficient
+
+Even with Phase 4/4b direct block linking, every `codeblock_t` is still compiled under the assumption that it is entered from C and returns to C:
+1. **Complete Register Flush & Reload on Every Block Boundary**: Every block starts with an empty register allocator (`codegen_reg_reset`), loads guest GPRs on demand from `cpu_state.regs[]`, and flushes all dirty GPRs, `pc`, and lazy flag words (`flags_op`, `flags_res`, `flags_op1`, `flags_op2`) back to `cpu_state` memory before every block exit—even when jumping directly to a linked block that immediately reloads the exact same registers.
+2. **Per-Block C ABI Prologue & Epilogue**: Every block emits full callee-saved register saves/restores (`RBX`, `RBP`, `R12`–`R15` on x86-64; `X19`–`X28`, `FP`, `LR` on ARM64; `S0`–`S8`, `FP`, `RA` on LoongArch64).
+3. **Full C Round-Trip on Indirect / Unlinked / FPU Transitions**: Every indirect jump (`JMP reg/[mem]`, `CALL [mem]`), polymorphic `RET` miss, cross-page jump (under `LINK_SAME_PAGE`), or FPU block (`CODEBLOCK_STATIC_TOP`) tears down the host stack frame, returns to `exec386_dynarec_dyn`, re-runs the outer C loop, re-hashes `(cs + pc) ^ phys_page`, and calls `block->data()` from scratch.
+
+```mermaid
+flowchart LR
+    subgraph Current["Current Model: Per-Block C Boundary"]
+        direction LR
+        C1["C Dispatcher\n(exec386_dynarec_dyn)"] -->|"CALL block->data()\nPush callee-saved\nLoad GPRs from cpu_state"| B1["Block A"]
+        B1 -->|"Flush all GPRs/flags\nto cpu_state"| B2["Block B (Linked)"]
+        B2 -->|"RET / Indirect / FPU\nPop callee-saved"| C1
+    end
+    subgraph Proposed["Phase 8 Model: Persistent JIT Execution Region"]
+        direction LR
+        Tramp["codegen_enter_jit()\nPin GPRs & cycles once"] --> JB1["Block A\n(GPRs stay in host regs)"]
+        JB1 -->|"Direct Link\n(Zero GPR spills)"| JB2["Block B"]
+        JB2 -->|"Indirect / Cross-page"| Stub["In-JIT Assembly\nDispatch Stub (~15 insns)"]
+        Stub -->|"Cache Hit"| JB3["Block C"]
+        Stub -->|"Miss / Event / cycles <= 0"| TrampExit["Spill Pinned GPRs\n& Return to C"]
+    end
+```
+
+### Architectural Workstreams
+
+#### 8.1 Persistent JIT Entry Trampoline & Pinned Guest GPRs Across Blocks
+- **Design**:
+  - Replace direct C calls to `block->data()` with a single assembly entry/exit trampoline (`codegen_enter_jit(codeblock_t *initial_block)`) that runs for the duration of the CPU time slice (`cycles > 0 && !exit_request`).
+  - Pin hot guest state permanently in host callee-saved registers across all blocks:
+    - **x86-64 (16 GPRs)**: `RBP` = `&cpu_state + 128`, `R12` = `readlookup2`, `RBX` = `cycles`, and 5–6 callee-saved/dedicated registers (`R13`, `R14`, `R15`, `RSI`, `RDI`) pinned to the hottest guest GPRs (`EAX`, `ECX`, `EDX`, `EBX`, `ESP`, `EBP`/`ESI`), leaving `RAX`, `RCX`, `RDX`, `R8`–`R11` for scratch/temporaries and memory helpers.
+    - **ARM64 (31 GPRs)**: Pin `&cpu_state`, `cycles`, and **all 8 guest GPRs (`EAX`–`EDI`)** permanently in `W19`–`W28`, leaving `X0`–`X17` for temporaries and helper calls.
+    - **LoongArch64 (32 GPRs)**: Pin `&cpu_state`, `cycles`, and **all 8 guest GPRs (`EAX`–`EDI`)** permanently in `S0`–`S8` / `FP`, leaving `A0`–`A7` and `T0`–`T8` for temporaries.
+  - Eliminate per-block C prologues/epilogues; only `codegen_enter_jit` saves/restores host callee-saved registers.
+  - Spill/reload pinned guest GPRs to `cpu_state.regs[]` **only** inside the shared C-callout wrapper (`UOP_CALL_FUNC` / slow-path memory/IO thunks) and on exit from `codegen_enter_jit`.
+
+#### 8.2 In-JIT Native Assembly Dispatch Stub (`codegen_dispatch_stub`)
+- **Design**:
+  - Emit a shared ~20-instruction native machine-code routine at startup for all indirect branches (`RET` inline-cache miss, `JMP reg`, `JMP [mem]`, `CALL [mem]`) and unlinked cross-page exits.
+  - Without spilling pinned guest GPRs or touching the C stack, `codegen_dispatch_stub`:
+    1. Checks `cycles <= 0` (or `exit_request != 0`) $\rightarrow$ branches to `codegen_exit_to_c` if expired.
+    2. Translates `cs + pc` via the inline `readlookup2[(cs + pc) >> 12]` TLB array (exiting to C on TLB miss `-1` or 2-page boundary).
+    3. Verifies `pages[phys >> 12]` clean state and probes `codeblock_hash[HASH(phys)]`.
+    4. Checks `block->pc == cs + pc && block->_cs == cs && block->phys == phys && block->status == cpu_cur_status`.
+    5. Jumps directly to `block->data` with all pinned guest GPRs still live in host registers.
+- **Impact**: Turns indirect jumps, vtable calls, `switch` tables, and cross-page transfers from ~150+ cycle C round-trips into ~15-cycle register-only lookups.
+
+#### 8.3 Event-Driven Cycle Accounting, Slow-Path `cycles` Sync & Cycle-Counter Stealing
+- **Design**:
+  1. **Bounded Event Slices (`cycles_to_next_event`)**:
+     - Enter `codegen_enter_jit` with `cycles = min(slice_remaining, cycles_until_timer_target)` and record `cpu_state.cycles_start = cycles`.
+     - `tsc` is now derived on demand as `tsc + (cpu_state.cycles_start - cycles)`, removing per-block `cycdiff` / `cycles_main` bookkeeping.
+  2. **Pinned `cycles` Register Synchronized in Cold Slow-Path Thunks**:
+     - Fast-path RAM loads/stores (`readlookup2` / `writelookup2` hit) never modify `cycles`.
+     - Out-of-line slow-path memory/IO thunks spill the pinned `cycles` register to `cpu_state._cycles` *before* calling the C handler (`svga_writel_linear`, port I/O, etc.) and reload the pinned `cycles` register from `cpu_state._cycles` *after* the C handler returns.
+     - Guarantees 100% accurate video/MMIO/bus wait-state timing (fixing C-3) with zero fast-path overhead.
+  3. **Cycle-Counter Stealing (Single-Branch Block Exits)**:
+     - When `cpu_update_exit_request()` sets a pending exit (IRQ, NMI, SMI, `abrt`, `flush_mmucache`, SMC write), steal the remaining cycle budget (`cpu_state.cycles_saved += cpu_state._cycles; cpu_state._cycles = 0;`) and, if inside a slow-path helper, reload `cycles = 0`.
+     - Every block boundary then requires only a **single** flag-setting instruction and branch:
+       ```assembly
+       sub ebx, #block_cycles   ; RBX = pinned cycles
+       jle codegen_exit_or_event_stub
+       ```
+       replacing the current dual memory loads and branches for `exit_request` and `cpu_state._cycles`.
+
+#### 8.4 Dual Block Entry Points (Unchecked Same-Page Chained Entry vs. Checked Entry)
+- **Design**:
+  - Provide two entry offsets per `codeblock_t`:
+    - `entry_checked`: Verifies `status` / page state (used by `codegen_dispatch_stub` and cross-page jumps).
+    - `entry_chained_same_page`: Used by intra-page linked branches where `cs`, `status`, and physical page validity are already invariant, immediately executing `sub cycles, #block_cycles; jle exit_stub` and the block body.
+
+#### 8.5 Cold Exception Materialization for `pc`/`oldpc` & Backward IR Flag Liveness Pass
+- **Design**:
+  1. **Eliminate Fast-Path `IREG_pc` / `IREG_oldpc` Stores**:
+     - Currently, `codegen.c` emits `uop_MOV_IMM(ir, IREG_pc, new_pc)` after every guest instruction and `uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc)` before every memory access, and `UOP_TYPE_ORDER_BARRIER` forces all of them to be written to `cpu_state` memory on the fast path.
+     - Instead, pass or encode the instruction's `(pc, oldpc)` in the out-of-line slow-path load/store thunk (or a compact per-block exception table) so `cpu_state.pc` and `cpu_state.oldpc` are only written when a memory access actually misses the TLB or faults (`cpu_state.abrt`).
+  2. **Backward IR Flag Liveness Pass (`codegen_ir_eliminate_dead_flags`)**:
+     - Today, `UOP_TYPE_ORDER_BARRIER` on memory loads/stores sets `dirty_ir_regs[0] = ~0ULL`, forcing every preceding ALU instruction to materialize and flush `IREG_flags_op`, `IREG_flags_res`, `IREG_flags_op1`, and `IREG_flags_op2` even when the next instruction after a non-faulting register op (or after a fast-path access) unconditionally overwrites all flags.
+     - Add an $O(N)$ backward liveness pass over `ir->uops` before register allocation to prune dead writes to `IREG_flags_*` whenever they are killed before any flag consumer (`Jcc`, `SETcc`, `CMOVcc`, `ADC`, `SBB`, `PUSHF`, or potentially faulting memory access).
+
+#### 8.6 FPU `CODEBLOCK_STATIC_TOP` Entry/Exit `TOP` Matching for Chained FPU Loops
+- **Design**:
+  - Currently, `can_enter_block_linked` and `codegen_link_allowed` refuse to link into any block with `CODEBLOCK_STATIC_TOP`, forcing all FPU-heavy loops (e.g., Quake's perspective texture mapping and geometry loops) to return to C after every basic block.
+  - Record `block->entry_top` (`block->TOP` at block entry) and `block->exit_top` (`(block->TOP + net_top_delta) & 7` at block exit).
+  - Allow direct block linking into a `CODEBLOCK_STATIC_TOP` target whenever `(src_block->flags & CODEBLOCK_STATIC_TOP) && (src_block->exit_top == dst_block->entry_top)`, or via a 1-instruction `cmp byte ptr [rbp + TOP_disp], entry_top; jne unlinked_stub` guard at `dst_block->entry_checked`.
 
 ---
 

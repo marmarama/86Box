@@ -314,7 +314,7 @@ imm_is_movn16(uint32_t imm_data)
 
 static void codegen_allocate_new_block(codeblock_t *block);
 
-static inline void
+void
 codegen_addlong(codeblock_t *block, uint32_t val)
 {
     if (block_pos >= (BLOCK_MAX - 4))

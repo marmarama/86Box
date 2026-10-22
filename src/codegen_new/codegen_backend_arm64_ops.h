@@ -271,4 +271,5 @@ void host_arm64_mov_imm(codeblock_t *block, int reg, uint32_t imm_data);
 
 void codegen_direct_read_8(codeblock_t *block, int host_reg, void *p);
 
+void codegen_addlong(codeblock_t *block, uint32_t val);
 void codegen_alloc(codeblock_t *block, int size);
