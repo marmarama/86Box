@@ -366,9 +366,9 @@ codegen_reg_load(host_reg_set_t *reg_set, codeblock_t *block, int c, ir_reg_t ir
                 fatal("codegen_reg_load - REG_FPU_ST_BYTE !REG_INTEGER\n");
 #endif
             if (block->flags & CODEBLOCK_STATIC_TOP)
-                codegen_direct_read_8(block, reg_set->reg_list[c].reg, &cpu_state.tag[ir_reg.reg & 7]);
+                codegen_direct_read_8(block, reg_set->reg_list[c].reg, &cpu_state.tag[IREG_GET_REG(ir_reg.reg) - IREG_tag0]);
             else
-                codegen_direct_read_st_8(block, reg_set->reg_list[c].reg, &cpu_state.tag[0], ir_reg.reg & 7);
+                codegen_direct_read_st_8(block, reg_set->reg_list[c].reg, &cpu_state.tag[0], IREG_GET_REG(ir_reg.reg) - IREG_tag0);
             break;
 
         case REG_FPU_ST_QWORD:
@@ -377,9 +377,9 @@ codegen_reg_load(host_reg_set_t *reg_set, codeblock_t *block, int c, ir_reg_t ir
                 fatal("codegen_reg_load - REG_FPU_ST_QWORD !REG_FP\n");
 #endif
             if (block->flags & CODEBLOCK_STATIC_TOP)
-                codegen_direct_read_64(block, reg_set->reg_list[c].reg, &cpu_state.MM[ir_reg.reg & 7]);
+                codegen_direct_read_64(block, reg_set->reg_list[c].reg, &cpu_state.MM[IREG_GET_REG(ir_reg.reg) - IREG_ST0_i64]);
             else
-                codegen_direct_read_st_64(block, reg_set->reg_list[c].reg, &cpu_state.MM[0], ir_reg.reg & 7);
+                codegen_direct_read_st_64(block, reg_set->reg_list[c].reg, &cpu_state.MM[0], IREG_GET_REG(ir_reg.reg) - IREG_ST0_i64);
             break;
 
         case REG_FPU_ST_DOUBLE:
@@ -388,9 +388,9 @@ codegen_reg_load(host_reg_set_t *reg_set, codeblock_t *block, int c, ir_reg_t ir
                 fatal("codegen_reg_load - REG_FPU_ST_DOUBLE !REG_FP\n");
 #endif
             if (block->flags & CODEBLOCK_STATIC_TOP)
-                codegen_direct_read_double(block, reg_set->reg_list[c].reg, &cpu_state.ST[ir_reg.reg & 7]);
+                codegen_direct_read_double(block, reg_set->reg_list[c].reg, &cpu_state.ST[IREG_GET_REG(ir_reg.reg) - IREG_ST0]);
             else
-                codegen_direct_read_st_double(block, reg_set->reg_list[c].reg, &cpu_state.ST[0], ir_reg.reg & 7);
+                codegen_direct_read_st_double(block, reg_set->reg_list[c].reg, &cpu_state.ST[0], IREG_GET_REG(ir_reg.reg) - IREG_ST0);
             break;
 
         default:
@@ -479,9 +479,9 @@ codegen_reg_writeback(host_reg_set_t *reg_set, codeblock_t *block, int c, int in
                 fatal("codegen_reg_writeback - REG_FPU_ST_BYTE !REG_INTEGER\n");
 #endif
             if (block->flags & CODEBLOCK_STATIC_TOP)
-                codegen_direct_write_8(block, &cpu_state.tag[reg_set->regs[c].reg & 7], reg_set->reg_list[c].reg);
+                codegen_direct_write_8(block, &cpu_state.tag[IREG_GET_REG(reg_set->regs[c].reg) - IREG_tag0], reg_set->reg_list[c].reg);
             else
-                codegen_direct_write_st_8(block, &cpu_state.tag[0], reg_set->regs[c].reg & 7, reg_set->reg_list[c].reg);
+                codegen_direct_write_st_8(block, &cpu_state.tag[0], IREG_GET_REG(reg_set->regs[c].reg) - IREG_tag0, reg_set->reg_list[c].reg);
             break;
 
         case REG_FPU_ST_QWORD:
@@ -490,9 +490,9 @@ codegen_reg_writeback(host_reg_set_t *reg_set, codeblock_t *block, int c, int in
                 fatal("codegen_reg_writeback - REG_FPU_ST_QWORD !REG_FP\n");
 #endif
             if (block->flags & CODEBLOCK_STATIC_TOP)
-                codegen_direct_write_64(block, &cpu_state.MM[reg_set->regs[c].reg & 7], reg_set->reg_list[c].reg);
+                codegen_direct_write_64(block, &cpu_state.MM[IREG_GET_REG(reg_set->regs[c].reg) - IREG_ST0_i64], reg_set->reg_list[c].reg);
             else
-                codegen_direct_write_st_64(block, &cpu_state.MM[0], reg_set->regs[c].reg & 7, reg_set->reg_list[c].reg);
+                codegen_direct_write_st_64(block, &cpu_state.MM[0], IREG_GET_REG(reg_set->regs[c].reg) - IREG_ST0_i64, reg_set->reg_list[c].reg);
             break;
 
         case REG_FPU_ST_DOUBLE:
@@ -501,9 +501,9 @@ codegen_reg_writeback(host_reg_set_t *reg_set, codeblock_t *block, int c, int in
                 fatal("codegen_reg_writeback - REG_FPU_ST_DOUBLE !REG_FP\n");
 #endif
             if (block->flags & CODEBLOCK_STATIC_TOP)
-                codegen_direct_write_double(block, &cpu_state.ST[reg_set->regs[c].reg & 7], reg_set->reg_list[c].reg);
+                codegen_direct_write_double(block, &cpu_state.ST[IREG_GET_REG(reg_set->regs[c].reg) - IREG_ST0], reg_set->reg_list[c].reg);
             else
-                codegen_direct_write_st_double(block, &cpu_state.ST[0], reg_set->regs[c].reg & 7, reg_set->reg_list[c].reg);
+                codegen_direct_write_st_double(block, &cpu_state.ST[0], IREG_GET_REG(reg_set->regs[c].reg) - IREG_ST0, reg_set->reg_list[c].reg);
             break;
 
         default:

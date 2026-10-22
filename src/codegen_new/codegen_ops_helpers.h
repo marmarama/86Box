@@ -49,25 +49,31 @@ static inline void
 fpu_POP(codeblock_t *block, ir_data_t *ir)
 {
     if (block->flags & CODEBLOCK_STATIC_TOP)
-        uop_MOV_IMM(ir, IREG_FPU_TOP, cpu_state.TOP + 1);
-    else
+        uop_MOV_IMM(ir, IREG_FPU_TOP, (cpu_state.TOP + 1) & 7);
+    else {
         uop_ADD_IMM(ir, IREG_FPU_TOP, IREG_FPU_TOP, 1);
+        uop_AND_IMM(ir, IREG_FPU_TOP, IREG_FPU_TOP, 7);
+    }
 }
 static inline void
 fpu_POP2(codeblock_t *block, ir_data_t *ir)
 {
     if (block->flags & CODEBLOCK_STATIC_TOP)
-        uop_MOV_IMM(ir, IREG_FPU_TOP, cpu_state.TOP + 2);
-    else
+        uop_MOV_IMM(ir, IREG_FPU_TOP, (cpu_state.TOP + 2) & 7);
+    else {
         uop_ADD_IMM(ir, IREG_FPU_TOP, IREG_FPU_TOP, 2);
+        uop_AND_IMM(ir, IREG_FPU_TOP, IREG_FPU_TOP, 7);
+    }
 }
 static inline void
 fpu_PUSH(codeblock_t *block, ir_data_t *ir)
 {
     if (block->flags & CODEBLOCK_STATIC_TOP)
-        uop_MOV_IMM(ir, IREG_FPU_TOP, cpu_state.TOP - 1);
-    else
+        uop_MOV_IMM(ir, IREG_FPU_TOP, (cpu_state.TOP - 1) & 7);
+    else {
         uop_SUB_IMM(ir, IREG_FPU_TOP, IREG_FPU_TOP, 1);
+        uop_AND_IMM(ir, IREG_FPU_TOP, IREG_FPU_TOP, 7);
+    }
 }
 
 static inline void
