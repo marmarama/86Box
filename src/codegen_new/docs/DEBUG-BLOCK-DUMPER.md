@@ -90,8 +90,9 @@ enum bdump_host_arch {
 };
 
 enum bdump_record_type {
-    BDUMP_REC_COMPILE = 1, /* Emitted at end of codegen_block_end_recompile() */
-    BDUMP_REC_EXEC    = 2  /* Emitted on block deletion / VM exit with runtime stats */
+    BDUMP_REC_COMPILE      = 1, /* Emitted at end of codegen_block_end_recompile() */
+    BDUMP_REC_EXEC         = 2, /* Emitted on block deletion / VM exit with runtime stats */
+    BDUMP_REC_HOST_PROFILE = 3  /* Emitted at VM exit: host TSC breakdown (JIT vs C code) */
 };
 
 typedef struct bdump_file_header_t {
@@ -164,15 +165,55 @@ typedef struct bdump_exec_record_t {
     uint16_t block_nr;
     uint32_t compile_seq;      /* Matches bdump_compile_record_t.compile_seq */
     uint64_t exec_count;       /* Number of times this block was entered */
+    uint64_t host_tsc_total;   /* Inclusive host TSC cycles spent in this block */
+    uint64_t host_tsc_callouts;/* Host TSC cycles spent in C callouts from this block */
     uint32_t link0_target_pc;  /* Target PC of exit 0 (or BLOCK_PC_INVALID) */
     uint32_t link1_target_pc;  /* Target PC of exit 1 (or BLOCK_PC_INVALID) */
     uint16_t link0_target_blk; /* Linked block_nr for exit 0 (or BLOCK_INVALID) */
     uint16_t link1_target_blk; /* Linked block_nr for exit 1 (or BLOCK_INVALID) */
 } bdump_exec_record_t;
+
+typedef struct bdump_host_profile_t {
+    uint8_t  rec_type;               /* BDUMP_REC_HOST_PROFILE */
+    uint8_t  reserved[7];
+    uint64_t tsc_total_cpu_thread;   /* Total host TSC cycles in exec386_dynarec_dyn() */
+    uint64_t tsc_jit_pure;           /* Pure native JIT execution (excluding C callouts) */
+    uint64_t tsc_c_callout_mem_io;   /* Intra-block C slow-path loads/stores (MMIO, SVGA VRAM) */
+    uint64_t tsc_c_callout_insn_fn;  /* Intra-block UOP_CALL_INSTRUCTION_FUNC (IN/OUT, INT, etc.) */
+    uint64_t tsc_c_callout_helper;   /* Intra-block UOP_CALL_FUNC (flags_rebuild, FPU helpers) */
+    uint64_t tsc_c_dispatcher;       /* C dispatch loop (hash probe, dirty checks, linking) */
+    uint64_t tsc_c_compiler;         /* JIT compilation, IR passes, and block unlinking */
+    uint64_t tsc_c_interp_fallback;  /* Full-interpreter blocks (!block->valid / SMC fallback) */
+    uint64_t tsc_c_timers_devices;   /* timer_process_inline(), IRQ/NMI handling, DMA */
+    uint64_t count_c_dispatch_loops; /* Number of returns to the C outer loop */
+    uint64_t count_chained_transfers;/* Number of direct block-to-block transfers */
+    uint64_t count_mem_slow_loads;   /* Number of TLB-miss / MMIO / misaligned C read calls */
+    uint64_t count_mem_slow_stores;  /* Number of TLB-miss / MMIO / misaligned C write calls */
+} bdump_host_profile_t;
 ```
 
 > [!TIP]
 > Notice `bdump_file_header_t.cpu_state_addr`: because all `cpu_state` accesses on x86-64 use `[rbp + disp]` (where `RBP = &cpu_state + 128`) and on ARM64 use `[x27 + disp]`, recording `offsetof` table metadata or `cpu_state` layout allows the Python disassembler to automatically annotate every `[rbp - 0x48]` in the disassembled host code as `; cpu_state.regs[EAX]` or `; cpu_state.flags_op`!
+
+---
+
+### 4.3 Measuring Pure JIT vs. Non-Dynarec C Code (`bdump_host_profile_t`)
+
+A critical question when evaluating dynarec efficiency is: **how much host CPU time is actually spent running compiled JIT machine code vs. non-dynarec C code?**
+
+Non-dynarec C execution happens in two places that must be separated to avoid misattribution:
+1. **Inter-Block C Execution (in `exec386_dynarec_dyn`)**:
+   - **C Dispatcher Overhead (`tsc_c_dispatcher`)**: Hash table probing, `phys_2` / `page_mask` dirty checks, `dynarec_link_previous_block()`.
+   - **JIT Compiler (`tsc_c_compiler`)**: `codegen_block_start_recompile()`, IR peephole/DSE, host emission, and `codegen_unlink_block()`.
+   - **Full-Block Interpreter Fallback (`tsc_c_interp_fallback`)**: The `while (!cpu_block_end)` interpreter loop used when `!block->valid` (e.g., SMC thrashing threshold `DYNAREC_S03B_NO_IMM_THRESHOLD`).
+   - **Hardware Timers & Devices (`tsc_c_timers_devices`)**: `timer_process_inline()`, PIC/PIT callbacks, audio/video/disk timer events.
+2. **Intra-Block C Callouts (called *from inside* `block->data()`)**:
+   - If you only measure `t1 - t0` around `block->data()`, any C function called *by* the JIT block gets falsely counted as "JIT execution time".
+   - When `BOX86_DUMP_PROFILE=1` is enabled, lightweight host cycle reads (`__rdtsc()` on x86-64, `cntvct_el0` on ARM64, `rdtime.d` on LoongArch64) wrap:
+     - **Memory Slow-Path Thunks (`tsc_c_callout_mem_io`)**: In `build_load_routine` / `build_store_routine` (or their C targets `readmem*`/`writemem*`), capturing MMIO, SVGA banked/LFB VRAM wait-state handlers, and page faults.
+     - **Unrecompiled Opcode Callouts (`tsc_c_callout_insn_fn`)**: Around `UOP_CALL_INSTRUCTION_FUNC` (`IN`/`OUT`, `CPUID`, `IRET`, 16-bit `CALL`/`RET`, etc.).
+     - **JIT Runtime Helpers (`tsc_c_callout_helper`)**: Around `UOP_CALL_FUNC` / `UOP_CALL_FUNC_RESULT` (`jit_flags_rebuild`, FPU/MMX C helpers, segment checks).
+   - Subtracting `(tsc_c_callout_mem_io + tsc_c_callout_insn_fn + tsc_c_callout_helper)` from the total time inside `block->data()` yields **`tsc_jit_pure`**: the exact time spent executing native JIT instructions.
 
 ---
 

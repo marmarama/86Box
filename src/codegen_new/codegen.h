@@ -66,6 +66,22 @@ enum {
     COND_LOOPNE_32 = 23,
 };
 
+#define MAX_INSTRUCTION_COUNT 50
+
+struct x86seg_t;
+
+typedef struct codegen_instruction_t {
+    uint32_t pc;
+    int      op_ssegs;
+    struct x86seg_t *op_ea_seg;
+    uint32_t op_32;
+    int      first_uop;
+    int      TOP;
+    uint8_t  len;
+} codegen_instruction_t;
+
+extern codegen_instruction_t codegen_instructions[MAX_INSTRUCTION_COUNT];
+
 typedef struct codeblock_link_t {
     uint32_t  target_pc;          /* Guest PC of target (or BLOCK_PC_INVALID) */
     uint32_t *jmp_disp_ptr;      /* Pointer to 32-bit displacement in host JMP */
@@ -90,6 +106,8 @@ typedef struct codeblock_t {
        can require a dense burst, not stale spaced-out hits. */
     uint16_t dirty_list_last_epoch;
     int      valid;
+    uint64_t exec_count;
+    uint32_t compile_seq;
 
     /* Direct block chaining data */
     uint16_t direct_entry_pos;

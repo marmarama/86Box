@@ -22,15 +22,7 @@
 #include "codegen_ops.h"
 #include "codegen_ops_helpers.h"
 
-#define MAX_INSTRUCTION_COUNT 50
-static struct {
-    uint32_t pc;
-    int      op_ssegs;
-    x86seg  *op_ea_seg;
-    uint32_t op_32;
-    int      first_uop;
-    int      TOP;
-} codegen_instructions[MAX_INSTRUCTION_COUNT];
+codegen_instruction_t codegen_instructions[MAX_INSTRUCTION_COUNT];
 
 int
 codegen_get_instruction_uop(codeblock_t *block, uint32_t pc, int *first_instruction, int *TOP)
@@ -415,6 +407,9 @@ codegen_generate_call(uint8_t opcode, OpFn op, uint32_t fetchdat, uint32_t new_p
     int          is_fpu             = 0;
     uint32_t     next_pc            = 0;
     uint16_t     op87               = 0x0000;
+
+    ir->cur_guest_insn_idx = block->ins;
+    ir->cur_guest_pc_off   = (uint16_t) (old_pc - (block->pc - block->_cs));
 #ifdef DEBUG_EXTRA
     uint8_t last_prefix = 0;
 #endif
@@ -633,6 +628,7 @@ generate_call:
     codegen_instructions[block->ins].op_32     = last_op_32;
     codegen_instructions[block->ins].TOP       = cpu_state.TOP;
     codegen_instructions[block->ins].first_uop = ir->wr_pos;
+    codegen_instructions[block->ins].len       = 0;
 
     codegen_timing_opcode(opcode, fetchdat, op_32, op_pc);
 
@@ -734,6 +730,12 @@ generate_call:
             if (new_pc && new_pc != -1)
                 uop_MOV_IMM(ir, IREG_pc, new_pc);
 
+            uint32_t insn_end = (new_pc == (uint32_t) -1 && block->exit_type == BLOCK_EXIT_COND_2) ?
+                                block->links[1].target_pc :
+                                (new_pc != (uint32_t) -1 && new_pc != 0 ? new_pc : cpu_state.pc);
+            uint32_t ilen = insn_end - codegen_instructions[block->ins].pc;
+            codegen_instructions[block->ins].len = (uint8_t) (ilen > 0 && ilen <= 15 ? ilen : (op_pc - old_pc));
+
             codegen_endpc = (cs + cpu_state.pc) + 8;
 
             block->ins++;
@@ -821,6 +823,9 @@ codegen_skip:
 #if 0
     codegen_block_ins++;
 #endif
+
+    uint32_t ilen = cpu_state.pc - codegen_instructions[block->ins].pc;
+    codegen_instructions[block->ins].len = (uint8_t) (ilen > 0 && ilen <= 15 ? ilen : (op_pc - old_pc));
 
     block->ins++;
 

@@ -8,8 +8,15 @@
 #include "codegen.h"
 #include "codegen_allocator.h"
 #include "codegen_backend.h"
+#include "codegen_dump.h"
 #include "codegen_ir.h"
 #include "codegen_reg.h"
+
+static uint32_t dump_orig_types[UOP_NR_MAX];
+static uint32_t dump_orig_imms[UOP_NR_MAX];
+static uint16_t dump_host_starts[UOP_NR_MAX];
+static uint16_t dump_host_body_starts[UOP_NR_MAX];
+static uint16_t dump_host_ends[UOP_NR_MAX];
 
 extern int       has_ea;
 static ir_data_t ir_block;
@@ -218,15 +225,33 @@ codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
         }
     }
 
+    int dump_on = codegen_dump_is_active();
+    if (dump_on) {
+        for (c = 0; c < ir->wr_pos; c++) {
+            dump_orig_types[c]       = ir->uops[c].type;
+            dump_orig_imms[c]        = (uint32_t) ir->uops[c].imm_data;
+            dump_host_starts[c]      = 0;
+            dump_host_body_starts[c] = 0;
+            dump_host_ends[c]        = 0;
+        }
+    }
+
     codegen_reg_mark_as_required();
     codegen_ir_peephole(ir);
     codegen_reg_process_dead_list(ir);
     block_write_data = codeblock_allocator_get_ptr(block->head_mem_block);
     block_pos        = 0;
     codegen_backend_prologue(block);
+    uint16_t prologue_end_off = (uint16_t) block_pos;
 
     for (c = 0; c < ir->wr_pos; c++) {
         uop_t *uop = &ir->uops[c];
+
+        if (dump_on) {
+            dump_host_starts[c]      = (uint16_t) block_pos;
+            dump_host_body_starts[c] = (uint16_t) block_pos;
+            dump_host_ends[c]        = (uint16_t) block_pos;
+        }
 
         //                pclog("uOP %i : %08x\n", c, uop->type);
 
@@ -253,7 +278,11 @@ codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
         if ((uop->type & UOP_MASK) == (UOP_MOV_IMM & UOP_MASK) && reg_is_native_size(uop->dest_reg_a) && !codegen_reg_is_loaded(uop->dest_reg_a) && reg_version[IREG_GET_REG(uop->dest_reg_a.reg)][uop->dest_reg_a.version].refcount <= 0) {
             /*Special case for UOP_MOV_IMM - if destination not already in host register
               and won't be used again then just store directly to memory*/
+            if (dump_on)
+                dump_host_body_starts[c] = (uint16_t) block_pos;
             codegen_reg_write_imm(block, uop->dest_reg_a, uop->imm_data);
+            if (dump_on)
+                dump_host_ends[c] = (uint16_t) block_pos;
         } else
 #endif
             if ((uop->type & UOP_MASK) == (UOP_MOV & UOP_MASK) && reg_version[IREG_GET_REG(uop->src_reg_a.reg)][uop->src_reg_a.version].refcount <= 1 && reg_is_native_size(uop->src_reg_a) && reg_is_native_size(uop->dest_reg_a)) {
@@ -264,6 +293,10 @@ codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
             codegen_reg_rename(block, uop->src_reg_a, uop->dest_reg_a);
             if (uop->type & UOP_TYPE_ORDER_BARRIER)
                 codegen_reg_flush(ir, block);
+            if (dump_on) {
+                dump_host_body_starts[c] = (uint16_t) block_pos;
+                dump_host_ends[c]        = (uint16_t) block_pos;
+            }
         } else {
             if (uop->type & UOP_TYPE_PARAMS_REGS) {
                 codegen_reg_alloc_register(uop->dest_reg_a, uop->src_reg_a, uop->src_reg_b, uop->src_reg_c);
@@ -290,7 +323,11 @@ codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
             if (!uop_handlers[uop->type & UOP_MASK])
                 fatal("!uop_handlers[uop->type & UOP_MASK] %08x\n", uop->type);
 #endif
+            if (dump_on)
+                dump_host_body_starts[c] = (uint16_t) block_pos;
             uop_handlers[uop->type & UOP_MASK](block, uop);
+            if (dump_on)
+                dump_host_ends[c] = (uint16_t) block_pos;
         }
 
         if (uop->type & UOP_TYPE_JUMP) {
@@ -330,7 +367,19 @@ codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
         }
     }
 
+    uint16_t epilogue_pos_off = (uint16_t) block_pos;
     codegen_backend_epilogue(block);
+    uint16_t host_byte_len = (uint16_t) block_pos;
+
+    if (dump_on) {
+        codegen_dump_compile_block(block, ir, prologue_end_off, epilogue_pos_off, host_byte_len,
+                                   block_write_data, dump_orig_types, dump_orig_imms,
+                                   dump_host_starts, dump_host_body_starts, dump_host_ends);
+    }
+    if (codegen_dump_perf_map_active()) {
+        codegen_dump_perf_map_block(block, block_write_data, host_byte_len);
+    }
+
     block_write_data = NULL;
 #if 0
     if (has_ea)
