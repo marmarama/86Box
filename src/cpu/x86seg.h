@@ -29,6 +29,8 @@ extern void loadcs_2386(uint16_t seg);
 extern void loadcsjmp_2386(uint16_t seg, uint32_t old_pc);
 #ifdef USE_NEW_DYNAREC
 extern void loadcscall_2386(uint16_t seg, uint32_t old_pc);
+extern void call_far_16_2386(uint16_t seg, uint32_t new_pc, uint32_t ret_pc);
+extern void call_far_32_2386(uint16_t seg, uint32_t new_pc, uint32_t ret_pc);
 #else
 extern void loadcscall_2386(uint16_t seg);
 #endif
@@ -43,6 +45,8 @@ extern void taskswitch286_2386(uint16_t seg, uint16_t *segdat, int is32);
 #define op_loadcs         loadcs_2386
 #define op_loadcsjmp      loadcsjmp_2386
 #define op_loadcscall     loadcscall_2386
+#define op_call_far_16    call_far_16_2386
+#define op_call_far_32    call_far_32_2386
 #define op_pmoderetf      pmoderetf_2386
 #define op_pmodeint       pmodeint_2386
 #define op_pmodeiret      pmodeiret_2386
@@ -63,6 +67,8 @@ extern void loadcs(uint16_t seg);
 extern void loadcsjmp(uint16_t seg, uint32_t old_pc);
 #ifdef USE_NEW_DYNAREC
 extern void loadcscall(uint16_t seg, uint32_t old_pc);
+extern void call_far_16(uint16_t seg, uint32_t new_pc, uint32_t ret_pc);
+extern void call_far_32(uint16_t seg, uint32_t new_pc, uint32_t ret_pc);
 #else
 extern void loadcscall(uint16_t seg);
 #endif
@@ -79,6 +85,8 @@ extern void taskswitch286(uint16_t seg, uint16_t *segdat, int is32);
 #define op_loadcs         loadcs
 #define op_loadcsjmp      loadcsjmp
 #define op_loadcscall     loadcscall
+#define op_call_far_16    call_far_16
+#define op_call_far_32    call_far_32
 #define op_pmoderetf      pmoderetf
 #define op_pmodeint       pmodeint
 #define op_pmodeiret      pmodeiret

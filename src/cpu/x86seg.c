@@ -1281,6 +1281,134 @@ loadcscall(uint16_t seg)
 
 void
 #ifdef OPS_286_386
+call_far_16_2386(uint16_t new_cs, uint32_t new_pc, uint32_t ret_pc)
+#else
+call_far_16(uint16_t new_cs, uint32_t new_pc, uint32_t ret_pc)
+#endif
+{
+    uint32_t old_cs = CS;
+    uint32_t old_pc = ret_pc;
+    cpu_state.pc    = new_pc;
+    optype          = CALL;
+    cgate16 = cgate32 = cgate_task = 0;
+    if (msw & 1)
+#ifdef OPS_286_386
+        loadcscall_2386(new_cs, old_pc);
+#else
+        loadcscall(new_cs, old_pc);
+#endif
+    else {
+#ifdef OPS_286_386
+        loadcs_2386(new_cs);
+#else
+        loadcs(new_cs);
+#endif
+        cycles -= timing_call_rm;
+    }
+    optype = 0;
+    if (cpu_state.abrt) {
+        cgate16 = cgate32 = 0;
+        return;
+    }
+    if (cgate_task) {
+        cgate_task = 0;
+    } else if (cgate32) {
+        uint32_t old_esp = ESP;
+        PUSHL(old_cs);
+        if (cpu_state.abrt) {
+            CS      = old_cs;
+            cgate16 = cgate32 = 0;
+            return;
+        }
+        PUSHL(old_pc);
+        if (cpu_state.abrt) {
+            CS  = old_cs;
+            ESP = old_esp;
+            return;
+        }
+    } else {
+        uint32_t old_esp = ESP;
+        PUSHW(old_cs);
+        if (cpu_state.abrt) {
+            CS      = old_cs;
+            cgate16 = cgate32 = 0;
+            return;
+        }
+        PUSHW(old_pc);
+        if (cpu_state.abrt) {
+            CS  = old_cs;
+            ESP = old_esp;
+            return;
+        }
+    }
+}
+
+void
+#ifdef OPS_286_386
+call_far_32_2386(uint16_t new_cs, uint32_t new_pc, uint32_t ret_pc)
+#else
+call_far_32(uint16_t new_cs, uint32_t new_pc, uint32_t ret_pc)
+#endif
+{
+    uint32_t old_cs = CS;
+    uint32_t old_pc = ret_pc;
+    cpu_state.pc    = new_pc;
+    optype          = CALL;
+    cgate16 = cgate32 = cgate_task = 0;
+    if (msw & 1)
+#ifdef OPS_286_386
+        loadcscall_2386(new_cs, old_pc);
+#else
+        loadcscall(new_cs, old_pc);
+#endif
+    else {
+#ifdef OPS_286_386
+        loadcs_2386(new_cs);
+#else
+        loadcs(new_cs);
+#endif
+        cycles -= timing_call_rm;
+    }
+    optype = 0;
+    if (cpu_state.abrt) {
+        cgate16 = cgate32 = 0;
+        return;
+    }
+    if (cgate_task) {
+        cgate_task = 0;
+    } else if (cgate16) {
+        uint32_t old_esp = ESP;
+        PUSHW(old_cs);
+        if (cpu_state.abrt) {
+            CS      = old_cs;
+            cgate16 = cgate32 = 0;
+            return;
+        }
+        PUSHW(old_pc);
+        if (cpu_state.abrt) {
+            CS  = old_cs;
+            ESP = old_esp;
+            return;
+        }
+    } else {
+        uint32_t old_esp = ESP;
+        PUSHL(old_cs);
+        if (cpu_state.abrt) {
+            CS      = old_cs;
+            cgate16 = cgate32 = 0;
+            return;
+        }
+        PUSHL(old_pc);
+        if (cpu_state.abrt) {
+            CS  = old_cs;
+            ESP = old_esp;
+            return;
+        }
+    }
+}
+
+void
+#ifdef OPS_286_386
 pmoderetf_2386(int is32, uint16_t off)
 #else
 pmoderetf(int is32, uint16_t off)

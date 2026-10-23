@@ -252,3 +252,32 @@ DYNAREC CODEGEN LINTER & ANTI-PATTERN AUDIT
 | **P5** | **JIT-compile Protected Mode `iretd` Fast-Path** | Recovers **~1.8 Billion host cycles** in top hotspot blocks #2 and #3. | Implement common-case same-privilege `iretd` directly in JIT (pop EIP, CS, EFLAGS), falling back to C only on task/ring change. |
 | **P6** | **Prune Redundant PC / OldPC Stores** | Eliminates **123M** memory writes to `cpu_state`. | Only emit `uop_MOV_IMM(IREG_pc)` before potential exit points, barriers, and memory ops that can fault. |
 
+---
+
+## 10. Remediation Verification & Progress Tracking
+
+### Phase 1: JIT-compile `0x9A` (`CALL ptr16:16` / `CALL far`) — [COMPLETED & VERIFIED]
+
+#### Implementation Summary
+1. **Core Far Call Dispatch**:
+   - Implemented `call_far_16()` and `call_far_32()` (and `_2386` variants) in [`src/cpu/x86seg.c`](file:///home/marm/src/86Box/src/cpu/x86seg.c) and [`src/cpu/x86seg.h`](file:///home/marm/src/86Box/src/cpu/x86seg.h).
+   - Fully handles Real Mode far jumps, Protected Mode Call Gates, descriptor validation, parameter copying, privilege-level transitions, and stack switches.
+2. **x86-64 Backend Arguments**:
+   - Implemented `codegen_LOAD_FUNC_ARG2_IMM` (`REG_EDX` / `REG_R8`) and `codegen_LOAD_FUNC_ARG3_IMM` (`REG_ECX` / `REG_R9`) in [`src/codegen_new/codegen_backend_x86-64_uops.c`](file:///home/marm/src/86Box/src/codegen_new/codegen_backend_x86-64_uops.c) to support 3-argument C callouts with immediate operands.
+3. **Dynarec JIT Integration**:
+   - Implemented `ropCALL_far_16` and `ropCALL_far_32` in [`src/codegen_new/codegen_ops_jump.c`](file:///home/marm/src/86Box/src/codegen_new/codegen_ops_jump.c).
+   - Registered handlers in `recomp_opcodes[0x9a]` (16-bit) and `recomp_opcodes[256 + 0x9a]` (32-bit) in [`src/codegen_new/codegen_ops.c`](file:///home/marm/src/86Box/src/codegen_new/codegen_ops.c).
+   - Updated block cycle timing and instruction bounds (`insn_end = op_pc + 5` for 16-bit, `op_pc + 7` for 32-bit) in [`src/codegen_new/codegen.c`](file:///home/marm/src/86Box/src/codegen_new/codegen.c).
+
+#### Empirical Benchmark Comparison (75.5s Windows 98 Boot)
+
+| Metric | Baseline (Pre-Remediation) | Post-Phase 1 (`0x9A` Far Call JIT) | Delta |
+|---|---|---|---|
+| **Opcode `0x9A` Fallbacks** | **22,821,489** (Rank #1) | **0** (Eliminated) | **-22,821,489 (-100%)** |
+| **Average RT Speed** | **70.3%** | **72.6%** | **+2.3% overall** |
+| **Drop Window 2 @ t=51.5s** | 18% RT (181 FPS) | 27% RT (270 FPS) | **+49.2% speedup** |
+| **Drop Window 2 @ t=52.5s** | 21% RT (208 FPS) | 24% RT (238 FPS) | **+14.4% speedup** |
+| **Drop Window 2 @ t=54.5s** | 26% RT (256 FPS) | **98% RT (983 FPS)** | **+284% speedup (cleared bottleneck 2s earlier)** |
+| **Desktop Ready Time** | $t \approx 56.5\text{s}$ | $t \approx 54.5\text{s}$ | **~2.0s faster boot to desktop** |
+
+

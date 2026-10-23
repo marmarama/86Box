@@ -635,7 +635,7 @@ generate_call:
     codegen_accumulate(ir, ACCREG_cycles, -codegen_block_cycles);
     codegen_block_cycles = 0;
 
-    if ((op_table == x86_dynarec_opcodes && ((opcode & 0xf0) == 0x70 || (opcode & 0xfc) == 0xe0 || opcode == 0xc2 || (opcode & 0xfe) == 0xca || (opcode & 0xfc) == 0xcc || (opcode & 0xfc) == 0xe8 || (opcode == 0xff && ((fetchdat & 0x38) >= 0x10 && (fetchdat & 0x38) < 0x30)))) || (op_table == x86_dynarec_opcodes_0f && ((opcode & 0xf0) == 0x80))) {
+    if ((op_table == x86_dynarec_opcodes && ((opcode & 0xf0) == 0x70 || (opcode & 0xfc) == 0xe0 || opcode == 0xc2 || (opcode & 0xfe) == 0xca || (opcode & 0xfc) == 0xcc || (opcode & 0xfc) == 0xe8 || opcode == 0x9a || (opcode == 0xff && ((fetchdat & 0x38) >= 0x10 && (fetchdat & 0x38) < 0x30)))) || (op_table == x86_dynarec_opcodes_0f && ((opcode & 0xf0) == 0x80))) {
         /*On some CPUs (eg K6), a jump/branch instruction may be able to pair with
           subsequent instructions, so no cycles may have been deducted for it yet.
           To prevent having zero cycle blocks (eg with a jump instruction pointing
@@ -744,6 +744,8 @@ generate_call:
                     insn_end = op_pc + 1;
             } else if (block->exit_type == BLOCK_EXIT_RET) {
                 insn_end = op_pc + (opcode == 0xc2 ? 3 : 1);
+            } else if (opcode == 0x9a || opcode == 0xea) {
+                insn_end = op_pc + ((op_32 & 0x100) ? 6 : 4);
             } else {
                 insn_end = op_pc + 1;
             }
