@@ -421,7 +421,7 @@ codegen_backend_prologue(codeblock_t *block)
     host_x86_MOV64_REG_IMM(block, REG_RBP, ((uintptr_t) &cpu_state) + 128);
     host_x86_MOV64_REG_IMM(block, REG_R12, (uint64_t) (uintptr_t) readlookup2);
     block->direct_entry_pos = block_pos;
-    if (codegen_dump_is_active() || codegen_profile_active) {
+    if (codegen_dump_is_active() || codegen_profile_active || codegen_hang_detect_active) {
 #ifdef _WIN64
         host_x86_MOV64_REG_IMM(block, REG_RCX, (uint64_t) (uintptr_t) block);
 #else

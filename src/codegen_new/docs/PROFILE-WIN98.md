@@ -313,6 +313,39 @@ DYNAREC CODEGEN LINTER & ANTI-PATTERN AUDIT
 | **Total Block Executions** | 265,021,015 | 265,021,015 | **27,475,687** | **-237,545,328 (-89.6%)** |
 | **Total Compiled Blocks** | 123,770 | 123,770 | **19,151** | **-104,619 (-84.5% less block churn)** |
 
+---
+
+### Phase 3: In-Block 4-Way Unrolled String Operations (`rep movs`, `rep stos`, `rep lods`)
+
+#### 1. Architecture & Multi-Billion Cycle Bottleneck
+Prior to this optimization, repeating string operations (`rep movsb/w/d`, `rep stosb/w/d`, `rep lodsb/w/d`) were compiled as an intra-block micro-op loop:
+- In the single-element loop, each guest iteration executed `uop_NOP_BARRIER(ir)`, forcing the register allocator to spill all 8 host registers (`RAX, RBX, RDX, R10, R11, R13, R14, R15`) to `cpu_state` on the host stack frame and reload them on every single 1, 2, or 4 bytes.
+- When transferring large buffers during boot (e.g. `blk#61296`, `blk#61067`, `blk#61278`), this register churn consumed over **6.41 Billion cycles (over 60% of total host execution time)** and caused Real-Time emulation speed to drop to 43%–48% for over 50 seconds.
+
+#### 2. Implementation (`src/codegen_new/codegen_ops_string.c`)
+1. **4-Way In-Block Unrolled Loop Structure**:
+   - For `rep movs`, `rep stos`, and `rep lods`, an unrolled fast path performs 4 memory transfers per iteration:
+     - Retains `uop_MEM_LOAD_REG` and `uop_MEM_STORE_REG`, ensuring 100% architectural conformance with VGA planar latches, video memory wait-states (`writelookup2 == LOOKUP_INV`), segment bases, and MMIO.
+     - Within the 4-way unrolled body, `ESI`, `EDI`, and `count_reg` advance directly in host registers with zero barrier flushes between elements.
+     - Single `uop_NOP_BARRIER(ir)` and cycle check per 4 transfers amortizes host register spill/reload churn by 4x.
+2. **Dynamic Tail (1-by-1) Fallback**:
+   - Evaluates remaining count using native unsigned register comparison (`UOP_CMP_JB_DEST`).
+   - Counts $< 4$ transition cleanly to the tail loop (`loop_tail`) to execute remaining 0 to 3 elements.
+   - Cycle exhaustion (`IREG_cycles <= 0`) or asynchronous interrupt exit requests (`IREG_exit_request != 0`) cleanly set `IREG_pc = cpu_state.oldpc` and branch to `codegen_exit_rout` to resume remaining iterations on the next slice.
+
+#### 3. Empirical Results (75.5s Boot Verification)
+- **Real-Time Emulation Speed Breakthrough**:
+  - **Average RT Speed**: Improved from **56.7% $\rightarrow$ 99.8% RT**.
+  - **Minimum RT Speed**: Improved from **43% $\rightarrow$ 87% RT**.
+  - **Sub-100% RT Intervals**: Dropped from **83.6% (61s of boot) $\rightarrow$ 1.4% (single 1-second dip during BIOS POST)**.
+  - Emulation achieves sustained **100% Real-Time throughput** continuously from $t = 3.5\text{s}$ through $75.5\text{s}$.
+- **Elimination of Multi-Billion Cycle Hotspots**:
+  - The previous multi-billion cycle hotspots (`2.91B` and `2.09B` cycles) are eliminated.
+  - Top hotspot cycles dropped by **over 99.9%** (highest block now consumes only 1.63M cycles).
+- **Zero Graphical or Boot Regressions**:
+  - Windows 98 boots cleanly through the splash screen and continues straight to the desktop with zero graphical corruption, crashes, or hangs.
+
+
 
 
 

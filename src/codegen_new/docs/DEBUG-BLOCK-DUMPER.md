@@ -92,7 +92,15 @@ enum bdump_host_arch {
 enum bdump_record_type {
     BDUMP_REC_COMPILE      = 1, /* Emitted at end of codegen_block_end_recompile() */
     BDUMP_REC_EXEC         = 2, /* Emitted on block deletion / VM exit with runtime stats */
-    BDUMP_REC_HOST_PROFILE = 3  /* Emitted at VM exit: host TSC breakdown (JIT vs C code) */
+    BDUMP_REC_HOST_PROFILE = 3, /* Emitted at VM exit: host TSC breakdown (JIT vs C code) */
+    BDUMP_REC_HANG         = 4  /* Emitted on hang trigger or SIGINT/SIGTERM with flight-recorder trace */
+};
+
+enum bdump_hang_reason {
+    BDUMP_HANG_NONE          = 0,
+    BDUMP_HANG_CHAIN_LOCKUP  = 1, /* Excess chained transfers without returning to C */
+    BDUMP_HANG_SPIN_LOOP     = 2, /* Tight spin loop in <= 32 unique blocks */
+    BDUMP_HANG_SIGNAL_ABORT  = 3  /* User SIGINT / SIGTERM interrupt */
 };
 
 typedef struct bdump_file_header_t {
@@ -204,6 +212,36 @@ typedef struct bdump_rt_sample_t {
     uint16_t speed_percent;          /* Emulation speed percentage (e.g. 100, 70, 18) */
     uint16_t fps;                    /* Frames executed in the sample interval */
 } bdump_rt_sample_t;
+
+typedef struct bdump_trace_entry_t {
+    uint32_t tr_compile_seq;         /* Compile sequence ID of entered block */
+    uint16_t tr_block_nr;            /* Index in codeblock[] */
+    uint16_t tr_flags_op;            /* Lazy flags operation ID */
+    uint32_t tr_pc;                  /* Linear PC (cs + eip) */
+    uint32_t tr_phys;                /* Physical address */
+    uint32_t tr_eax;
+    uint32_t tr_ecx;
+    uint32_t tr_edx;
+    uint32_t tr_ebx;
+    uint32_t tr_esp;
+    uint32_t tr_ebp;
+    uint32_t tr_esi;
+    uint32_t tr_edi;
+    int32_t  tr_cycles;              /* cpu_state._cycles at block entry */
+    uint32_t tr_flags_res;           /* Lazy flags result operand */
+} bdump_trace_entry_t;
+
+typedef struct bdump_hang_record_t {
+    uint8_t  rec_type;                /* BDUMP_REC_HANG (4) */
+    uint8_t  hang_reason;             /* bdump_hang_reason */
+    uint16_t unique_blocks_in_window; /* Number of unique blocks in active spin window */
+    uint32_t trace_count;             /* Number of trailing bdump_trace_entry_t records */
+    uint64_t spin_iterations;         /* Consecutive block entries in the current spin window */
+    uint64_t chained_streak;          /* Consecutive chained block transfers without returning to C */
+    uint32_t trigger_compile_seq;     /* compile_seq of block where hang triggered */
+    uint16_t trigger_block_nr;        /* block_nr where hang triggered */
+    uint16_t reserved;
+} bdump_hang_record_t;
 ```
 
 > [!TIP]
@@ -228,6 +266,21 @@ Non-dynarec C execution happens in two places that must be separated to avoid mi
      - **Unrecompiled Opcode Callouts (`tsc_c_callout_insn_fn`)**: Around `UOP_CALL_INSTRUCTION_FUNC` (`IN`/`OUT`, `CPUID`, `IRET`, 16-bit `CALL`/`RET`, etc.).
      - **JIT Runtime Helpers (`tsc_c_callout_helper`)**: Around `UOP_CALL_FUNC` / `UOP_CALL_FUNC_RESULT` (`jit_flags_rebuild`, FPU/MMX C helpers, segment checks).
    - Subtracting `(tsc_c_callout_mem_io + tsc_c_callout_insn_fn + tsc_c_callout_helper)` from the total time inside `block->data()` yields **`tsc_jit_pure`**: the exact time spent executing native JIT instructions.
+
+---
+
+### 4.4 Runtime Hang Detector, Flight Recorder & Signal-Safe Flush (`bdump_hang_record_t`)
+
+Because `codegen_dump_enter_block()` is invoked at the start of every compiled block (`block->direct_entry_pos`), it executes on **both** C-dispatcher entries and direct block-to-block chained jumps. This allows the dumper to catch hangs that would otherwise freeze the emulator without ever returning to `exec386_dynarec_dyn()`.
+
+1. **128-Entry Circular Flight Recorder (`flight_recorder[128]`)**:
+   - On every block entry, records `compile_seq`, `block_nr`, `pc`, `phys`, guest general-purpose registers (`EAX`–`EDI`), lazy flag state (`flags_op`, `flags_res`), and `cpu_state._cycles`.
+2. **Two-Tier Automatic Hang Detection**:
+   - **Hard Chained-Loop Lockup (`BDUMP_HANG_CHAIN_LOCKUP`)**: Tracks `hang_chained_streak`, which increments on every chained block transition and resets in `codegen_profile_exit_chain()` when returning to the C dispatcher. If `hang_chained_streak >= 1,000,000`, the JIT is trapped inside a native block chain (e.g., due to broken `IREG_cycles` accounting or a zero-cycle self-loop).
+   - **ISR-Tolerant Tight Spin-Loop Detector (`BDUMP_HANG_SPIN_LOOP`)**: Tracks which `block_nr`s execute within windows of `262,144` ($2^{18}$) block entries using a 256-byte bitmap (`hang_seen_bitmap[BLOCK_SIZE / 64]`). If a window touches $\le 32$ unique blocks (which covers a 1–8 block polling loop even when interrupted periodically by a 15–20 block timer ISR), `hang_spin_iterations` accumulates; if it touches $> 32$ unique blocks, `hang_spin_iterations` resets to `0`. When `hang_spin_iterations >= hang_spin_limit` (default `50,000,000` when `BOX86_DUMP_BLOCKS` is set, `20,000,000` when `BOX86_HANG_DETECT=1`, or custom `<N>`), the hang detector triggers.
+3. **`SIGINT` / `SIGTERM` (`Ctrl+C`) Handler & Forced Flush**:
+   - Whenever `BOX86_DUMP_BLOCKS` or `BOX86_HANG_DETECT` is enabled, `SIGINT` and `SIGTERM` are caught by `codegen_hang_sig_handler()`.
+   - When triggered (automatically or via `Ctrl+C`), `codegen_trigger_hang()` prints an immediate diagnostic report to `stderr` (trigger block, spin metrics, guest registers, and last 16 flight-recorder transitions), force-flushes any buffered blocks in the flight recorder (even if `exec_count < BOX86_DUMP_MIN_EXEC`), writes all live `BDUMP_REC_EXEC` records, appends `BDUMP_REC_HANG` + the 128 chronological `bdump_trace_entry_t` records, and closes the `.86bdump` file cleanly.
 
 ---
 
@@ -266,6 +319,8 @@ To prevent multi-gigabyte dumps during long Windows 98 sessions, the dumper is c
 | `BOX86_DUMP_PC` | `0x00010000-0x0009ffff` | Only dumps blocks whose linear `pc` falls inside `[start, end]`. |
 | `BOX86_DUMP_PHYS` | `0x00100000-0x00400000` | Only dumps blocks in the specified physical address range. |
 | `BOX86_DUMP_MIN_EXEC` | `1000` | Buffers compile records in memory and only writes blocks to disk on eviction/exit if `block->exec_count >= 1000`. |
+| `BOX86_DUMP_PROFILE` | `1` | Enables host TSC profiling of pure JIT vs. intra-block C callouts and C dispatcher overhead. |
+| `BOX86_HANG_DETECT` | `1` or `10000000` | Configures the runtime hang detector (`1` = 20M spin limit, `<N>` = custom spin limit, `0` = disable auto-abort; enabled by default at 50M when `BOX86_DUMP_BLOCKS` is set). |
 | `BOX86_DUMP_DISASM_FILTER` | `CMOV,REP,FPU` | (Post-analysis flag) Filters blocks containing specific guest instructions or IR uOps. |
 
 ---
@@ -336,6 +391,19 @@ Generates a single-page report comparing runs (e.g. Phase 7 vs. Phase 8):
   - % of dynamic block exits linked vs. unlinked, broken down by reason (`CODEBLOCK_STATIC_TOP`, `page_mask2 != 0`, cross-page under `LINK_SAME_PAGE`, polymorphic `RET` miss, indirect jump).
 - **Interpreter Fallback Leaderboard**:
   - Ranked list of guest opcodes emitting `UOP_CALL_INSTRUCTION_FUNC` weighted by execution count, identifying the exact next opcodes worth recompiling natively.
+
+### 7.4 Offline Hang & Loop Root-Cause Analyzer (`--hang`)
+
+When a dump contains a `BDUMP_REC_HANG` record (or when `--hang` is passed explicitly on any `.86bdump` file), `scripts/analyze_blocks.py` runs `analyze_hang()`:
+
+1. **Core Spin Loop vs. Periodic ISR Separation**:
+   - Ranks the blocks in the 128-entry flight-recorder trace by frequency, separating `[CORE SPIN LOOP]` blocks ($\ge 10\%$ of trace hits) from `[PERIODIC / ISR]` blocks (such as timer interrupt handlers that fire briefly and `IRET` back into the hung loop).
+   - Displays the exact chronological tail transition sequence (`#blk(seq) -> #blk(seq) -> ...`).
+2. **Guest Register & Flag Invariant Analysis**:
+   - Inspects `EAX`, `ECX`, `EDX`, `EBX`, `ESP`, `EBP`, `ESI`, `EDI`, `flags_op`, `flags_res`, and `cycles` across all 128 trace entries and classifies each as either **`FROZEN`** (showing the stuck constant value) or **`CHANGING`** (showing unique value count, range, and last 4 values).
+3. **Automated Root-Cause Heuristics & 3-Tier Disassembly**:
+   - Flags hard chained-loop lockups, frozen `cpu_state._cycles`, missing `UOP_SUB_IMM` on `IREG_cycles`, direct self-linked blocks, and fast-path RAM TLB polling loops (`UOP_MEM_LOAD_*` with zero C callouts).
+   - Automatically invokes `inspect_block()` on each block in the core spin cycle so the Guest x86, IR uOps, and Host ASM of the hanging loop are displayed side-by-side.
 
 ---
 

@@ -30,7 +30,15 @@ enum bdump_host_arch {
 enum bdump_record_type {
     BDUMP_REC_COMPILE      = 1,
     BDUMP_REC_EXEC         = 2,
-    BDUMP_REC_HOST_PROFILE = 3
+    BDUMP_REC_HOST_PROFILE = 3,
+    BDUMP_REC_HANG         = 4
+};
+
+enum bdump_hang_reason {
+    BDUMP_HANG_NONE          = 0,
+    BDUMP_HANG_CHAIN_LOCKUP  = 1, /* Excess chained transfers without returning to C */
+    BDUMP_HANG_SPIN_LOOP     = 2, /* Tight spin loop in <= 32 unique blocks */
+    BDUMP_HANG_SIGNAL_ABORT  = 3  /* User SIGINT / SIGTERM interrupt */
 };
 
 #pragma pack(push, 1)
@@ -145,6 +153,36 @@ typedef struct bdump_rt_sample_t {
     uint16_t fps;                    /* Frames executed in the sample interval */
 } bdump_rt_sample_t;
 
+typedef struct bdump_trace_entry_t {
+    uint32_t tr_compile_seq;         /* Compile sequence ID of entered block */
+    uint16_t tr_block_nr;            /* Index in codeblock[] */
+    uint16_t tr_flags_op;            /* Lazy flags operation ID */
+    uint32_t tr_pc;                  /* Linear PC (cs + eip) */
+    uint32_t tr_phys;                /* Physical address */
+    uint32_t tr_eax;
+    uint32_t tr_ecx;
+    uint32_t tr_edx;
+    uint32_t tr_ebx;
+    uint32_t tr_esp;
+    uint32_t tr_ebp;
+    uint32_t tr_esi;
+    uint32_t tr_edi;
+    int32_t  tr_cycles;              /* cpu_state._cycles at block entry */
+    uint32_t tr_flags_res;           /* Lazy flags result operand */
+} bdump_trace_entry_t;
+
+typedef struct bdump_hang_record_t {
+    uint8_t  rec_type;                /* BDUMP_REC_HANG (4) */
+    uint8_t  hang_reason;             /* bdump_hang_reason */
+    uint16_t unique_blocks_in_window; /* Number of unique blocks in active spin window */
+    uint32_t trace_count;             /* Number of trailing bdump_trace_entry_t records */
+    uint64_t spin_iterations;         /* Consecutive block entries in the current spin window */
+    uint64_t chained_streak;          /* Consecutive chained block transfers without returning to C */
+    uint32_t trigger_compile_seq;     /* compile_seq of block where hang triggered */
+    uint16_t trigger_block_nr;        /* block_nr where hang triggered */
+    uint16_t reserved;
+} bdump_hang_record_t;
+
 #pragma pack(pop)
 
 #if defined(__x86_64__) || defined(_M_X64)
@@ -175,6 +213,7 @@ static inline uint64_t host_rdtsc(void) {
 
 extern bdump_host_profile_t codegen_host_profile;
 extern int codegen_profile_active;
+extern int codegen_hang_detect_active;
 extern codeblock_t *codegen_current_executing_block;
 
 void codegen_dump_init(void);

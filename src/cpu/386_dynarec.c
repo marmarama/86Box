@@ -743,7 +743,7 @@ exec386_dynarec_dyn(void)
 #    endif
             inrecomp = 0;
 #    ifdef USE_NEW_DYNAREC
-            if (codegen_dump_is_active())
+            if (codegen_dump_is_active() || codegen_hang_detect_active)
                 codegen_profile_exit_chain();
 #    endif
         }

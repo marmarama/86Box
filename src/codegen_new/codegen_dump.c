@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <inttypes.h>
+#include <signal.h>
 
 #include <86box/86box.h>
 #include "cpu.h"
@@ -29,9 +30,27 @@ static uint32_t compile_seq_counter   = 0;
 
 bdump_host_profile_t codegen_host_profile             = {0};
 int                  codegen_profile_active           = 0;
+int                  codegen_hang_detect_active       = 0;
 codeblock_t         *codegen_current_executing_block  = NULL;
 static uint64_t      codegen_last_block_entry_tsc     = 0;
 static uint64_t      codegen_last_block_callouts      = 0;
+
+#define FLIGHT_RECORDER_SIZE 128
+static bdump_trace_entry_t flight_recorder[FLIGHT_RECORDER_SIZE];
+static uint64_t            flight_recorder_total      = 0;
+static int                 flight_recorder_enabled    = 0;
+
+static uint64_t            hang_spin_limit            = 50000000ULL;
+static uint64_t            hang_chain_limit           = 1000000ULL;
+static uint64_t            hang_chained_streak        = 0;
+static uint64_t            hang_spin_iterations       = 0;
+static uint64_t            hang_window_entries        = 0;
+static uint64_t            hang_seen_bitmap[(BLOCK_SIZE + 63) / 64];
+static uint16_t            hang_last_unique_blocks    = 0;
+static volatile sig_atomic_t hang_triggered           = 0;
+
+static void codegen_trigger_hang(uint8_t reason, codeblock_t *trigger_blk, int from_signal);
+static void codegen_hang_sig_handler(int sig);
 
 static bdump_rt_sample_t *rt_sample_series            = NULL;
 static uint32_t           rt_sample_capacity          = 0;
@@ -144,10 +163,33 @@ codegen_dump_init(void)
     const char *phys_env    = getenv("BOX86_DUMP_PHYS");
     const char *min_exec    = getenv("BOX86_DUMP_MIN_EXEC");
     const char *profile_env = getenv("BOX86_DUMP_PROFILE");
+    const char *hang_env    = getenv("BOX86_HANG_DETECT");
 
     if (profile_env && (strcmp(profile_env, "1") == 0 || strcasecmp(profile_env, "true") == 0)) {
         codegen_profile_active = 1;
         pclog("codegen_dump: host TSC profiling enabled (BOX86_DUMP_PROFILE=1)\n");
+    }
+
+    if (hang_env && hang_env[0]) {
+        if (strcmp(hang_env, "0") == 0 || strcasecmp(hang_env, "false") == 0) {
+            codegen_hang_detect_active = 0;
+        } else if (strcmp(hang_env, "1") == 0 || strcasecmp(hang_env, "true") == 0) {
+            codegen_hang_detect_active = 1;
+            flight_recorder_enabled    = 1;
+            hang_spin_limit            = 20000000ULL;
+            pclog("codegen_dump: hang detector enabled (spin_limit=%" PRIu64 ", chain_limit=%" PRIu64 ")\n",
+                  hang_spin_limit, hang_chain_limit);
+        } else {
+            uint64_t val = strtoull(hang_env, NULL, 0);
+            if (val > 0) {
+                codegen_hang_detect_active = 1;
+                flight_recorder_enabled    = 1;
+                hang_spin_limit            = val;
+                if (val < hang_chain_limit)
+                    hang_chain_limit = val;
+                pclog("codegen_dump: hang detector enabled with custom limit=%" PRIu64 "\n", hang_spin_limit);
+            }
+        }
     }
 
     if (pc_env) {
@@ -208,11 +250,21 @@ codegen_dump_init(void)
             if (dump_min_exec > 0) {
                 buffered_blocks = calloc(BLOCK_SIZE, sizeof(buffered_block_t));
             }
+
+            flight_recorder_enabled = 1;
+            if (!hang_env || !hang_env[0]) {
+                /* Enable automatic hang detection by default when block dumping is active */
+                codegen_hang_detect_active = 1;
+                hang_spin_limit            = 50000000ULL;
+            }
         }
     }
 
-    if (dump_active || perf_map_active)
+    if (dump_active || perf_map_active || codegen_hang_detect_active) {
         atexit(codegen_dump_close);
+        signal(SIGINT, codegen_hang_sig_handler);
+        signal(SIGTERM, codegen_hang_sig_handler);
+    }
 }
 
 void
@@ -576,11 +628,139 @@ codegen_dump_exec_block(codeblock_t *block, uint8_t invalidate_reason)
     }
 }
 
+static uint16_t
+count_seen_blocks(void)
+{
+    uint16_t count = 0;
+    for (size_t i = 0; i < sizeof(hang_seen_bitmap) / sizeof(hang_seen_bitmap[0]); i++) {
+        if (hang_seen_bitmap[i])
+            count += (uint16_t) __builtin_popcountll(hang_seen_bitmap[i]);
+    }
+    return count;
+}
+
+static void
+codegen_trigger_hang(uint8_t reason, codeblock_t *trigger_blk, int from_signal)
+{
+    if (hang_triggered)
+        return;
+    hang_triggered = 1;
+
+    uint16_t trig_nr  = (trigger_blk && codeblock) ? (uint16_t) (trigger_blk - codeblock) : 0;
+    uint32_t trig_seq = trigger_blk ? trigger_blk->compile_seq : 0;
+    uint16_t cur_uniq = count_seen_blocks();
+    if (cur_uniq == 0 && hang_last_unique_blocks > 0)
+        cur_uniq = hang_last_unique_blocks;
+
+    uint32_t trace_count = (flight_recorder_total < FLIGHT_RECORDER_SIZE)
+                               ? (uint32_t) flight_recorder_total
+                               : FLIGHT_RECORDER_SIZE;
+    bdump_trace_entry_t ordered_trace[FLIGHT_RECORDER_SIZE];
+    uint64_t start_idx = (flight_recorder_total >= FLIGHT_RECORDER_SIZE)
+                             ? (flight_recorder_total - FLIGHT_RECORDER_SIZE)
+                             : 0;
+    for (uint32_t i = 0; i < trace_count; i++) {
+        ordered_trace[i] = flight_recorder[(start_idx + i) & (FLIGHT_RECORDER_SIZE - 1)];
+    }
+
+    const char *reason_str = "UNKNOWN";
+    if (reason == BDUMP_HANG_CHAIN_LOCKUP)
+        reason_str = "HARD CHAINED-LOOP LOCKUP (never returned to C dispatcher)";
+    else if (reason == BDUMP_HANG_SPIN_LOOP)
+        reason_str = "TIGHT GUEST SPIN LOOP (stuck in <= 32 unique blocks)";
+    else if (reason == BDUMP_HANG_SIGNAL_ABORT)
+        reason_str = "USER SIGNAL INTERRUPT (SIGINT/SIGTERM)";
+
+    fprintf(stderr, "\n================================================================================\n");
+    fprintf(stderr, "[86BOX DYNAREC HANG DETECTOR] %s\n", reason_str);
+    fprintf(stderr, "================================================================================\n");
+    if (trigger_blk) {
+        fprintf(stderr, "Trigger Block : #%u (seq %u) | PC=%04x:%08x (phys %08x) | exec_count=%" PRIu64 "\n",
+                trig_nr, trig_seq,
+                trigger_blk->_cs >> 4, trigger_blk->pc - trigger_blk->_cs,
+                trigger_blk->phys, trigger_blk->exec_count);
+    }
+    fprintf(stderr, "Spin Metrics  : spin_iterations=%" PRIu64 " | chained_streak=%" PRIu64 " | unique_blocks_in_window=%u\n",
+            hang_spin_iterations + hang_window_entries, hang_chained_streak, cur_uniq);
+    fprintf(stderr, "Guest Regs    : EAX=%08x ECX=%08x EDX=%08x EBX=%08x\n",
+            cpu_state.regs[0].l, cpu_state.regs[1].l, cpu_state.regs[2].l, cpu_state.regs[3].l);
+    fprintf(stderr, "                ESP=%08x EBP=%08x ESI=%08x EDI=%08x\n",
+            cpu_state.regs[4].l, cpu_state.regs[5].l, cpu_state.regs[6].l, cpu_state.regs[7].l);
+    fprintf(stderr, "Flags / Cyc   : flags_op=%u flags_res=%08x flags_op1=%08x flags_op2=%08x cycles=%d\n",
+            cpu_state.flags_op, cpu_state.flags_res, cpu_state.flags_op1, cpu_state.flags_op2, cpu_state._cycles);
+
+    if (trace_count > 0) {
+        uint32_t show = (trace_count > 16) ? 16 : trace_count;
+        fprintf(stderr, "\nLast %u Block Transitions (Flight Recorder):\n", show);
+        for (uint32_t i = trace_count - show; i < trace_count; i++) {
+            const bdump_trace_entry_t *e = &ordered_trace[i];
+            fprintf(stderr, "  [-%02u] blk #%04u (seq %u) lin=%08x phys=%08x | EAX=%08x ECX=%08x EDX=%08x flg_op=%02u flg_res=%08x cyc=%d\n",
+                    trace_count - 1 - i, e->tr_block_nr, e->tr_compile_seq, e->tr_pc, e->tr_phys,
+                    e->tr_eax, e->tr_ecx, e->tr_edx, e->tr_flags_op, e->tr_flags_res, e->tr_cycles);
+        }
+    }
+    fprintf(stderr, "================================================================================\n");
+    fflush(stderr);
+
+    if (dump_active && dump_fp) {
+        /* Force-flush any buffered blocks that participated in the flight recorder even if < dump_min_exec */
+        if (dump_min_exec > 0 && buffered_blocks && codeblock) {
+            for (uint32_t i = 0; i < trace_count; i++) {
+                uint16_t bnr = ordered_trace[i].tr_block_nr;
+                if (bnr < BLOCK_SIZE && codeblock[bnr].valid && codeblock[bnr].exec_count < dump_min_exec) {
+                    codeblock[bnr].exec_count = dump_min_exec;
+                }
+            }
+        }
+
+        /* Flush all live blocks so the .86bdump has their final exec_count and link topology */
+        if (codeblock) {
+            for (uint32_t c = 0; c < BLOCK_SIZE; c++) {
+                if (codeblock[c].valid && (codeblock[c].flags & CODEBLOCK_WAS_RECOMPILED)) {
+                    codegen_dump_exec_block(&codeblock[c], 0);
+                }
+            }
+        }
+
+        bdump_hang_record_t hrec;
+        memset(&hrec, 0, sizeof(hrec));
+        hrec.rec_type                = BDUMP_REC_HANG;
+        hrec.hang_reason             = reason;
+        hrec.unique_blocks_in_window = cur_uniq;
+        hrec.trace_count             = trace_count;
+        hrec.spin_iterations         = hang_spin_iterations + hang_window_entries;
+        hrec.chained_streak          = hang_chained_streak;
+        hrec.trigger_compile_seq     = trig_seq;
+        hrec.trigger_block_nr        = trig_nr;
+
+        fwrite(&hrec, sizeof(hrec), 1, dump_fp);
+        if (trace_count > 0) {
+            fwrite(ordered_trace, sizeof(bdump_trace_entry_t), trace_count, dump_fp);
+        }
+        fflush(dump_fp);
+        codegen_dump_close();
+    }
+
+    if (from_signal)
+        _exit(130);
+    else
+        exit(1);
+}
+
+static void
+codegen_hang_sig_handler(int sig)
+{
+    (void) sig;
+    codegen_trigger_hang(BDUMP_HANG_SIGNAL_ABORT, codegen_current_executing_block, 1);
+}
+
 void
 codegen_dump_enter_block(codeblock_t *block)
 {
     if (!block)
         return;
+
+    int is_chained = (codegen_current_executing_block != NULL);
 
     if (codegen_profile_active) {
         uint64_t now = host_rdtsc();
@@ -602,6 +782,59 @@ codegen_dump_enter_block(codeblock_t *block)
         block->exec_count++;
         codegen_current_executing_block = block;
     }
+
+    uint16_t block_nr = (codeblock) ? (uint16_t) (block - codeblock) : 0;
+
+    if (flight_recorder_enabled) {
+        bdump_trace_entry_t *e = &flight_recorder[flight_recorder_total & (FLIGHT_RECORDER_SIZE - 1)];
+        flight_recorder_total++;
+        e->tr_compile_seq = block->compile_seq;
+        e->tr_block_nr    = block_nr;
+        e->tr_flags_op    = (uint16_t) cpu_state.flags_op;
+        e->tr_pc          = block->pc;
+        e->tr_phys        = block->phys;
+        e->tr_eax         = cpu_state.regs[0].l;
+        e->tr_ecx         = cpu_state.regs[1].l;
+        e->tr_edx         = cpu_state.regs[2].l;
+        e->tr_ebx         = cpu_state.regs[3].l;
+        e->tr_esp         = cpu_state.regs[4].l;
+        e->tr_ebp         = cpu_state.regs[5].l;
+        e->tr_esi         = cpu_state.regs[6].l;
+        e->tr_edi         = cpu_state.regs[7].l;
+        e->tr_cycles      = cpu_state._cycles;
+        e->tr_flags_res   = cpu_state.flags_res;
+    }
+
+    if (codegen_hang_detect_active) {
+        if (is_chained) {
+            hang_chained_streak++;
+            if (hang_chained_streak >= hang_chain_limit) {
+                codegen_trigger_hang(BDUMP_HANG_CHAIN_LOCKUP, block, 0);
+            }
+        }
+
+        if (block_nr < BLOCK_SIZE) {
+            hang_seen_bitmap[block_nr >> 6] |= (1ULL << (block_nr & 63));
+        }
+        hang_window_entries++;
+
+        uint64_t check_interval = (hang_spin_limit < 262144ULL) ? hang_spin_limit : 262144ULL;
+        if (hang_window_entries >= check_interval) {
+            uint16_t uniq = count_seen_blocks();
+            hang_last_unique_blocks = uniq;
+            if (uniq <= 32) {
+                hang_spin_iterations += hang_window_entries;
+                hang_window_entries   = 0;
+                if (hang_spin_iterations >= hang_spin_limit) {
+                    codegen_trigger_hang(BDUMP_HANG_SPIN_LOOP, block, 0);
+                }
+            } else {
+                hang_spin_iterations = 0;
+                hang_window_entries  = 0;
+            }
+            memset(hang_seen_bitmap, 0, sizeof(hang_seen_bitmap));
+        }
+    }
 }
 
 void
@@ -616,6 +849,7 @@ codegen_profile_exit_chain(void)
             codegen_host_profile.tsc_jit_pure += (elapsed - callouts);
     }
     codegen_current_executing_block = NULL;
+    hang_chained_streak             = 0;
 }
 
 uint8_t
