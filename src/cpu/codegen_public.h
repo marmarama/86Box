@@ -47,6 +47,7 @@
 #ifdef USE_NEW_DYNAREC
 #    define BLOCK_PC_INVALID 0xffffffff
 #    define BLOCK_INVALID    0
+extern void codegen_dump_record_rt_sample(int speed_percent, int fps, uint32_t elapsed_ms);
 #endif
 
 extern void codegen_init(void);

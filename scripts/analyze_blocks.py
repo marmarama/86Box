@@ -169,6 +169,7 @@ class BDumpFile:
         self.blocks_by_seq = {} # compile_seq -> CompileRecord
         self.exec_records = []  # list of ExecRecord
         self.host_profile = None # bdump_host_profile_t
+        self.rt_samples = []    # list of bdump_rt_sample_t
         self._parse()
 
     def _parse(self):
@@ -217,7 +218,9 @@ class BDumpFile:
         insn_span_size = 4
         uop_entry_size = 44
         exec_rec_size = 44
-        profile_rec_size = 112
+        profile_rec_size_old = 112
+        profile_rec_size_new = 144
+        rt_sample_size = 8
 
         while offset < file_len:
             rec_type = data[offset]
@@ -348,29 +351,80 @@ class BDumpFile:
                     b["invalidate_reason"] = inv_reason
 
             elif rec_type == BDUMP_REC_HOST_PROFILE:
-                if offset + profile_rec_size > file_len:
+                if offset + profile_rec_size_new <= file_len:
+                    (rec_type, resvd, tsc_total, tsc_jit, tsc_c_mem, tsc_c_insn, tsc_c_helper,
+                     tsc_c_disp, tsc_c_comp, tsc_c_interp, tsc_c_timers,
+                     cnt_disp, cnt_chains, cnt_slow_loads, cnt_slow_stores,
+                     rt_cnt, rt_min, rt_max, rt_below_100, rt_sum,
+                     rt_series_len, resvd2) = struct.unpack_from(
+                        "<B7sQQQQQQQQQQQQQIIIIQII", data, offset
+                    )
+                    offset += profile_rec_size_new
+                    rt_samples = []
+                    if rt_series_len > 0 and offset + rt_series_len * rt_sample_size <= file_len:
+                        for _ in range(rt_series_len):
+                            el_ms, spd_pct, fps = struct.unpack_from("<IHH", data, offset)
+                            rt_samples.append({
+                                "elapsed_ms": el_ms,
+                                "speed_percent": spd_pct,
+                                "fps": fps
+                            })
+                            offset += rt_sample_size
+                    self.rt_samples = rt_samples
+                    self.host_profile = {
+                        "tsc_total_cpu_thread": tsc_total,
+                        "tsc_jit_pure": tsc_jit,
+                        "tsc_c_callout_mem_io": tsc_c_mem,
+                        "tsc_c_callout_insn_fn": tsc_c_insn,
+                        "tsc_c_callout_helper": tsc_c_helper,
+                        "tsc_c_dispatcher": tsc_c_disp,
+                        "tsc_c_compiler": tsc_c_comp,
+                        "tsc_c_interp_fallback": tsc_c_interp,
+                        "tsc_c_timers_devices": tsc_c_timers,
+                        "count_c_dispatch_loops": cnt_disp,
+                        "count_chained_transfers": cnt_chains,
+                        "count_mem_slow_loads": cnt_slow_loads,
+                        "count_mem_slow_stores": cnt_slow_stores,
+                        "rt_sample_count": rt_cnt,
+                        "rt_speed_min": rt_min,
+                        "rt_speed_max": rt_max,
+                        "rt_samples_below_100": rt_below_100,
+                        "rt_speed_sum": rt_sum,
+                        "rt_series_len": rt_series_len,
+                        "rt_samples": rt_samples
+                    }
+                elif offset + profile_rec_size_old <= file_len:
+                    (rec_type, resvd, tsc_total, tsc_jit, tsc_c_mem, tsc_c_insn, tsc_c_helper,
+                     tsc_c_disp, tsc_c_comp, tsc_c_interp, tsc_c_timers,
+                     cnt_disp, cnt_chains, cnt_slow_loads, cnt_slow_stores) = struct.unpack_from(
+                        "<B7sQQQQQQQQQQQQQ", data, offset
+                    )
+                    offset += profile_rec_size_old
+                    self.rt_samples = []
+                    self.host_profile = {
+                        "tsc_total_cpu_thread": tsc_total,
+                        "tsc_jit_pure": tsc_jit,
+                        "tsc_c_callout_mem_io": tsc_c_mem,
+                        "tsc_c_callout_insn_fn": tsc_c_insn,
+                        "tsc_c_callout_helper": tsc_c_helper,
+                        "tsc_c_dispatcher": tsc_c_disp,
+                        "tsc_c_compiler": tsc_c_comp,
+                        "tsc_c_interp_fallback": tsc_c_interp,
+                        "tsc_c_timers_devices": tsc_c_timers,
+                        "count_c_dispatch_loops": cnt_disp,
+                        "count_chained_transfers": cnt_chains,
+                        "count_mem_slow_loads": cnt_slow_loads,
+                        "count_mem_slow_stores": cnt_slow_stores,
+                        "rt_sample_count": 0,
+                        "rt_speed_min": 0,
+                        "rt_speed_max": 0,
+                        "rt_samples_below_100": 0,
+                        "rt_speed_sum": 0,
+                        "rt_series_len": 0,
+                        "rt_samples": []
+                    }
+                else:
                     break
-                (rec_type, resvd, tsc_total, tsc_jit, tsc_c_mem, tsc_c_insn, tsc_c_helper,
-                 tsc_c_disp, tsc_c_comp, tsc_c_interp, tsc_c_timers,
-                 cnt_disp, cnt_chains, cnt_slow_loads, cnt_slow_stores) = struct.unpack_from(
-                    "<B7sQQQQQQQQQQQQQ", data, offset
-                )
-                offset += profile_rec_size
-                self.host_profile = {
-                    "tsc_total_cpu_thread": tsc_total,
-                    "tsc_jit_pure": tsc_jit,
-                    "tsc_c_callout_mem_io": tsc_c_mem,
-                    "tsc_c_callout_insn_fn": tsc_c_insn,
-                    "tsc_c_callout_helper": tsc_c_helper,
-                    "tsc_c_dispatcher": tsc_c_disp,
-                    "tsc_c_compiler": tsc_c_comp,
-                    "tsc_c_interp_fallback": tsc_c_interp,
-                    "tsc_c_timers_devices": tsc_c_timers,
-                    "count_c_dispatch_loops": cnt_disp,
-                    "count_chained_transfers": cnt_chains,
-                    "count_mem_slow_loads": cnt_slow_loads,
-                    "count_mem_slow_stores": cnt_slow_stores,
-                }
             else:
                 # Unknown record or corruption; advance 1 byte
                 offset += 1
@@ -759,6 +813,60 @@ def run_linter(bdump):
     print("=" * 80)
 
 
+def print_rt_timeline_graph(samples, width=60):
+    if not samples:
+        return
+    print("  Real-Time Speed Timeline (% RT over duration):")
+    num_samples = len(samples)
+    step = max(1, num_samples // width) if num_samples > width else 1
+    levels = [100, 80, 60, 40, 20]
+
+    cols = []
+    for i in range(0, num_samples, step):
+        chunk = samples[i:i + step]
+        if chunk:
+            min_pct = min(s["speed_percent"] for s in chunk)
+            cols.append(min_pct)
+        if len(cols) >= width:
+            break
+
+    for lvl in levels:
+        row_str = f"  {lvl:3d}% |"
+        for val in cols:
+            if val >= lvl:
+                row_str += "█"
+            elif val >= lvl - 10:
+                row_str += "▄"
+            else:
+                row_str += " "
+        print(row_str)
+
+    t_total = samples[-1]["elapsed_ms"] / 1000.0
+    axis = "    0% └" + "─" * len(cols)
+    print(axis)
+    time_label = f"       0.0s{' ' * max(1, len(cols) - 14)}{t_total:.1f}s"
+    print(time_label)
+
+
+def generate_rt_table(bdump):
+    samples = bdump.rt_samples or (bdump.host_profile.get("rt_samples", []) if bdump.host_profile else [])
+    if not samples:
+        print("No second-by-second RT samples recorded in this bdump profile.")
+        return
+    print("=" * 80)
+    print("SECOND-BY-SECOND REAL-TIME (RT) SPEED TELEMETRY LOG")
+    print("=" * 80)
+    print(f"{'Elapsed (s)':<12} | {'RT Speed (%)':<14} | {'FPS (Target 1000)':<20} | {'Status'}")
+    print("-" * 80)
+    for s in samples:
+        t_sec = s["elapsed_ms"] / 1000.0
+        pct = s["speed_percent"]
+        fps = s["fps"]
+        status = "[LOW RT]" if pct < 100 else "OK"
+        print(f"{t_sec:<12.1f} | {pct:<14d} | {fps:<20d} | {status}")
+    print("=" * 80)
+
+
 def generate_summary(bdump, top_n=25):
     """Aggregate telemetry, hotspot ranking, instruction mix, and exit analysis."""
     print("=" * 80)
@@ -774,6 +882,63 @@ def generate_summary(bdump, top_n=25):
     print(f"Total Compiled Blocks: {total_blocks:,}")
     print(f"Total Recorded Block Executions: {total_execs:,}")
     print()
+
+    # Real-Time (RT) Speed Telemetry & Health
+    if bdump.host_profile and bdump.host_profile.get("rt_sample_count", 0) > 0:
+        hp = bdump.host_profile
+        rt_count = hp["rt_sample_count"]
+        rt_min = hp["rt_speed_min"]
+        rt_max = hp["rt_speed_max"]
+        rt_below = hp["rt_samples_below_100"]
+        rt_avg = (hp["rt_speed_sum"] / rt_count) if rt_count > 0 else 0.0
+        pct_below = (rt_below / rt_count * 100.0) if rt_count > 0 else 0.0
+
+        print("--- REAL-TIME (RT) EMULATION SPEED & HEALTH ---")
+        print(f"  Total Telemetry Samples:         {rt_count} seconds")
+        print(f"  Average Emulation Speed:         {rt_avg:6.1f}% Real-Time")
+        print(f"  Minimum Emulation Speed:         {rt_min:6d}% Real-Time")
+        print(f"  Maximum Emulation Speed:         {rt_max:6d}% Real-Time")
+        print(f"  Intervals Below 100% RT:         {rt_below:6d} ({pct_below:5.1f}% of total runtime)")
+
+        if rt_below == 0:
+            print("  Emulation Health Status:         [PASS] 100% Real-Time throughout entire session")
+        elif rt_min >= 80:
+            print(f"  Emulation Health Status:         [WARN] Minor speed dips ({rt_min}% min, {pct_below:.1f}% time < 100%)")
+        else:
+            print(f"  Emulation Health Status:         [FAIL] Severe real-time bottleneck detected ({rt_min}% min, {pct_below:.1f}% time < 100%)")
+        print()
+
+        samples = bdump.rt_samples or hp.get("rt_samples", [])
+        if samples:
+            drop_windows = []
+            cur_window = []
+            for s in samples:
+                if s["speed_percent"] < 100:
+                    cur_window.append(s)
+                else:
+                    if cur_window:
+                        drop_windows.append(cur_window)
+                        cur_window = []
+            if cur_window:
+                drop_windows.append(cur_window)
+
+            if drop_windows:
+                print(f"  Identified Low-RT Bottleneck Windows ({len(drop_windows)} window{'s' if len(drop_windows) > 1 else ''}):")
+                for idx, w in enumerate(drop_windows, 1):
+                    t_start = w[0]["elapsed_ms"] / 1000.0
+                    t_end = w[-1]["elapsed_ms"] / 1000.0
+                    w_min = min(s["speed_percent"] for s in w)
+                    w_max = max(s["speed_percent"] for s in w)
+                    w_avg = sum(s["speed_percent"] for s in w) / len(w)
+                    if t_start == t_end:
+                        print(f"    Drop #{idx}: t={t_start:5.1f}s | Speed: {w_min}% RT (fps={w[0]['fps']})")
+                    else:
+                        dur = t_end - t_start + 1.0
+                        print(f"    Drop #{idx}: t={t_start:5.1f}s - {t_end:5.1f}s ({dur:.1f}s) | Speed: {w_min}% - {w_max}% RT (avg {w_avg:.1f}%)")
+                print()
+
+            print_rt_timeline_graph(samples)
+            print()
 
     # Host CPU Execution & Profiling Breakdown (Section 4.3)
     if bdump.host_profile:
@@ -930,6 +1095,7 @@ def main():
     parser.add_argument("--summary", action="store_true", help="Print aggregate telemetry, hotspot ranking, and instruction mix")
     parser.add_argument("--inspect-block", metavar="ID_OR_PC", help="Inspect a specific block by block_nr, compile_seq, or hex PC")
     parser.add_argument("--lint", action="store_true", help="Run automated linter and anti-pattern detector")
+    parser.add_argument("--rt", "--rt-timeline", dest="rt_timeline", action="store_true", help="Print full second-by-second Real-Time (RT) speed telemetry log")
     parser.add_argument("--top", type=int, default=25, help="Number of hottest blocks to display in summary (default: 25)")
 
     args = parser.parse_args()
@@ -945,11 +1111,14 @@ def main():
         sys.exit(1)
 
     # If no flags given, default to --summary
-    if not args.summary and not args.inspect_block and not args.lint:
+    if not args.summary and not args.inspect_block and not args.lint and not args.rt_timeline:
         args.summary = True
 
     if args.summary:
         generate_summary(bdump, top_n=args.top)
+
+    if args.rt_timeline:
+        generate_rt_table(bdump)
 
     if args.inspect_block:
         inspect_block(bdump, args.inspect_block)

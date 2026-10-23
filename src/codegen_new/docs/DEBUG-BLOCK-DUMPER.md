@@ -189,7 +189,21 @@ typedef struct bdump_host_profile_t {
     uint64_t count_chained_transfers;/* Number of direct block-to-block transfers */
     uint64_t count_mem_slow_loads;   /* Number of TLB-miss / MMIO / misaligned C read calls */
     uint64_t count_mem_slow_stores;  /* Number of TLB-miss / MMIO / misaligned C write calls */
+    /* Real-Time (RT) Emulation Speed Telemetry */
+    uint32_t rt_sample_count;        /* Total number of RT speed samples logged */
+    uint32_t rt_speed_min;           /* Minimum recorded % RT (e.g. 18) */
+    uint32_t rt_speed_max;           /* Maximum recorded % RT (e.g. 105) */
+    uint32_t rt_samples_below_100;   /* Number of samples where % RT < 100 */
+    uint64_t rt_speed_sum;           /* Cumulative sum of % RT values (average = sum / count) */
+    uint32_t rt_series_len;          /* Number of trailing bdump_rt_sample_t entries */
+    uint32_t reserved2;              /* 8-byte alignment padding */
 } bdump_host_profile_t;
+
+typedef struct bdump_rt_sample_t {
+    uint32_t elapsed_ms;             /* Cumulative elapsed ms since emulation started */
+    uint16_t speed_percent;          /* Emulation speed percentage (e.g. 100, 70, 18) */
+    uint16_t fps;                    /* Frames executed in the sample interval */
+} bdump_rt_sample_t;
 ```
 
 > [!TIP]
@@ -302,11 +316,16 @@ Scans all compiled blocks in `trace.86bdump` and automatically flags structural 
 5. **Disassembly Sanity Check**:
    - Verifies that every emitted host byte between `0` and `host_byte_len` disassembles cleanly without invalid opcodes or truncated branch displacements (automatically catching Bug C-1 on LoongArch64).
 
-### 7.3 Aggregate Telemetry & Hotspot Summary (`--summary`)
+### 7.3 Aggregate Telemetry & Hotspot Summary (`--summary` / `--rt`)
 
 Generates a single-page report comparing runs (e.g. Phase 7 vs. Phase 8):
 
-- **Top 25 Hottest Blocks** ranked by `exec_count * host_insn_count`.
+- **Real-Time (RT) Emulation Speed & Health**:
+  - Total samples logged (seconds), average % RT, min % RT, max % RT, and percentage of runtime below 100% RT.
+  - Automatic detection and duration of low-RT bottleneck windows.
+  - Compact ASCII speed timeline sparkline across execution duration.
+  - Full second-by-second telemetry table via `--rt` / `--rt-timeline`.
+- **Top 25 Hottest Blocks** ranked by `exec_count * host_insn_count` or host TSC.
 - **Instruction Mix Breakdown**:
   - % of dynamic host instructions in Prologue/Epilogue
   - % in Register Load / Writeback glue (`[host_start, host_body_start)`)

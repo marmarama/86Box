@@ -2112,6 +2112,9 @@ pc_run(void)
         speed_percent = (int) ((numerator + ((int64_t) elapsed_ms * target_fps / 2)) /
                                ((int64_t) elapsed_ms * target_fps));
         pclog("EMU_SPEED: %d%% (fps=%d, elapsed=%ums)\n", speed_percent, fps, elapsed_ms);
+#if defined(USE_DYNAREC) && defined(USE_NEW_DYNAREC)
+        codegen_dump_record_rt_sample(speed_percent, fps, elapsed_ms);
+#endif
 
 #ifdef __APPLE__
         /* Needed due to modifying the UI on the non-main thread is a big no-no. */

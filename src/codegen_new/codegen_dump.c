@@ -33,6 +33,10 @@ codeblock_t         *codegen_current_executing_block  = NULL;
 static uint64_t      codegen_last_block_entry_tsc     = 0;
 static uint64_t      codegen_last_block_callouts      = 0;
 
+static bdump_rt_sample_t *rt_sample_series            = NULL;
+static uint32_t           rt_sample_capacity          = 0;
+static uint32_t           rt_sample_cumulative_ms     = 0;
+
 #define MAX_DUMP_CHUNKS 32
 typedef struct dump_chunk_t {
     const uint8_t *ptr;
@@ -235,15 +239,24 @@ codegen_dump_close(void)
             buffered_blocks = NULL;
         }
 
-        if (codegen_profile_active) {
+        if (codegen_profile_active || codegen_host_profile.rt_sample_count > 0) {
             codegen_host_profile.rec_type = BDUMP_REC_HOST_PROFILE;
             fwrite(&codegen_host_profile, sizeof(codegen_host_profile), 1, dump_fp);
+            if (codegen_host_profile.rt_series_len > 0 && rt_sample_series) {
+                fwrite(rt_sample_series, sizeof(bdump_rt_sample_t), codegen_host_profile.rt_series_len, dump_fp);
+            }
             fflush(dump_fp);
         }
 
         fclose(dump_fp);
         dump_fp     = NULL;
         dump_active = 0;
+    }
+
+    if (rt_sample_series) {
+        free(rt_sample_series);
+        rt_sample_series   = NULL;
+        rt_sample_capacity = 0;
     }
 
     if (perf_map_active && perf_map_fp) {
@@ -723,4 +736,42 @@ codegen_profile_record_helper_tsc(uint64_t elapsed)
     codegen_host_profile.tsc_c_callout_helper += elapsed;
     if (codegen_current_executing_block)
         codegen_current_executing_block->host_tsc_callouts += elapsed;
+}
+
+void
+codegen_dump_record_rt_sample(int speed_percent, int fps, uint32_t elapsed_ms)
+{
+    rt_sample_cumulative_ms += elapsed_ms;
+
+    if (codegen_host_profile.rt_sample_count == 0) {
+        codegen_host_profile.rt_speed_min = (uint32_t) (speed_percent < 0 ? 0 : speed_percent);
+        codegen_host_profile.rt_speed_max = (uint32_t) (speed_percent < 0 ? 0 : speed_percent);
+    } else {
+        if ((uint32_t) speed_percent < codegen_host_profile.rt_speed_min)
+            codegen_host_profile.rt_speed_min = (uint32_t) (speed_percent < 0 ? 0 : speed_percent);
+        if ((uint32_t) speed_percent > codegen_host_profile.rt_speed_max)
+            codegen_host_profile.rt_speed_max = (uint32_t) (speed_percent < 0 ? 0 : speed_percent);
+    }
+
+    codegen_host_profile.rt_sample_count++;
+    codegen_host_profile.rt_speed_sum += (uint64_t) (speed_percent < 0 ? 0 : speed_percent);
+    if (speed_percent < 100)
+        codegen_host_profile.rt_samples_below_100++;
+
+    if (dump_active || codegen_profile_active) {
+        if (codegen_host_profile.rt_series_len >= rt_sample_capacity) {
+            uint32_t new_cap = rt_sample_capacity ? (rt_sample_capacity * 2) : 128;
+            bdump_rt_sample_t *new_buf = realloc(rt_sample_series, new_cap * sizeof(bdump_rt_sample_t));
+            if (new_buf) {
+                rt_sample_series = new_buf;
+                rt_sample_capacity = new_cap;
+            }
+        }
+        if (rt_sample_series && codegen_host_profile.rt_series_len < rt_sample_capacity) {
+            bdump_rt_sample_t *s = &rt_sample_series[codegen_host_profile.rt_series_len++];
+            s->elapsed_ms    = rt_sample_cumulative_ms;
+            s->speed_percent = (uint16_t) (speed_percent < 0 ? 0 : (speed_percent > 65535 ? 65535 : speed_percent));
+            s->fps           = (uint16_t) (fps < 0 ? 0 : (fps > 65535 ? 65535 : fps));
+        }
+    }
 }

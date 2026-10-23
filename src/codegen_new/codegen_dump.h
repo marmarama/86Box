@@ -129,7 +129,21 @@ typedef struct bdump_host_profile_t {
     uint64_t count_chained_transfers;/* Number of direct block-to-block transfers */
     uint64_t count_mem_slow_loads;   /* Number of TLB-miss / MMIO / misaligned C read calls */
     uint64_t count_mem_slow_stores;  /* Number of TLB-miss / MMIO / misaligned C write calls */
+    /* Real-Time (RT) Emulation Speed Telemetry */
+    uint32_t rt_sample_count;        /* Total number of RT speed samples logged */
+    uint32_t rt_speed_min;           /* Minimum recorded % RT (e.g. 18) */
+    uint32_t rt_speed_max;           /* Maximum recorded % RT (e.g. 105) */
+    uint32_t rt_samples_below_100;   /* Number of samples where % RT < 100 */
+    uint64_t rt_speed_sum;           /* Cumulative sum of % RT values (average = sum / count) */
+    uint32_t rt_series_len;          /* Number of trailing bdump_rt_sample_t entries */
+    uint32_t reserved2;              /* 8-byte alignment padding */
 } bdump_host_profile_t;
+
+typedef struct bdump_rt_sample_t {
+    uint32_t elapsed_ms;             /* Cumulative elapsed ms since emulation started */
+    uint16_t speed_percent;          /* Emulation speed percentage (e.g. 100, 70, 18) */
+    uint16_t fps;                    /* Frames executed in the sample interval */
+} bdump_rt_sample_t;
 
 #pragma pack(pop)
 
@@ -184,6 +198,7 @@ void codegen_dump_perf_map_symbol(uintptr_t addr, size_t size, const char *name)
 
 void codegen_dump_enter_block(codeblock_t *block);
 void codegen_profile_exit_chain(void);
+void codegen_dump_record_rt_sample(int speed_percent, int fps, uint32_t elapsed_ms);
 
 uint8_t  codegen_profile_readmembl(uint32_t a);
 uint16_t codegen_profile_readmemwl(uint32_t a);
