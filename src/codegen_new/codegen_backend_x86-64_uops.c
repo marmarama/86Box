@@ -20,6 +20,7 @@
 #    include "codegen.h"
 #    include "codegen_allocator.h"
 #    include "codegen_backend.h"
+#    include "codegen_dump.h"
 #    include "codegen_backend_x86-64_defs.h"
 #    include "codegen_backend_x86-64_ops_helpers.h"
 #    include "codegen_backend_x86-64_ops.h"
@@ -230,12 +231,23 @@ codegen_CALL_FUNC_RESULT(codeblock_t *block, uop_t *uop)
 static int
 codegen_CALL_INSTRUCTION_FUNC(codeblock_t *block, uop_t *uop)
 {
+    if (codegen_profile_active) {
 #    if _WIN64
-    host_x86_MOV32_REG_IMM(block, REG_ECX, uop->imm_data);
+        host_x86_MOV32_REG_IMM(block, REG_ECX, uop->imm_data);
+        host_x86_MOV64_REG_IMM(block, REG_RDX, (uint64_t) (uintptr_t) uop->p);
 #    else
-    host_x86_MOV32_REG_IMM(block, REG_EDI, uop->imm_data);
+        host_x86_MOV32_REG_IMM(block, REG_EDI, uop->imm_data);
+        host_x86_MOV64_REG_IMM(block, REG_RSI, (uint64_t) (uintptr_t) uop->p);
 #    endif
-    host_x86_CALL(block, uop->p);
+        host_x86_CALL(block, (void *) codegen_profile_call_instruction_func);
+    } else {
+#    if _WIN64
+        host_x86_MOV32_REG_IMM(block, REG_ECX, uop->imm_data);
+#    else
+        host_x86_MOV32_REG_IMM(block, REG_EDI, uop->imm_data);
+#    endif
+        host_x86_CALL(block, uop->p);
+    }
     host_x86_TEST32_REG(block, REG_EAX, REG_EAX);
     host_x86_JNZ(block, codegen_exit_rout);
 

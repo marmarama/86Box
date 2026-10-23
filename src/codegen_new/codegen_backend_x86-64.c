@@ -15,6 +15,7 @@
 #    include "codegen_backend_x86-64_ops.h"
 #    include "codegen_backend_x86-64_ops_helpers.h"
 #    include "codegen_backend_x86-64_ops_sse.h"
+#    include "codegen_dump.h"
 #    include "codegen_reg.h"
 #    include "x86.h"
 #    include "x86seg_common.h"
@@ -152,20 +153,20 @@ build_load_routine(codeblock_t *block, int size, int is_float)
     host_x86_MOV32_REG_REG(block, REG_EDI, REG_ECX);
 #    endif
     if (size == 1 && !is_float) {
-        host_x86_CALL(block, (void *) readmembl);
+        host_x86_CALL(block, codegen_profile_active ? (void *) codegen_profile_readmembl : (void *) readmembl);
         host_x86_MOVZX_REG_32_8(block, REG_ECX, REG_EAX);
     } else if (size == 2 && !is_float) {
-        host_x86_CALL(block, (void *) readmemwl);
+        host_x86_CALL(block, codegen_profile_active ? (void *) codegen_profile_readmemwl : (void *) readmemwl);
         host_x86_MOVZX_REG_32_16(block, REG_ECX, REG_EAX);
     } else if (size == 4 && !is_float) {
-        host_x86_CALL(block, (void *) readmemll);
+        host_x86_CALL(block, codegen_profile_active ? (void *) codegen_profile_readmemll : (void *) readmemll);
         host_x86_MOV32_REG_REG(block, REG_ECX, REG_EAX);
     } else if (size == 4 && is_float) {
-        host_x86_CALL(block, (void *) readmemll);
+        host_x86_CALL(block, codegen_profile_active ? (void *) codegen_profile_readmemll : (void *) readmemll);
         host_x86_MOVD_XREG_REG(block, REG_XMM_TEMP, REG_EAX);
         host_x86_CVTSS2SD_XREG_XREG(block, REG_XMM_TEMP, REG_XMM_TEMP);
     } else if (size == 8) {
-        host_x86_CALL(block, (void *) readmemql);
+        host_x86_CALL(block, codegen_profile_active ? (void *) codegen_profile_readmemql : (void *) readmemql);
         host_x86_MOVQ_XREG_REG(block, REG_XMM_TEMP, REG_RAX);
     }
 #    if _WIN64
@@ -268,13 +269,13 @@ build_store_routine(codeblock_t *block, int size, int is_float)
         host_x86_MOV32_REG_REG(block, REG_ESI, REG_ECX); // data
 #    endif
     if (size == 1)
-        host_x86_CALL(block, (void *) writemembl);
+        host_x86_CALL(block, codegen_profile_active ? (void *) codegen_profile_writemembl : (void *) writemembl);
     else if (size == 2)
-        host_x86_CALL(block, (void *) writememwl);
+        host_x86_CALL(block, codegen_profile_active ? (void *) codegen_profile_writememwl : (void *) writememwl);
     else if (size == 4)
-        host_x86_CALL(block, (void *) writememll);
+        host_x86_CALL(block, codegen_profile_active ? (void *) codegen_profile_writememll : (void *) writememll);
     else if (size == 8)
-        host_x86_CALL(block, (void *) writememql);
+        host_x86_CALL(block, codegen_profile_active ? (void *) codegen_profile_writememql : (void *) writememql);
 #    if _WIN64
     host_x86_ADD64_REG_IMM(block, REG_RSP, 0x28);
 #    else
@@ -376,6 +377,11 @@ codegen_backend_init(void)
     host_x86_POP(block, REG_RBP);
     host_x86_POP(block, REG_RBX);
     host_x86_RET(block);
+
+    if (codegen_dump_perf_map_active()) {
+        codegen_dump_perf_map_symbol((uintptr_t) codegen_gpf_rout, (uintptr_t) codegen_exit_rout - (uintptr_t) codegen_gpf_rout, "jit_gpf_rout");
+        codegen_dump_perf_map_symbol((uintptr_t) codegen_exit_rout, (uintptr_t) &block_write_data[block_pos] - (uintptr_t) codegen_exit_rout, "jit_exit_rout");
+    }
 
     block_write_data = NULL;
 

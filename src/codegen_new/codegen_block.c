@@ -27,6 +27,7 @@
 #include "codegen_accumulate.h"
 #include "codegen_allocator.h"
 #include "codegen_backend.h"
+#include "codegen_dump.h"
 #include "codegen_ir.h"
 #include "codegen_reg.h"
 #include "codegen_ops_branch.h"
@@ -227,6 +228,7 @@ block_free_list_get(void)
 void
 codegen_init(void)
 {
+    codegen_dump_init();
     codegen_check_regs();
     codegen_allocator_init();
 
@@ -766,6 +768,9 @@ delete_block(codeblock_t *block)
 {
     uint32_t old_pc = block->pc;
 
+    if (codegen_dump_is_active() && (block->flags & CODEBLOCK_WAS_RECOMPILED))
+        codegen_dump_exec_block(block, 2);
+
     if (block == &codeblock[codeblock_hash[HASH(block->phys)]])
         codeblock_hash[HASH(block->phys)] = BLOCK_INVALID;
 
@@ -790,6 +795,9 @@ delete_block(codeblock_t *block)
 static void
 delete_dirty_block(codeblock_t *block)
 {
+    if (codegen_dump_is_active() && (block->flags & CODEBLOCK_WAS_RECOMPILED))
+        codegen_dump_exec_block(block, 1);
+
     if (block == &codeblock[codeblock_hash[HASH(block->phys)]])
         codeblock_hash[HASH(block->phys)] = BLOCK_INVALID;
 
@@ -944,6 +952,9 @@ codegen_block_start_recompile(codeblock_t *block)
     if (block->pc != cs + cpu_state.pc || (block->flags & CODEBLOCK_WAS_RECOMPILED))
         fatal("Recompile to used block!\n");
 #endif
+
+    if (codegen_dump_is_active() && (block->flags & CODEBLOCK_WAS_RECOMPILED))
+        codegen_dump_exec_block(block, 1);
 
     codegen_unlink_block(block);
     block->exit_type = BLOCK_EXIT_NONE;

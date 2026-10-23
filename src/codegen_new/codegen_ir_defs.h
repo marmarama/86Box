@@ -1,6 +1,7 @@
 #ifndef _CODEGEN_IR_DEFS_
 #define _CODEGEN_IR_DEFS_
 
+#include <86box/plat_unused.h>
 #include "codegen_reg.h"
 #include "x86_flags.h"
 

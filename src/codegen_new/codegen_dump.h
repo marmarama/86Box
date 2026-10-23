@@ -1,0 +1,193 @@
+#ifndef CODEGEN_DUMP_H
+#define CODEGEN_DUMP_H
+
+#include <stdint.h>
+#include <stddef.h>
+#include <86box/plat_unused.h>
+#include "codegen.h"
+#include "codegen_backend.h"
+#include "codegen_ir.h"
+
+#define BDUMP_MAGIC   0x44423638U /* "86BD" */
+#define BDUMP_VERSION 1
+
+enum bdump_host_arch {
+    BDUMP_ARCH_X86_64      = 1,
+    BDUMP_ARCH_ARM64       = 2,
+    BDUMP_ARCH_LOONGARCH64 = 3
+};
+
+#if defined(__x86_64__) || defined(_M_X64)
+#    define BDUMP_CURRENT_ARCH BDUMP_ARCH_X86_64
+#elif defined(__aarch64__) || defined(_M_ARM64)
+#    define BDUMP_CURRENT_ARCH BDUMP_ARCH_ARM64
+#elif defined(__loongarch_lp64)
+#    define BDUMP_CURRENT_ARCH BDUMP_ARCH_LOONGARCH64
+#else
+#    define BDUMP_CURRENT_ARCH 0
+#endif
+
+enum bdump_record_type {
+    BDUMP_REC_COMPILE      = 1,
+    BDUMP_REC_EXEC         = 2,
+    BDUMP_REC_HOST_PROFILE = 3
+};
+
+#pragma pack(push, 1)
+
+typedef struct bdump_file_header_t {
+    uint32_t magic;            /* BDUMP_MAGIC */
+    uint16_t version;          /* BDUMP_VERSION */
+    uint16_t host_arch;        /* bdump_host_arch */
+    uint64_t cpu_state_addr;   /* Base address of cpu_state */
+    uint64_t readlookup2_addr; /* Base address of readlookup2 */
+    uint64_t ram_addr;         /* Base address of guest ram[] */
+    uint16_t symbol_count;     /* Number of bdump_symbol_entry_t entries following header */
+} bdump_file_header_t;
+
+typedef struct bdump_symbol_entry_t {
+    int32_t offset;            /* Offset relative to cpu_state (signed) */
+    char    name[28];          /* Null-terminated field name */
+} bdump_symbol_entry_t;
+
+typedef struct bdump_compile_record_t {
+    uint8_t  rec_type;         /* BDUMP_REC_COMPILE */
+    uint8_t  exit_type;        /* BLOCK_EXIT_NONE / DIRECT_1 / COND_2 / RET */
+    uint16_t block_nr;         /* Index in codeblock[] */
+    uint32_t compile_seq;      /* Monotonic compilation ID */
+    uint32_t pc;               /* Linear entry address (cs + eip) */
+    uint32_t _cs;              /* CS base */
+    uint32_t phys;             /* Physical entry address */
+    uint32_t phys_2;           /* Second page physical address */
+    uint32_t status;           /* cpu_cur_status */
+    uint16_t flags;            /* CODEBLOCK_HAS_FPU, STATIC_TOP, etc. */
+    uint8_t  top;              /* block->TOP at compile time */
+    uint8_t  unroll_count;     /* Loop unroll factor */
+    uint16_t guest_insn_count; /* block->ins */
+    uint16_t guest_byte_len;   /* Number of raw guest x86 bytes */
+    uint16_t uop_count;        /* ir->wr_pos */
+    uint16_t host_byte_len;    /* Emitted host machine code length */
+    uint16_t prologue_end_off; /* Host byte offset where prologue ends */
+    uint16_t epilogue_pos_off; /* Host byte offset where epilogue begins */
+    uint64_t host_code_addr;   /* Runtime pointer to block_write_data */
+    uint64_t page_mask;        /* Dirty mask page 1 */
+    uint64_t page_mask2;       /* Dirty mask page 2 */
+} bdump_compile_record_t;
+
+typedef struct bdump_insn_span_t {
+    uint16_t guest_off;        /* Byte offset into guest_bytes[] */
+    uint8_t  guest_len;        /* Byte length of this guest x86 instruction */
+    uint8_t  op_32;            /* Effective operand/address size flags */
+} bdump_insn_span_t;
+
+typedef struct bdump_uop_entry_t {
+    uint32_t orig_type;        /* uOp type before peephole/DSE */
+    uint32_t final_type;       /* uOp type after peephole/DSE */
+    uint32_t imm_data;         /* Immediate payload */
+    uint64_t func_ptr;         /* Target C helper or instruction pointer */
+    uint16_t dest_reg_a;       /* ir_reg_t.reg */
+    uint16_t src_reg_a;
+    uint16_t src_reg_b;
+    uint16_t src_reg_c;
+    int16_t  dest_host_reg;    /* Allocated host reg (uop->dest_reg_a_real) */
+    int16_t  src_host_reg_a;
+    int16_t  src_host_reg_b;
+    int16_t  src_host_reg_c;
+    uint16_t guest_insn_idx;   /* Index into guest_insns[] */
+    uint16_t host_start_off;   /* Start of barrier/allocator glue */
+    uint16_t host_body_off;    /* Start of uOp handler emission */
+    uint16_t host_end_off;     /* End of uOp emission */
+} bdump_uop_entry_t;
+
+typedef struct bdump_exec_record_t {
+    uint8_t  rec_type;         /* BDUMP_REC_EXEC */
+    uint8_t  invalidate_reason;/* 0 = VM exit, 1 = SMC dirty flush, 2 = eviction */
+    uint16_t block_nr;
+    uint32_t compile_seq;      /* Matches bdump_compile_record_t.compile_seq */
+    uint64_t exec_count;       /* Number of times this block was entered */
+    uint64_t host_tsc_total;   /* Inclusive host TSC cycles spent in this block */
+    uint64_t host_tsc_callouts;/* Host TSC cycles spent in C callouts from this block */
+    uint32_t link0_target_pc;
+    uint32_t link1_target_pc;
+    uint16_t link0_target_blk;
+    uint16_t link1_target_blk;
+} bdump_exec_record_t;
+
+typedef struct bdump_host_profile_t {
+    uint8_t  rec_type;               /* BDUMP_REC_HOST_PROFILE */
+    uint8_t  reserved[7];
+    uint64_t tsc_total_cpu_thread;   /* Total host TSC cycles in exec386_dynarec_dyn() */
+    uint64_t tsc_jit_pure;           /* Pure native JIT execution (excluding C callouts) */
+    uint64_t tsc_c_callout_mem_io;   /* Intra-block C slow-path loads/stores (MMIO, SVGA VRAM) */
+    uint64_t tsc_c_callout_insn_fn;  /* Intra-block UOP_CALL_INSTRUCTION_FUNC (IN/OUT, INT, etc.) */
+    uint64_t tsc_c_callout_helper;   /* Intra-block UOP_CALL_FUNC (flags_rebuild, FPU helpers) */
+    uint64_t tsc_c_dispatcher;       /* C dispatch loop (hash probe, dirty checks, linking) */
+    uint64_t tsc_c_compiler;         /* JIT compilation, IR passes, and block unlinking */
+    uint64_t tsc_c_interp_fallback;  /* Full-interpreter blocks (!block->valid / SMC fallback) */
+    uint64_t tsc_c_timers_devices;   /* timer_process_inline(), IRQ/NMI handling, DMA */
+    uint64_t count_c_dispatch_loops; /* Number of returns to the C outer loop */
+    uint64_t count_chained_transfers;/* Number of direct block-to-block transfers */
+    uint64_t count_mem_slow_loads;   /* Number of TLB-miss / MMIO / misaligned C read calls */
+    uint64_t count_mem_slow_stores;  /* Number of TLB-miss / MMIO / misaligned C write calls */
+} bdump_host_profile_t;
+
+#pragma pack(pop)
+
+#if defined(__x86_64__) || defined(_M_X64)
+#    if defined(_MSC_VER)
+#        include <intrin.h>
+#        define host_rdtsc() __rdtsc()
+#    else
+#        include <x86intrin.h>
+#        define host_rdtsc() __rdtsc()
+#    endif
+#elif defined(__aarch64__) || defined(_M_ARM64)
+static inline uint64_t host_rdtsc(void) {
+    uint64_t val;
+    asm volatile("mrs %0, cntvct_el0" : "=r"(val));
+    return val;
+}
+#elif defined(__loongarch_lp64)
+static inline uint64_t host_rdtsc(void) {
+    uint64_t val;
+    asm volatile("rdtime.d %0, $zero" : "=r"(val));
+    return val;
+}
+#else
+static inline uint64_t host_rdtsc(void) {
+    return 0;
+}
+#endif
+
+extern bdump_host_profile_t codegen_host_profile;
+extern int codegen_profile_active;
+extern codeblock_t *codegen_current_executing_block;
+
+void codegen_dump_init(void);
+void codegen_dump_close(void);
+int  codegen_dump_is_active(void);
+int  codegen_dump_perf_map_active(void);
+
+void codegen_dump_compile_block(codeblock_t *block, ir_data_t *ir,
+                                uint16_t prologue_end, uint16_t epilogue_pos,
+                                uint16_t host_len, const uint8_t *host_code,
+                                const uint32_t *orig_uop_types, const uint32_t *orig_uop_imms,
+                                const uint16_t *uop_host_starts, const uint16_t *uop_host_body_starts,
+                                const uint16_t *uop_host_ends);
+
+void codegen_dump_exec_block(codeblock_t *block, uint8_t invalidate_reason);
+void codegen_dump_perf_map_block(codeblock_t *block, const uint8_t *host_code, uint16_t host_len);
+void codegen_dump_perf_map_symbol(uintptr_t addr, size_t size, const char *name);
+
+uint8_t  codegen_profile_readmembl(uint32_t a);
+uint16_t codegen_profile_readmemwl(uint32_t a);
+uint32_t codegen_profile_readmemll(uint32_t a);
+uint64_t codegen_profile_readmemql(uint32_t a);
+void     codegen_profile_writemembl(uint32_t a, uint8_t v);
+void     codegen_profile_writememwl(uint32_t a, uint16_t v);
+void     codegen_profile_writememll(uint32_t a, uint32_t v);
+void     codegen_profile_writememql(uint32_t a, uint64_t v);
+int      codegen_profile_call_instruction_func(uint32_t fetchdat, int (*fn)(uint32_t));
+void     codegen_profile_record_helper_tsc(uint64_t elapsed);
+
+#endif /* CODEGEN_DUMP_H */

@@ -36,6 +36,7 @@
 #    include "codegen.h"
 #    ifdef USE_NEW_DYNAREC
 #        include "codegen_backend.h"
+#        include "codegen_dump.h"
 #    endif
 #endif
 
@@ -495,6 +496,8 @@ dynarec_link_previous_block(codeblock_t *dst_block, uint16_t prev_block_nr, int 
                 !(dst_block->flags & CODEBLOCK_STATIC_TOP) &&
                 !(dst_block->flags & CODEBLOCK_IN_DIRTY_LIST)) {
                 codegen_link_exit(src_block, exit_idx, dst_block);
+                if (codegen_profile_active)
+                    codegen_host_profile.count_chained_transfers++;
             }
         }
     }
@@ -516,6 +519,11 @@ exec386_dynarec_dyn(void)
     uint16_t prev_block_nr = cpu_state.last_block_nr;
     int      prev_exit_idx = cpu_state.last_exit_idx;
     cpu_state.last_block_nr = 0;
+    uint64_t t_dispatch_start = 0;
+    if (codegen_profile_active) {
+        codegen_host_profile.count_c_dispatch_loops++;
+        t_dispatch_start = host_rdtsc();
+    }
 #endif
     uint32_t start_pc  = 0;
     uint32_t phys_addr = get_phys(cs + cpu_state.pc);
@@ -705,15 +713,46 @@ exec386_dynarec_dyn(void)
         codeblock_hash[hash] = block;
 #    else
         dynarec_link_previous_block(block, prev_block_nr, prev_exit_idx);
+        block->exec_count++;
 #    endif
-        inrecomp = 1;
-        code();
+#    ifdef USE_NEW_DYNAREC
+        if (codegen_profile_active) {
+            uint64_t t_now = host_rdtsc();
+            codegen_host_profile.tsc_c_dispatcher += (t_now - t_dispatch_start);
+            codegen_current_executing_block = block;
+            uint64_t t_jit_start = t_now;
+            uint64_t callouts_start = block->host_tsc_callouts;
+            inrecomp = 1;
+            code();
+#        ifdef USE_ACYCS
+            acycs = 0;
+#        endif
+            inrecomp = 0;
+            uint64_t t_jit_end = host_rdtsc();
+            uint64_t jit_elapsed = t_jit_end - t_jit_start;
+            uint64_t callouts_during = block->host_tsc_callouts - callouts_start;
+            block->host_tsc_total += jit_elapsed;
+            if (jit_elapsed > callouts_during)
+                codegen_host_profile.tsc_jit_pure += (jit_elapsed - callouts_during);
+            codegen_current_executing_block = NULL;
+        } else
+#    endif
+        {
+            inrecomp = 1;
+            code();
 #    ifdef USE_ACYCS
-        acycs = 0;
+            acycs = 0;
 #    endif
-        inrecomp = 0;
+            inrecomp = 0;
+        }
     } else if (valid_block && !cpu_state.abrt) {
 #    ifdef USE_NEW_DYNAREC
+        uint64_t t_compiler_start = 0;
+        if (codegen_profile_active) {
+            uint64_t t_now = host_rdtsc();
+            codegen_host_profile.tsc_c_dispatcher += (t_now - t_dispatch_start);
+            t_compiler_start = t_now;
+        }
         start_pc                 = cs + cpu_state.pc;
         const int max_block_size = (block->flags & CODEBLOCK_BYTE_MASK) ? ((128 - 25) - (start_pc & 0x3f)) : 1000;
 #    else
@@ -823,6 +862,11 @@ exec386_dynarec_dyn(void)
             codegen_reset();
 
         codegen_in_recompile = 0;
+#    ifdef USE_NEW_DYNAREC
+        if (codegen_profile_active) {
+            codegen_host_profile.tsc_c_compiler += (host_rdtsc() - t_compiler_start);
+        }
+#    endif
 #    if defined(__APPLE__) && defined(__aarch64__)
         if (__builtin_available(macOS 11.0, *)) {
             pthread_jit_write_protect_np(1);
@@ -831,6 +875,12 @@ exec386_dynarec_dyn(void)
     } else if (!cpu_state.abrt) {
 #    ifdef USE_NEW_DYNAREC
         cpu_state.last_block_nr = 0;
+        uint64_t t_interp_start = 0;
+        if (codegen_profile_active) {
+            uint64_t t_now = host_rdtsc();
+            codegen_host_profile.tsc_c_dispatcher += (t_now - t_dispatch_start);
+            t_interp_start = t_now;
+        }
 #    endif
         /* Mark block but do not recompile */
 #    ifdef USE_NEW_DYNAREC
@@ -932,6 +982,11 @@ exec386_dynarec_dyn(void)
 
         if (x86_was_reset)
             codegen_reset();
+#    ifdef USE_NEW_DYNAREC
+        if (codegen_profile_active) {
+            codegen_host_profile.tsc_c_interp_fallback += (host_rdtsc() - t_interp_start);
+        }
+#    endif
     }
 #    ifdef USE_NEW_DYNAREC
     else {
@@ -964,6 +1019,9 @@ exec386_dynarec(int32_t cycs)
 
         cycles += cyc_period;
         cycles_start = cycles;
+#    ifdef USE_NEW_DYNAREC
+        uint64_t t_thread_start = codegen_profile_active ? host_rdtsc() : 0;
+#    endif
 
         while (cycles > 0) {
             oldcs           = CS;
@@ -1065,8 +1123,16 @@ exec386_dynarec(int32_t cycs)
             }
 
             if (cycdiff > 0) {
-                if (TIMER_VAL_LESS_THAN_VAL(timer_target, (uint64_t) tsc))
-                    timer_process();
+                if (TIMER_VAL_LESS_THAN_VAL(timer_target, (uint64_t) tsc)) {
+#    ifdef USE_NEW_DYNAREC
+                    if (codegen_profile_active) {
+                        uint64_t t_timer_start = host_rdtsc();
+                        timer_process();
+                        codegen_host_profile.tsc_c_timers_devices += (host_rdtsc() - t_timer_start);
+                    } else
+#    endif
+                        timer_process();
+                }
             }
 
 #    ifdef USE_GDBSTUB
@@ -1075,6 +1141,11 @@ exec386_dynarec(int32_t cycs)
 #    endif
         }
 
+#    ifdef USE_NEW_DYNAREC
+        if (codegen_profile_active) {
+            codegen_host_profile.tsc_total_cpu_thread += (host_rdtsc() - t_thread_start);
+        }
+#    endif
         cycles_main -= (cycles_start - cycles);
     }
 }

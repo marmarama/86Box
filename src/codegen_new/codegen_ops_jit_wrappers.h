@@ -17,6 +17,8 @@
 #ifndef CODEGEN_OPS_JIT_WRAPPERS_H
 #define CODEGEN_OPS_JIT_WRAPPERS_H
 
+#include "codegen_dump.h"
+
 #define JIT_WRAPPER __attribute__((noinline, used))
 
 /* --- flags_rebuild family (void → void) --- */
@@ -24,19 +26,37 @@
 static JIT_WRAPPER void
 jit_flags_rebuild(void)
 {
-    flags_rebuild();
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        flags_rebuild();
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        flags_rebuild();
+    }
 }
 
 static JIT_WRAPPER void
 jit_flags_rebuild_c(void)
 {
-    flags_rebuild_c();
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        flags_rebuild_c();
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        flags_rebuild_c();
+    }
 }
 
 static JIT_WRAPPER void
 jit_flags_rebuild_zpna(void)
 {
-    flags_rebuild_zpna();
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        flags_rebuild_zpna();
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        flags_rebuild_zpna();
+    }
 }
 
 /* --- individual flag test functions (void → int) --- */

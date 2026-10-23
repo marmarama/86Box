@@ -1,5 +1,7 @@
 #include "codegen_ir_defs.h"
 
+extern int codegen_unroll_count;
+
 ir_data_t *codegen_ir_init(void);
 
 void codegen_ir_set_unroll(int count, int start, int first_instruction);

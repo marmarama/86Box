@@ -3,6 +3,7 @@
 
 #include <86box/mem.h>
 #include <stddef.h>
+#include "cpu.h"
 #include "x86_ops.h"
 #include "x86_flags.h"
 
@@ -68,12 +69,10 @@ enum {
 
 #define MAX_INSTRUCTION_COUNT 50
 
-struct x86seg_t;
-
 typedef struct codegen_instruction_t {
     uint32_t pc;
     int      op_ssegs;
-    struct x86seg_t *op_ea_seg;
+    x86seg  *op_ea_seg;
     uint32_t op_32;
     int      first_uop;
     int      TOP;
@@ -107,6 +106,8 @@ typedef struct codeblock_t {
     uint16_t dirty_list_last_epoch;
     int      valid;
     uint64_t exec_count;
+    uint64_t host_tsc_total;
+    uint64_t host_tsc_callouts;
     uint32_t compile_seq;
 
     /* Direct block chaining data */

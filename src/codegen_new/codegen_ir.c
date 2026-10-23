@@ -22,7 +22,7 @@ extern int       has_ea;
 static ir_data_t ir_block;
 
 static int codegen_unroll_start;
-static int codegen_unroll_count;
+int        codegen_unroll_count;
 static int codegen_unroll_first_instruction;
 
 ir_data_t *
