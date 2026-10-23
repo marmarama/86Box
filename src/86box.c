@@ -2111,6 +2111,7 @@ pc_run(void)
         numerator     = (int64_t) fps * 100000LL;
         speed_percent = (int) ((numerator + ((int64_t) elapsed_ms * target_fps / 2)) /
                                ((int64_t) elapsed_ms * target_fps));
+        pclog("EMU_SPEED: %d%% (fps=%d, elapsed=%ums)\n", speed_percent, fps, elapsed_ms);
 
 #ifdef __APPLE__
         /* Needed due to modifying the UI on the non-main thread is a big no-no. */
