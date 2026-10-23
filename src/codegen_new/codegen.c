@@ -730,11 +730,25 @@ generate_call:
             if (new_pc && new_pc != -1)
                 uop_MOV_IMM(ir, IREG_pc, new_pc);
 
-            uint32_t insn_end = (new_pc == (uint32_t) -1 && block->exit_type == BLOCK_EXIT_COND_2) ?
-                                block->links[1].target_pc :
-                                (new_pc != (uint32_t) -1 && new_pc != 0 ? new_pc : cpu_state.pc);
+            uint32_t insn_end = cpu_state.pc;
+            if (new_pc != (uint32_t) -1 && new_pc != 0) {
+                insn_end = new_pc;
+            } else if (block->exit_type == BLOCK_EXIT_COND_2) {
+                insn_end = block->links[1].target_pc;
+            } else if (block->exit_type == BLOCK_EXIT_DIRECT_1) {
+                if (opcode == 0xeb)
+                    insn_end = op_pc + 2;
+                else if (opcode == 0xe8 || opcode == 0xe9)
+                    insn_end = op_pc + ((op_32 & 0x100) ? 5 : 3);
+                else
+                    insn_end = op_pc + 1;
+            } else if (block->exit_type == BLOCK_EXIT_RET) {
+                insn_end = op_pc + (opcode == 0xc2 ? 3 : 1);
+            } else {
+                insn_end = op_pc + 1;
+            }
             uint32_t ilen = insn_end - codegen_instructions[block->ins].pc;
-            codegen_instructions[block->ins].len = (uint8_t) (ilen > 0 && ilen <= 15 ? ilen : (op_pc - old_pc));
+            codegen_instructions[block->ins].len = (uint8_t) (ilen > 0 && ilen <= 15 ? ilen : (op_pc + 1 - old_pc));
 
             codegen_endpc = (cs + cpu_state.pc) + 8;
 
@@ -764,6 +778,7 @@ codegen_skip:
     else
         op = op_table[((opcode >> opcode_shift) | op_32) & opcode_mask];
 
+    uint32_t skip_end_pc = op_pc + pc_off;
     if (!test_modrm || (op_table == x86_dynarec_opcodes && opcode_modrm[opcode]) || (op_table == x86_dynarec_opcodes_0f && opcode_0f_modrm[opcode]) || (op_table == x86_dynarec_opcodes_3DNOW)) {
         int stack_offset = 0;
 
@@ -783,6 +798,7 @@ codegen_skip:
         if (cpu_mod != 3 && (op_32 & 0x200)) {
             op_ea_seg = codegen_generate_ea_32_long(ir, op_ea_seg, fetchdat, op_ssegs, &op_pc, stack_offset);
         }
+        skip_end_pc = op_pc + 1;
         op_pc -= pc_off;
     }
 
@@ -824,8 +840,8 @@ codegen_skip:
     codegen_block_ins++;
 #endif
 
-    uint32_t ilen = cpu_state.pc - codegen_instructions[block->ins].pc;
-    codegen_instructions[block->ins].len = (uint8_t) (ilen > 0 && ilen <= 15 ? ilen : (op_pc - old_pc));
+    uint32_t ilen = (op_table == x86_dynarec_opcodes_3DNOW ? next_pc : skip_end_pc) - codegen_instructions[block->ins].pc;
+    codegen_instructions[block->ins].len = (uint8_t) (ilen > 0 && ilen <= 15 ? ilen : (op_pc + 1 - old_pc));
 
     block->ins++;
 

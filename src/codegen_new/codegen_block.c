@@ -957,8 +957,12 @@ codegen_block_start_recompile(codeblock_t *block)
         codegen_dump_exec_block(block, 1);
 
     codegen_unlink_block(block);
-    block->exit_type = BLOCK_EXIT_NONE;
-    block->exit_cond = 0;
+    block->exit_type         = BLOCK_EXIT_NONE;
+    block->exit_cond         = 0;
+    block->exec_count        = 0;
+    block->host_tsc_total    = 0;
+    block->host_tsc_callouts = 0;
+    block->compile_seq       = 0;
 
     if (block->head_mem_block) {
         codegen_allocator_free(block->head_mem_block);

@@ -1,5 +1,7 @@
 #define JMP_LEN_BYTES 5
 
+extern void codegen_dump_record_chunk(const uint8_t *chunk_ptr, uint32_t chunk_len);
+
 static inline uint8_t
 rex_byte(int w, int r, int x, int b)
 {
@@ -95,6 +97,8 @@ codegen_alloc_bytes(codeblock_t *block, int size)
         /*Add a jump instruction to the new block*/
         codegen_addbyte(block, 0xe9); /*JMP*/
         codegen_addlong(block, (uintptr_t) new_ptr - (uintptr_t) &block_write_data[block_pos + 4]);
+
+        codegen_dump_record_chunk(block_write_data, (uint32_t) block_pos);
 
         /*Set write address to start of new block*/
         block_pos        = 0;

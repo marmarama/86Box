@@ -168,16 +168,22 @@ void codegen_dump_close(void);
 int  codegen_dump_is_active(void);
 int  codegen_dump_perf_map_active(void);
 
+void     codegen_dump_begin_block(void);
+void     codegen_dump_record_chunk(const uint8_t *chunk_ptr, uint32_t chunk_len);
+uint16_t codegen_dump_get_pos(uint32_t current_block_pos);
+
 void codegen_dump_compile_block(codeblock_t *block, ir_data_t *ir,
                                 uint16_t prologue_end, uint16_t epilogue_pos,
-                                uint16_t host_len, const uint8_t *host_code,
                                 const uint32_t *orig_uop_types, const uint32_t *orig_uop_imms,
                                 const uint16_t *uop_host_starts, const uint16_t *uop_host_body_starts,
                                 const uint16_t *uop_host_ends);
 
 void codegen_dump_exec_block(codeblock_t *block, uint8_t invalidate_reason);
-void codegen_dump_perf_map_block(codeblock_t *block, const uint8_t *host_code, uint16_t host_len);
+void codegen_dump_perf_map_block(codeblock_t *block);
 void codegen_dump_perf_map_symbol(uintptr_t addr, size_t size, const char *name);
+
+void codegen_dump_enter_block(codeblock_t *block);
+void codegen_profile_exit_chain(void);
 
 uint8_t  codegen_profile_readmembl(uint32_t a);
 uint16_t codegen_profile_readmemwl(uint32_t a);

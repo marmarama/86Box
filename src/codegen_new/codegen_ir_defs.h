@@ -419,6 +419,11 @@ uop_alloc(ir_data_t *ir, uint32_t uop_type)
     uop->src_reg_b  = invalid_ir_reg;
     uop->src_reg_c  = invalid_ir_reg;
 
+    uop->dest_reg_a_real = -1;
+    uop->src_reg_a_real  = -1;
+    uop->src_reg_b_real  = -1;
+    uop->src_reg_c_real  = -1;
+
     uop->pc = cpu_state.oldpc;
     uop->guest_insn_idx = ir->cur_guest_insn_idx;
     uop->guest_pc_off   = ir->cur_guest_pc_off;
@@ -454,7 +459,14 @@ uop_alloc_unroll(ir_data_t *ir, uint32_t uop_type)
     uop->src_reg_b  = invalid_ir_reg;
     uop->src_reg_c  = invalid_ir_reg;
 
+    uop->dest_reg_a_real = -1;
+    uop->src_reg_a_real  = -1;
+    uop->src_reg_b_real  = -1;
+    uop->src_reg_c_real  = -1;
+
     uop->pc = cpu_state.oldpc;
+    uop->guest_insn_idx = ir->cur_guest_insn_idx;
+    uop->guest_pc_off   = ir->cur_guest_pc_off;
 
     uop->jump_dest_uop  = -1;
     uop->jump_list_next = -1;

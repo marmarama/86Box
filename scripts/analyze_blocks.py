@@ -148,11 +148,14 @@ def get_host_reg_name(reg_idx, arch):
     if reg_idx < 0:
         return ""
     if arch == BDUMP_ARCH_X86_64:
-        return HOST_REGS_X86_64.get(reg_idx, f"r{reg_idx}")
+        base_reg = reg_idx & 0xf
+        return HOST_REGS_X86_64.get(base_reg, f"r{base_reg}")
     elif arch == BDUMP_ARCH_ARM64:
-        return HOST_REGS_ARM64.get(reg_idx, f"x{reg_idx}")
+        base_reg = reg_idx & 0x1f
+        return HOST_REGS_ARM64.get(base_reg, f"x{base_reg}")
     elif arch == BDUMP_ARCH_LOONGARCH64:
-        return HOST_REGS_LOONGARCH64.get(reg_idx, f"r{reg_idx}")
+        base_reg = reg_idx & 0x1f
+        return HOST_REGS_LOONGARCH64.get(base_reg, f"r{base_reg}")
     return f"reg{reg_idx}"
 
 class BDumpFile:
@@ -424,7 +427,7 @@ def disassemble_guest_insn(guest_bytes, op_32, pc):
     if not HAVE_CAPSTONE:
         return f".byte " + " ".join(f"{b:02x}" for b in guest_bytes)
 
-    mode = CS_MODE_32 if (op_32 & 0x200) else CS_MODE_16
+    mode = CS_MODE_32 if (op_32 & 2) else CS_MODE_16
     cs = Cs(CS_ARCH_X86, mode)
     cs.detail = False
     insns = list(cs.disasm(guest_bytes, pc))
@@ -496,7 +499,7 @@ def inspect_block(bdump, target_id):
     host_arch = bdump.header["host_arch"]
     arch_str = ARCH_NAMES.get(host_arch, "Unknown")
     exit_str = EXIT_TYPE_NAMES.get(b["exit_type"], f"EXIT_{b['exit_type']}")
-    use32_str = "USE32" if (b["flags"] & 0x200) else "USE16"
+    use32_str = "USE32" if (b["status"] & 1) else "USE16"
 
     # Header banner
     print("=" * 80)
@@ -707,19 +710,24 @@ def run_linter(bdump):
                 allocated_regs.add(uop["dest_reg_a"] & 0xff)
 
         # 4. IREG_cycles Hazard Detector (Bug C-3 pattern)
-        # Check if IREG_cycles (19) is in a host reg across a memory barrier then subbed
+        # Check if IREG_cycles (19) is live in a host reg across a memory op and then modified without a full barrier
         cycles_in_host = False
+        mem_op_with_cached_cycles = False
         for uop in uops:
+            uop_type = uop["final_type"]
+            uop_name = get_uop_name(uop_type)
             if (uop["src_reg_a"] & 0xff) == 19 or (uop["dest_reg_a"] & 0xff) == 19:
                 if uop["dest_host_reg"] >= 0 or uop["src_host_reg_a"] >= 0:
+                    if mem_op_with_cached_cycles and uop_name == "UOP_SUB_IMM" and (uop["dest_reg_a"] & 0xff) == 19:
+                        ireg_cycles_hazards += 1
+                        mem_op_with_cached_cycles = False
                     cycles_in_host = True
-            if uop["final_type"] & 0x08000000: # ORDER_BARRIER
-                # If memory op happened while cycles is cached, did uop_SUB_IMM occur after?
-                pass
-            uop_code = uop["final_type"] & 0xffff
-            if uop_code == 0x38 and (uop["dest_reg_a"] & 0xff) == 19 and cycles_in_host:
-                # Modifying cycles without reg reload
-                pass
+            if uop_type & 0x80000000: # Full UOP_TYPE_BARRIER reloads/invalidates host registers
+                cycles_in_host = False
+                mem_op_with_cached_cycles = False
+            elif uop_name.startswith("UOP_MEM_LOAD_") or uop_name.startswith("UOP_MEM_STORE_"):
+                if cycles_in_host:
+                    mem_op_with_cached_cycles = True
 
         # 5. Host Disassembly Sanity Check
         if HAVE_CAPSTONE and b["host_byte_len"] > 0:
@@ -741,7 +749,11 @@ def run_linter(bdump):
     print(f"   - Spill-then-Reload Occurrences: {intra_block_thrashing:,}")
     print(f"   - Impact: {'[WARNING] High register pressure detected' if intra_block_thrashing > 500 else '[OK] Low register spill rate'}")
     print()
-    print("4. Host Instruction Encoding Sanity:")
+    print("4. IREG_cycles Stale-Register Hazard (Bug C-3 Pattern):")
+    print(f"   - Unreloaded IREG_cycles Across Memory Helpers: {ireg_cycles_hazards}")
+    print(f"   - Status: {'[FAIL] Stale IREG_cycles hazards detected!' if ireg_cycles_hazards > 0 else '[PASS] No stale IREG_cycles hazards'}")
+    print()
+    print("5. Host Instruction Encoding Sanity:")
     print(f"   - Disassembly Failures: {disasm_failures}")
     print(f"   - Status: {'[FAIL] Invalid host opcodes found!' if disasm_failures > 0 else '[PASS] 100% of host code disassembles cleanly'}")
     print("=" * 80)

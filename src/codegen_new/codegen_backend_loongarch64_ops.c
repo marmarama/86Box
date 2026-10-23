@@ -222,6 +222,7 @@ codegen_addlong(codeblock_t *block, uint32_t val)
 static void
 codegen_allocate_new_block(codeblock_t *block)
 {
+    extern void codegen_dump_record_chunk(const uint8_t *chunk_ptr, uint32_t chunk_len);
     /*Current block is full. Allocate a new block*/
     struct mem_block_t *new_block = codegen_allocator_allocate(block->head_mem_block, get_block_nr(block));
     uint8_t            *new_ptr   = codeblock_allocator_get_ptr(new_block);
@@ -236,6 +237,8 @@ codegen_allocate_new_block(codeblock_t *block)
       (recycled continuation slots can sit megabytes away) is truncated
       and the jump lands in never-allocated JIT memory -> SIGILL. */
     *(uint32_t *) &block_write_data[block_pos] = OPCODE_B | br26_packed(offset);
+
+    codegen_dump_record_chunk(block_write_data, (uint32_t) (block_pos + 4));
 
     /*Set write address to start of new block*/
     block_pos        = 0;

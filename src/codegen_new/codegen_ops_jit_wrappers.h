@@ -59,36 +59,47 @@ jit_flags_rebuild_zpna(void)
     }
 }
 
+#define JIT_PROFILE_CALL_RET(type, expr)                  \
+    do {                                                  \
+        if (codegen_profile_active) {                     \
+            uint64_t t0  = host_rdtsc();                  \
+            type     res = (expr);                        \
+            codegen_profile_record_helper_tsc(host_rdtsc() - t0); \
+            return res;                                   \
+        }                                                 \
+        return (expr);                                    \
+    } while (0)
+
 /* --- individual flag test functions (void → int) --- */
 
 static JIT_WRAPPER int
 jit_CF_SET(void)
 {
-    return CF_SET();
+    JIT_PROFILE_CALL_RET(int, CF_SET());
 }
 
 static JIT_WRAPPER int
 jit_NF_SET(void)
 {
-    return NF_SET();
+    JIT_PROFILE_CALL_RET(int, NF_SET());
 }
 
 static JIT_WRAPPER int
 jit_PF_SET(void)
 {
-    return PF_SET();
+    JIT_PROFILE_CALL_RET(int, PF_SET());
 }
 
 static JIT_WRAPPER int
 jit_VF_SET(void)
 {
-    return VF_SET();
+    JIT_PROFILE_CALL_RET(int, VF_SET());
 }
 
 static JIT_WRAPPER int
 jit_ZF_SET(void)
 {
-    return ZF_SET();
+    JIT_PROFILE_CALL_RET(int, ZF_SET());
 }
 
 /* --- condition test functions (void → int) --- */
@@ -96,82 +107,82 @@ jit_ZF_SET(void)
 static JIT_WRAPPER int
 jit_cond_O(void)
 {
-    return VF_SET() ? 1 : 0;
+    JIT_PROFILE_CALL_RET(int, VF_SET() ? 1 : 0);
 }
 static JIT_WRAPPER int
 jit_cond_NO(void)
 {
-    return !VF_SET() ? 1 : 0;
+    JIT_PROFILE_CALL_RET(int, !VF_SET() ? 1 : 0);
 }
 static JIT_WRAPPER int
 jit_cond_B(void)
 {
-    return CF_SET() ? 1 : 0;
+    JIT_PROFILE_CALL_RET(int, CF_SET() ? 1 : 0);
 }
 static JIT_WRAPPER int
 jit_cond_NB(void)
 {
-    return !CF_SET() ? 1 : 0;
+    JIT_PROFILE_CALL_RET(int, !CF_SET() ? 1 : 0);
 }
 static JIT_WRAPPER int
 jit_cond_E(void)
 {
-    return ZF_SET() ? 1 : 0;
+    JIT_PROFILE_CALL_RET(int, ZF_SET() ? 1 : 0);
 }
 static JIT_WRAPPER int
 jit_cond_NE(void)
 {
-    return !ZF_SET() ? 1 : 0;
+    JIT_PROFILE_CALL_RET(int, !ZF_SET() ? 1 : 0);
 }
 static JIT_WRAPPER int
 jit_cond_BE(void)
 {
-    return (CF_SET() || ZF_SET()) ? 1 : 0;
+    JIT_PROFILE_CALL_RET(int, (CF_SET() || ZF_SET()) ? 1 : 0);
 }
 static JIT_WRAPPER int
 jit_cond_NBE(void)
 {
-    return (!CF_SET() && !ZF_SET()) ? 1 : 0;
+    JIT_PROFILE_CALL_RET(int, (!CF_SET() && !ZF_SET()) ? 1 : 0);
 }
 static JIT_WRAPPER int
 jit_cond_S(void)
 {
-    return NF_SET() ? 1 : 0;
+    JIT_PROFILE_CALL_RET(int, NF_SET() ? 1 : 0);
 }
 static JIT_WRAPPER int
 jit_cond_NS(void)
 {
-    return !NF_SET() ? 1 : 0;
+    JIT_PROFILE_CALL_RET(int, !NF_SET() ? 1 : 0);
 }
 static JIT_WRAPPER int
 jit_cond_P(void)
 {
-    return PF_SET() ? 1 : 0;
+    JIT_PROFILE_CALL_RET(int, PF_SET() ? 1 : 0);
 }
 static JIT_WRAPPER int
 jit_cond_NP(void)
 {
-    return !PF_SET() ? 1 : 0;
+    JIT_PROFILE_CALL_RET(int, !PF_SET() ? 1 : 0);
 }
 static JIT_WRAPPER int
 jit_cond_L(void)
 {
-    return ((NF_SET() ? 1 : 0) != (VF_SET() ? 1 : 0)) ? 1 : 0;
+    JIT_PROFILE_CALL_RET(int, ((NF_SET() ? 1 : 0) != (VF_SET() ? 1 : 0)) ? 1 : 0);
 }
 static JIT_WRAPPER int
 jit_cond_NL(void)
 {
-    return ((NF_SET() ? 1 : 0) == (VF_SET() ? 1 : 0)) ? 1 : 0;
+    JIT_PROFILE_CALL_RET(int, ((NF_SET() ? 1 : 0) == (VF_SET() ? 1 : 0)) ? 1 : 0);
 }
 static JIT_WRAPPER int
 jit_cond_LE(void)
 {
-    return (((NF_SET() ? 1 : 0) != (VF_SET() ? 1 : 0)) || ZF_SET()) ? 1 : 0;
+    JIT_PROFILE_CALL_RET(int, (((NF_SET() ? 1 : 0) != (VF_SET() ? 1 : 0)) || ZF_SET()) ? 1 : 0);
 }
 static JIT_WRAPPER int
 jit_cond_NLE(void)
 {
-    return (((NF_SET() ? 1 : 0) == (VF_SET() ? 1 : 0)) && !ZF_SET()) ? 1 : 0;
+    JIT_PROFILE_CALL_RET(int, (((NF_SET() ? 1 : 0) == (VF_SET() ? 1 : 0)) && !ZF_SET()) ? 1 : 0);
 }
 
 /* --- bit scan helpers --- */
@@ -179,13 +190,13 @@ jit_cond_NLE(void)
 static JIT_WRAPPER uint32_t
 jit_bsf(void)
 {
-    return (uint32_t) __builtin_ctz(cpu_state.flags_res);
+    JIT_PROFILE_CALL_RET(uint32_t, (uint32_t) __builtin_ctz(cpu_state.flags_res));
 }
 
 static JIT_WRAPPER uint32_t
 jit_bsr(void)
 {
-    return (uint32_t) (31 - __builtin_clz(cpu_state.flags_res));
+    JIT_PROFILE_CALL_RET(uint32_t, (uint32_t) (31 - __builtin_clz(cpu_state.flags_res)));
 }
 
 #endif /* CODEGEN_OPS_JIT_WRAPPERS_H */

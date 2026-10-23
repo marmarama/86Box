@@ -713,28 +713,26 @@ exec386_dynarec_dyn(void)
         codeblock_hash[hash] = block;
 #    else
         dynarec_link_previous_block(block, prev_block_nr, prev_exit_idx);
-        block->exec_count++;
+        if (!codegen_dump_is_active() && !codegen_profile_active) {
+            block->exec_count++;
+        } else {
+            codegen_current_executing_block = NULL;
+#        if !defined(__x86_64__) && !defined(_M_X64)
+            codegen_dump_enter_block(block);
+#        endif
+        }
 #    endif
 #    ifdef USE_NEW_DYNAREC
         if (codegen_profile_active) {
             uint64_t t_now = host_rdtsc();
             codegen_host_profile.tsc_c_dispatcher += (t_now - t_dispatch_start);
-            codegen_current_executing_block = block;
-            uint64_t t_jit_start = t_now;
-            uint64_t callouts_start = block->host_tsc_callouts;
             inrecomp = 1;
             code();
 #        ifdef USE_ACYCS
             acycs = 0;
 #        endif
             inrecomp = 0;
-            uint64_t t_jit_end = host_rdtsc();
-            uint64_t jit_elapsed = t_jit_end - t_jit_start;
-            uint64_t callouts_during = block->host_tsc_callouts - callouts_start;
-            block->host_tsc_total += jit_elapsed;
-            if (jit_elapsed > callouts_during)
-                codegen_host_profile.tsc_jit_pure += (jit_elapsed - callouts_during);
-            codegen_current_executing_block = NULL;
+            codegen_profile_exit_chain();
         } else
 #    endif
         {
@@ -744,6 +742,10 @@ exec386_dynarec_dyn(void)
             acycs = 0;
 #    endif
             inrecomp = 0;
+#    ifdef USE_NEW_DYNAREC
+            if (codegen_dump_is_active())
+                codegen_profile_exit_chain();
+#    endif
         }
     } else if (valid_block && !cpu_state.abrt) {
 #    ifdef USE_NEW_DYNAREC
@@ -799,6 +801,14 @@ exec386_dynarec_dyn(void)
                 codegen_generate_call(opcode, x86_opcodes[(opcode | cpu_state.op32) & 0x3ff], fetchdat, cpu_state.pc, cpu_state.pc - 1);
 
                 x86_opcodes[(opcode | cpu_state.op32) & 0x3ff](fetchdat);
+
+#    ifdef USE_NEW_DYNAREC
+                if (!cpu_block_end && CS == oldcs && block->ins > 0) {
+                    uint32_t post_len = cpu_state.pc - cpu_state.oldpc;
+                    if (post_len > 0 && post_len <= 15)
+                        codegen_instructions[block->ins - 1].len = (uint8_t) post_len;
+                }
+#    endif
 
                 if (x86_was_reset)
                     break;

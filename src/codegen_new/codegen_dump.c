@@ -27,9 +27,21 @@ static int      dump_active           = 0;
 static int      perf_map_active       = 0;
 static uint32_t compile_seq_counter   = 0;
 
-bdump_host_profile_t codegen_host_profile         = {0};
-int                  codegen_profile_active       = 0;
-codeblock_t         *codegen_current_executing_block = NULL;
+bdump_host_profile_t codegen_host_profile             = {0};
+int                  codegen_profile_active           = 0;
+codeblock_t         *codegen_current_executing_block  = NULL;
+static uint64_t      codegen_last_block_entry_tsc     = 0;
+static uint64_t      codegen_last_block_callouts      = 0;
+
+#define MAX_DUMP_CHUNKS 32
+typedef struct dump_chunk_t {
+    const uint8_t *ptr;
+    uint32_t       len;
+} dump_chunk_t;
+
+static dump_chunk_t dump_chunks[MAX_DUMP_CHUNKS];
+static int          dump_chunk_count = 0;
+static uint32_t     dump_cum_offset  = 0;
 
 static uint32_t dump_pc_start         = 0;
 static uint32_t dump_pc_end           = 0xffffffff;
@@ -242,19 +254,59 @@ codegen_dump_close(void)
 }
 
 void
-codegen_dump_perf_map_block(codeblock_t *block, const uint8_t *host_code, uint16_t host_len)
+codegen_dump_begin_block(void)
 {
-    if (!perf_map_fp || !block)
+    dump_chunk_count = 0;
+    dump_cum_offset  = 0;
+}
+
+void
+codegen_dump_record_chunk(const uint8_t *chunk_ptr, uint32_t chunk_len)
+{
+    if (dump_chunk_count < MAX_DUMP_CHUNKS) {
+        dump_chunks[dump_chunk_count].ptr = chunk_ptr;
+        dump_chunks[dump_chunk_count].len = chunk_len;
+        dump_chunk_count++;
+    }
+    dump_cum_offset += chunk_len;
+}
+
+uint16_t
+codegen_dump_get_pos(uint32_t current_block_pos)
+{
+    uint32_t total = dump_cum_offset + current_block_pos;
+    return (total > 0xffff) ? 0xffff : (uint16_t) total;
+}
+
+void
+codegen_dump_perf_map_block(codeblock_t *block)
+{
+    if (!perf_map_fp || !block || dump_chunk_count <= 0)
         return;
 
     uint16_t block_nr = (codeblock) ? (uint16_t) (block - codeblock) : 0;
-    fprintf(perf_map_fp, "%lx %x jit_b%04u_%04x:%08x_p%08x\n",
-            (unsigned long) (uintptr_t) host_code,
-            (unsigned int) host_len,
-            block_nr,
-            block->_cs >> 4,
-            block->pc - block->_cs,
-            block->phys);
+    for (int i = 0; i < dump_chunk_count; i++) {
+        if (dump_chunks[i].len == 0)
+            continue;
+        if (i == 0) {
+            fprintf(perf_map_fp, "%lx %x jit_b%04u_%04x:%08x_p%08x\n",
+                    (unsigned long) (uintptr_t) dump_chunks[i].ptr,
+                    (unsigned int) dump_chunks[i].len,
+                    block_nr,
+                    block->_cs >> 4,
+                    block->pc - block->_cs,
+                    block->phys);
+        } else {
+            fprintf(perf_map_fp, "%lx %x jit_b%04u_%04x:%08x_p%08x_part%d\n",
+                    (unsigned long) (uintptr_t) dump_chunks[i].ptr,
+                    (unsigned int) dump_chunks[i].len,
+                    block_nr,
+                    block->_cs >> 4,
+                    block->pc - block->_cs,
+                    block->phys,
+                    i);
+        }
+    }
     fflush(perf_map_fp);
 }
 
@@ -274,13 +326,17 @@ codegen_dump_perf_map_symbol(uintptr_t addr, size_t size, const char *name)
 void
 codegen_dump_compile_block(codeblock_t *block, ir_data_t *ir,
                            uint16_t prologue_end, uint16_t epilogue_pos,
-                           uint16_t host_len, const uint8_t *host_code,
                            const uint32_t *orig_uop_types, const uint32_t *orig_uop_imms,
                            const uint16_t *uop_host_starts, const uint16_t *uop_host_body_starts,
                            const uint16_t *uop_host_ends)
 {
     if (!dump_active || !dump_fp || !block || !ir)
         return;
+
+    block->compile_seq       = 0;
+    block->exec_count        = 0;
+    block->host_tsc_total    = 0;
+    block->host_tsc_callouts = 0;
 
     /* Address filters */
     if (dump_pc_filter && (block->pc < dump_pc_start || block->pc > dump_pc_end))
@@ -289,20 +345,26 @@ codegen_dump_compile_block(codeblock_t *block, ir_data_t *ir,
         return;
 
     block->compile_seq = ++compile_seq_counter;
-    block->exec_count  = 0;
 
     uint16_t block_nr = (codeblock) ? (uint16_t) (block - codeblock) : 0;
 
     /* Calculate guest bytes length from instruction spans */
     uint16_t insn_count = block->ins;
     uint16_t guest_bytes_len = 0;
-    if (insn_count > 0) {
-        for (uint16_t i = 0; i < insn_count; i++) {
-            uint8_t len = codegen_instructions[i].len;
-            if (len == 0)
-                len = 1;
-            guest_bytes_len += len;
+    uint8_t  resolved_lens[MAX_INSTRUCTION_COUNT];
+
+    for (uint16_t i = 0; i < insn_count; i++) {
+        uint8_t len = codegen_instructions[i].len;
+        if (i + 1 < insn_count) {
+            uint32_t next_pc = codegen_instructions[i + 1].pc;
+            uint32_t cur_pc  = codegen_instructions[i].pc;
+            if (next_pc > cur_pc && (next_pc - cur_pc) <= 15)
+                len = (uint8_t) (next_pc - cur_pc);
         }
+        if (len == 0 || len > 15)
+            len = 1;
+        resolved_lens[i] = len;
+        guest_bytes_len += len;
     }
     if (guest_bytes_len == 0)
         guest_bytes_len = 1;
@@ -319,13 +381,12 @@ codegen_dump_compile_block(codeblock_t *block, ir_data_t *ir,
         return;
     }
 
+    uint8_t seg_op32 = (block->status & CPU_STATUS_USE32) ? 2 : 0;
     for (uint16_t i = 0; i < insn_count; i++) {
-        uint8_t len = codegen_instructions[i].len;
-        if (len == 0)
-            len = 1;
+        uint8_t len = resolved_lens[i];
         spans[i].guest_off = curr_off;
         spans[i].guest_len = len;
-        spans[i].op_32     = (uint8_t) (codegen_instructions[i].op_32 & 0x300);
+        spans[i].op_32     = seg_op32;
 
         uint32_t insn_lin = block->_cs + codegen_instructions[i].pc;
         for (uint8_t b = 0; b < len; b++) {
@@ -363,6 +424,9 @@ codegen_dump_compile_block(codeblock_t *block, ir_data_t *ir,
         uops[c].host_end_off   = uop_host_ends ? uop_host_ends[c] : 0;
     }
 
+    uint16_t host_len = (dump_cum_offset > 0xffff) ? 0xffff : (uint16_t) dump_cum_offset;
+    const uint8_t *first_chunk_ptr = (dump_chunk_count > 0) ? dump_chunks[0].ptr : NULL;
+
     bdump_compile_record_t rec;
     memset(&rec, 0, sizeof(rec));
     rec.rec_type         = BDUMP_REC_COMPILE;
@@ -383,7 +447,7 @@ codegen_dump_compile_block(codeblock_t *block, ir_data_t *ir,
     rec.host_byte_len    = host_len;
     rec.prologue_end_off = prologue_end;
     rec.epilogue_pos_off = epilogue_pos;
-    rec.host_code_addr   = (uint64_t) (uintptr_t) host_code;
+    rec.host_code_addr   = (uint64_t) (uintptr_t) first_chunk_ptr;
     rec.page_mask        = block->page_mask;
     rec.page_mask2       = block->page_mask2;
 
@@ -409,14 +473,28 @@ codegen_dump_compile_block(codeblock_t *block, ir_data_t *ir,
             ptr += insn_count * sizeof(bdump_insn_span_t);
             memcpy(ptr, uops, uop_count * sizeof(bdump_uop_entry_t));
             ptr += uop_count * sizeof(bdump_uop_entry_t);
-            memcpy(ptr, host_code, host_len);
+            uint32_t copied = 0;
+            for (int i = 0; i < dump_chunk_count && copied < host_len; i++) {
+                uint32_t to_copy = dump_chunks[i].len;
+                if (copied + to_copy > host_len)
+                    to_copy = host_len - copied;
+                memcpy(ptr + copied, dump_chunks[i].ptr, to_copy);
+                copied += to_copy;
+            }
         }
     } else {
         fwrite(&rec, sizeof(rec), 1, dump_fp);
         fwrite(guest_bytes, 1, guest_bytes_len, dump_fp);
         fwrite(spans, sizeof(bdump_insn_span_t), insn_count, dump_fp);
         fwrite(uops, sizeof(bdump_uop_entry_t), uop_count, dump_fp);
-        fwrite(host_code, 1, host_len, dump_fp);
+        uint32_t written = 0;
+        for (int i = 0; i < dump_chunk_count && written < host_len; i++) {
+            uint32_t to_write = dump_chunks[i].len;
+            if (written + to_write > host_len)
+                to_write = host_len - written;
+            fwrite(dump_chunks[i].ptr, 1, to_write, dump_fp);
+            written += to_write;
+        }
         fflush(dump_fp);
     }
 
@@ -428,14 +506,16 @@ codegen_dump_compile_block(codeblock_t *block, ir_data_t *ir,
 void
 codegen_dump_exec_block(codeblock_t *block, uint8_t invalidate_reason)
 {
-    if (!dump_active || !dump_fp || !block)
+    if (!dump_active || !dump_fp || !block || block->compile_seq == 0)
         return;
 
     uint16_t block_nr = (codeblock) ? (uint16_t) (block - codeblock) : 0;
 
     if (dump_min_exec > 0 && buffered_blocks) {
-        if (!buffered_blocks[block_nr].data)
+        if (!buffered_blocks[block_nr].data) {
+            block->compile_seq = 0;
             return;
+        }
 
         if (block->exec_count >= dump_min_exec) {
             fwrite(buffered_blocks[block_nr].data, 1, buffered_blocks[block_nr].total_size, dump_fp);
@@ -461,6 +541,7 @@ codegen_dump_exec_block(codeblock_t *block, uint8_t invalidate_reason)
         free(buffered_blocks[block_nr].data);
         buffered_blocks[block_nr].data       = NULL;
         buffered_blocks[block_nr].total_size = 0;
+        block->compile_seq                   = 0;
     } else {
         bdump_exec_record_t exec_rec;
         memset(&exec_rec, 0, sizeof(exec_rec));
@@ -478,7 +559,50 @@ codegen_dump_exec_block(codeblock_t *block, uint8_t invalidate_reason)
 
         fwrite(&exec_rec, sizeof(exec_rec), 1, dump_fp);
         fflush(dump_fp);
+        block->compile_seq = 0;
     }
+}
+
+void
+codegen_dump_enter_block(codeblock_t *block)
+{
+    if (!block)
+        return;
+
+    if (codegen_profile_active) {
+        uint64_t now = host_rdtsc();
+        if (codegen_current_executing_block) {
+            uint64_t elapsed  = now - codegen_last_block_entry_tsc;
+            uint64_t callouts = codegen_current_executing_block->host_tsc_callouts - codegen_last_block_callouts;
+            codegen_current_executing_block->host_tsc_total += elapsed;
+            if (elapsed > callouts)
+                codegen_host_profile.tsc_jit_pure += (elapsed - callouts);
+            codegen_host_profile.count_chained_transfers++;
+        }
+        block->exec_count++;
+        codegen_current_executing_block = block;
+        codegen_last_block_entry_tsc    = host_rdtsc();
+        codegen_last_block_callouts     = block->host_tsc_callouts;
+    } else {
+        if (codegen_current_executing_block)
+            codegen_host_profile.count_chained_transfers++;
+        block->exec_count++;
+        codegen_current_executing_block = block;
+    }
+}
+
+void
+codegen_profile_exit_chain(void)
+{
+    if (codegen_profile_active && codegen_current_executing_block) {
+        uint64_t now      = host_rdtsc();
+        uint64_t elapsed  = now - codegen_last_block_entry_tsc;
+        uint64_t callouts = codegen_current_executing_block->host_tsc_callouts - codegen_last_block_callouts;
+        codegen_current_executing_block->host_tsc_total += elapsed;
+        if (elapsed > callouts)
+            codegen_host_profile.tsc_jit_pure += (elapsed - callouts);
+    }
+    codegen_current_executing_block = NULL;
 }
 
 uint8_t
