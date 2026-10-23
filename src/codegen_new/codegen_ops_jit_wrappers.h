@@ -199,4 +199,722 @@ jit_bsr(void)
     JIT_PROFILE_CALL_RET(uint32_t, (uint32_t) (31 - __builtin_clz(cpu_state.flags_res)));
 }
 
+/* --- MUL / IMUL / DIV / IDIV helpers --- */
+
+static JIT_WRAPPER void
+jit_mul8(uint32_t dst32)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        uint8_t dst = (uint8_t) dst32;
+        uint16_t tempw = (uint16_t) AL * (uint16_t) dst;
+        AX = tempw;
+        flags_rebuild();
+        if (AH)
+            cpu_state.flags |= (C_FLAG | V_FLAG);
+        else
+            cpu_state.flags &= ~(C_FLAG | V_FLAG);
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        uint8_t dst = (uint8_t) dst32;
+        uint16_t tempw = (uint16_t) AL * (uint16_t) dst;
+        AX = tempw;
+        flags_rebuild();
+        if (AH)
+            cpu_state.flags |= (C_FLAG | V_FLAG);
+        else
+            cpu_state.flags &= ~(C_FLAG | V_FLAG);
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+    }
+}
+
+static JIT_WRAPPER void
+jit_imul8(uint32_t dst32)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        int8_t dst = (int8_t) dst32;
+        int16_t tempws = (int16_t) ((int8_t) AL) * (int16_t) dst;
+        AX = (uint16_t) tempws;
+        flags_rebuild();
+        if (((int16_t) AX >> 7) != 0 && ((int16_t) AX >> 7) != -1)
+            cpu_state.flags |= (C_FLAG | V_FLAG);
+        else
+            cpu_state.flags &= ~(C_FLAG | V_FLAG);
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        int8_t dst = (int8_t) dst32;
+        int16_t tempws = (int16_t) ((int8_t) AL) * (int16_t) dst;
+        AX = (uint16_t) tempws;
+        flags_rebuild();
+        if (((int16_t) AX >> 7) != 0 && ((int16_t) AX >> 7) != -1)
+            cpu_state.flags |= (C_FLAG | V_FLAG);
+        else
+            cpu_state.flags &= ~(C_FLAG | V_FLAG);
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+    }
+}
+
+static JIT_WRAPPER int
+jit_div8(uint32_t dst32)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        uint8_t dst = (uint8_t) dst32;
+        if (dst == 0) {
+            x86de(NULL, 0);
+            codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+            return 1;
+        }
+        uint16_t src16 = AX;
+        uint16_t tempw = src16 / dst;
+        if (tempw & 0xff00) {
+            x86de(NULL, 0);
+            codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+            return 1;
+        }
+        AH = src16 % dst;
+        AL = (uint8_t) tempw;
+        if (!cpu_iscyrix && !is6117) {
+            flags_rebuild();
+            cpu_state.flags |= 0x8D5;
+            cpu_state.flags &= ~1;
+        }
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+        return 0;
+    } else {
+        uint8_t dst = (uint8_t) dst32;
+        if (dst == 0) {
+            x86de(NULL, 0);
+            return 1;
+        }
+        uint16_t src16 = AX;
+        uint16_t tempw = src16 / dst;
+        if (tempw & 0xff00) {
+            x86de(NULL, 0);
+            return 1;
+        }
+        AH = src16 % dst;
+        AL = (uint8_t) tempw;
+        if (!cpu_iscyrix && !is6117) {
+            flags_rebuild();
+            cpu_state.flags |= 0x8D5;
+            cpu_state.flags &= ~1;
+        }
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        return 0;
+    }
+}
+
+static JIT_WRAPPER int
+jit_idiv8(uint32_t dst32)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        int8_t dst = (int8_t) dst32;
+        if (dst == 0) {
+            x86de(NULL, 0);
+            codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+            return 1;
+        }
+        int16_t tempws = (int16_t) AX;
+        int16_t tempw = tempws / dst;
+        if (tempw < -128 || tempw > 127) {
+            x86de(NULL, 0);
+            codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+            return 1;
+        }
+        AH = (uint8_t) (tempws % dst);
+        AL = (uint8_t) tempw;
+        if (!cpu_iscyrix && !is6117) {
+            flags_rebuild();
+            cpu_state.flags |= 0x8D5;
+            cpu_state.flags &= ~1;
+        }
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+        return 0;
+    } else {
+        int8_t dst = (int8_t) dst32;
+        if (dst == 0) {
+            x86de(NULL, 0);
+            return 1;
+        }
+        int16_t tempws = (int16_t) AX;
+        int16_t tempw = tempws / dst;
+        if (tempw < -128 || tempw > 127) {
+            x86de(NULL, 0);
+            return 1;
+        }
+        AH = (uint8_t) (tempws % dst);
+        AL = (uint8_t) tempw;
+        if (!cpu_iscyrix && !is6117) {
+            flags_rebuild();
+            cpu_state.flags |= 0x8D5;
+            cpu_state.flags &= ~1;
+        }
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        return 0;
+    }
+}
+
+static JIT_WRAPPER void
+jit_mul16(uint32_t dst32)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        uint16_t dst = (uint16_t) dst32;
+        uint32_t templ = (uint32_t) AX * (uint32_t) dst;
+        AX = templ & 0xffff;
+        DX = templ >> 16;
+        flags_rebuild();
+        if (DX)
+            cpu_state.flags |= (C_FLAG | V_FLAG);
+        else
+            cpu_state.flags &= ~(C_FLAG | V_FLAG);
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        uint16_t dst = (uint16_t) dst32;
+        uint32_t templ = (uint32_t) AX * (uint32_t) dst;
+        AX = templ & 0xffff;
+        DX = templ >> 16;
+        flags_rebuild();
+        if (DX)
+            cpu_state.flags |= (C_FLAG | V_FLAG);
+        else
+            cpu_state.flags &= ~(C_FLAG | V_FLAG);
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+    }
+}
+
+static JIT_WRAPPER void
+jit_imul16(uint32_t dst32)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        int16_t dst = (int16_t) dst32;
+        int32_t templ = (int32_t) ((int16_t) AX) * (int32_t) dst;
+        AX = templ & 0xffff;
+        DX = templ >> 16;
+        flags_rebuild();
+        if (((int32_t) templ >> 15) != 0 && ((int32_t) templ >> 15) != -1)
+            cpu_state.flags |= (C_FLAG | V_FLAG);
+        else
+            cpu_state.flags &= ~(C_FLAG | V_FLAG);
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        int16_t dst = (int16_t) dst32;
+        int32_t templ = (int32_t) ((int16_t) AX) * (int32_t) dst;
+        AX = templ & 0xffff;
+        DX = templ >> 16;
+        flags_rebuild();
+        if (((int32_t) templ >> 15) != 0 && ((int32_t) templ >> 15) != -1)
+            cpu_state.flags |= (C_FLAG | V_FLAG);
+        else
+            cpu_state.flags &= ~(C_FLAG | V_FLAG);
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+    }
+}
+
+static JIT_WRAPPER int
+jit_div16(uint32_t dst32)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        uint16_t dst = (uint16_t) dst32;
+        if (dst == 0) {
+            x86de(NULL, 0);
+            codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+            return 1;
+        }
+        uint32_t templ = ((uint32_t) DX << 16) | AX;
+        uint32_t templ2 = templ / dst;
+        if (templ2 & 0xffff0000) {
+            x86de(NULL, 0);
+            codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+            return 1;
+        }
+        DX = templ % dst;
+        AX = templ2 & 0xffff;
+        if (!cpu_iscyrix && !is6117)
+            setznp16(AX);
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+        return 0;
+    } else {
+        uint16_t dst = (uint16_t) dst32;
+        if (dst == 0) {
+            x86de(NULL, 0);
+            return 1;
+        }
+        uint32_t templ = ((uint32_t) DX << 16) | AX;
+        uint32_t templ2 = templ / dst;
+        if (templ2 & 0xffff0000) {
+            x86de(NULL, 0);
+            return 1;
+        }
+        DX = templ % dst;
+        AX = templ2 & 0xffff;
+        if (!cpu_iscyrix && !is6117)
+            setznp16(AX);
+        return 0;
+    }
+}
+
+static JIT_WRAPPER int
+jit_idiv16(uint32_t dst32)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        int16_t dst = (int16_t) dst32;
+        if (dst == 0) {
+            x86de(NULL, 0);
+            codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+            return 1;
+        }
+        int32_t tempws = (int32_t) (((uint32_t) DX << 16) | AX);
+        int32_t templ2 = tempws / dst;
+        if (templ2 < -32768 || templ2 > 32767) {
+            x86de(NULL, 0);
+            codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+            return 1;
+        }
+        DX = (uint16_t) (tempws % dst);
+        AX = templ2 & 0xffff;
+        if (!cpu_iscyrix && !is6117)
+            setznp16(AX);
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+        return 0;
+    } else {
+        int16_t dst = (int16_t) dst32;
+        if (dst == 0) {
+            x86de(NULL, 0);
+            return 1;
+        }
+        int32_t tempws = (int32_t) (((uint32_t) DX << 16) | AX);
+        int32_t templ2 = tempws / dst;
+        if (templ2 < -32768 || templ2 > 32767) {
+            x86de(NULL, 0);
+            return 1;
+        }
+        DX = (uint16_t) (tempws % dst);
+        AX = templ2 & 0xffff;
+        if (!cpu_iscyrix && !is6117)
+            setznp16(AX);
+        return 0;
+    }
+}
+
+static JIT_WRAPPER void
+jit_mul32(uint32_t dst)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        uint64_t temp64 = (uint64_t) EAX * (uint64_t) dst;
+        EAX = temp64 & 0xffffffff;
+        EDX = temp64 >> 32;
+        flags_rebuild();
+        if (EDX)
+            cpu_state.flags |= (C_FLAG | V_FLAG);
+        else
+            cpu_state.flags &= ~(C_FLAG | V_FLAG);
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        uint64_t temp64 = (uint64_t) EAX * (uint64_t) dst;
+        EAX = temp64 & 0xffffffff;
+        EDX = temp64 >> 32;
+        flags_rebuild();
+        if (EDX)
+            cpu_state.flags |= (C_FLAG | V_FLAG);
+        else
+            cpu_state.flags &= ~(C_FLAG | V_FLAG);
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+    }
+}
+
+static JIT_WRAPPER void
+jit_imul32(uint32_t dst32)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        int32_t dst = (int32_t) dst32;
+        int64_t temp64 = (int64_t) (int32_t) EAX * (int64_t) dst;
+        EAX = temp64 & 0xffffffff;
+        EDX = temp64 >> 32;
+        flags_rebuild();
+        if (((int64_t) temp64 >> 31) != 0 && ((int64_t) temp64 >> 31) != -1)
+            cpu_state.flags |= (C_FLAG | V_FLAG);
+        else
+            cpu_state.flags &= ~(C_FLAG | V_FLAG);
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        int32_t dst = (int32_t) dst32;
+        int64_t temp64 = (int64_t) (int32_t) EAX * (int64_t) dst;
+        EAX = temp64 & 0xffffffff;
+        EDX = temp64 >> 32;
+        flags_rebuild();
+        if (((int64_t) temp64 >> 31) != 0 && ((int64_t) temp64 >> 31) != -1)
+            cpu_state.flags |= (C_FLAG | V_FLAG);
+        else
+            cpu_state.flags &= ~(C_FLAG | V_FLAG);
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+    }
+}
+
+static JIT_WRAPPER int
+jit_div32(uint32_t dst)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        if (divl(dst)) {
+            codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+            return 1;
+        }
+        if (!cpu_iscyrix && !is6117)
+            setznp32(EAX);
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+        return 0;
+    } else {
+        if (divl(dst))
+            return 1;
+        if (!cpu_iscyrix && !is6117)
+            setznp32(EAX);
+        return 0;
+    }
+}
+
+static JIT_WRAPPER int
+jit_idiv32(uint32_t dst32)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        if (idivl((int32_t) dst32)) {
+            codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+            return 1;
+        }
+        if (!cpu_iscyrix && !is6117)
+            setznp32(EAX);
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+        return 0;
+    } else {
+        if (idivl((int32_t) dst32))
+            return 1;
+        if (!cpu_iscyrix && !is6117)
+            setznp32(EAX);
+        return 0;
+    }
+}
+
+/* --- RCL / RCR helpers --- */
+
+static JIT_WRAPPER uint32_t
+jit_rcl8(uint32_t val32, uint32_t count32)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        uint8_t count = count32 & 0x1f;
+        count %= 9;
+        if (!count) {
+            codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+            return val32 & 0xff;
+        }
+        flags_rebuild();
+        uint8_t val = (uint8_t) val32;
+        int temp2 = cpu_state.flags & C_FLAG;
+        while (count > 0) {
+            int tempc = temp2 ? 1 : 0;
+            temp2 = val & 0x80;
+            val = (val << 1) | tempc;
+            count--;
+        }
+        cpu_state.flags &= ~(C_FLAG | V_FLAG);
+        if (temp2)
+            cpu_state.flags |= C_FLAG;
+        if ((cpu_state.flags & C_FLAG) ^ (val >> 7))
+            cpu_state.flags |= V_FLAG;
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+        return val;
+    } else {
+        uint8_t count = count32 & 0x1f;
+        count %= 9;
+        if (!count)
+            return val32 & 0xff;
+        flags_rebuild();
+        uint8_t val = (uint8_t) val32;
+        int temp2 = cpu_state.flags & C_FLAG;
+        while (count > 0) {
+            int tempc = temp2 ? 1 : 0;
+            temp2 = val & 0x80;
+            val = (val << 1) | tempc;
+            count--;
+        }
+        cpu_state.flags &= ~(C_FLAG | V_FLAG);
+        if (temp2)
+            cpu_state.flags |= C_FLAG;
+        if ((cpu_state.flags & C_FLAG) ^ (val >> 7))
+            cpu_state.flags |= V_FLAG;
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        return val;
+    }
+}
+
+static JIT_WRAPPER uint32_t
+jit_rcr8(uint32_t val32, uint32_t count32)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        uint8_t count = count32 & 0x1f;
+        count %= 9;
+        if (!count) {
+            codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+            return val32 & 0xff;
+        }
+        flags_rebuild();
+        uint8_t val = (uint8_t) val32;
+        int temp2 = cpu_state.flags & C_FLAG;
+        while (count > 0) {
+            int tempc = temp2 ? 0x80 : 0;
+            temp2 = val & 1;
+            val = (val >> 1) | tempc;
+            count--;
+        }
+        cpu_state.flags &= ~(C_FLAG | V_FLAG);
+        if (temp2)
+            cpu_state.flags |= C_FLAG;
+        if ((val ^ (val >> 1)) & 0x40)
+            cpu_state.flags |= V_FLAG;
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+        return val;
+    } else {
+        uint8_t count = count32 & 0x1f;
+        count %= 9;
+        if (!count)
+            return val32 & 0xff;
+        flags_rebuild();
+        uint8_t val = (uint8_t) val32;
+        int temp2 = cpu_state.flags & C_FLAG;
+        while (count > 0) {
+            int tempc = temp2 ? 0x80 : 0;
+            temp2 = val & 1;
+            val = (val >> 1) | tempc;
+            count--;
+        }
+        cpu_state.flags &= ~(C_FLAG | V_FLAG);
+        if (temp2)
+            cpu_state.flags |= C_FLAG;
+        if ((val ^ (val >> 1)) & 0x40)
+            cpu_state.flags |= V_FLAG;
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        return val;
+    }
+}
+
+static JIT_WRAPPER uint32_t
+jit_rcl16(uint32_t val32, uint32_t count32)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        uint8_t count = count32 & 0x1f;
+        count %= 17;
+        if (!count) {
+            codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+            return val32 & 0xffff;
+        }
+        flags_rebuild();
+        uint16_t val = (uint16_t) val32;
+        int temp2 = cpu_state.flags & C_FLAG;
+        while (count > 0) {
+            int tempc = temp2 ? 1 : 0;
+            temp2 = val & 0x8000;
+            val = (val << 1) | tempc;
+            count--;
+        }
+        cpu_state.flags &= ~(C_FLAG | V_FLAG);
+        if (temp2)
+            cpu_state.flags |= C_FLAG;
+        if ((cpu_state.flags & C_FLAG) ^ (val >> 15))
+            cpu_state.flags |= V_FLAG;
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+        return val;
+    } else {
+        uint8_t count = count32 & 0x1f;
+        count %= 17;
+        if (!count)
+            return val32 & 0xffff;
+        flags_rebuild();
+        uint16_t val = (uint16_t) val32;
+        int temp2 = cpu_state.flags & C_FLAG;
+        while (count > 0) {
+            int tempc = temp2 ? 1 : 0;
+            temp2 = val & 0x8000;
+            val = (val << 1) | tempc;
+            count--;
+        }
+        cpu_state.flags &= ~(C_FLAG | V_FLAG);
+        if (temp2)
+            cpu_state.flags |= C_FLAG;
+        if ((cpu_state.flags & C_FLAG) ^ (val >> 15))
+            cpu_state.flags |= V_FLAG;
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        return val;
+    }
+}
+
+static JIT_WRAPPER uint32_t
+jit_rcr16(uint32_t val32, uint32_t count32)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        uint8_t count = count32 & 0x1f;
+        count %= 17;
+        if (!count) {
+            codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+            return val32 & 0xffff;
+        }
+        flags_rebuild();
+        uint16_t val = (uint16_t) val32;
+        int temp2 = cpu_state.flags & C_FLAG;
+        while (count > 0) {
+            int tempc = temp2 ? 0x8000 : 0;
+            temp2 = val & 1;
+            val = (val >> 1) | tempc;
+            count--;
+        }
+        cpu_state.flags &= ~(C_FLAG | V_FLAG);
+        if (temp2)
+            cpu_state.flags |= C_FLAG;
+        if ((val ^ (val >> 1)) & 0x4000)
+            cpu_state.flags |= V_FLAG;
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+        return val;
+    } else {
+        uint8_t count = count32 & 0x1f;
+        count %= 17;
+        if (!count)
+            return val32 & 0xffff;
+        flags_rebuild();
+        uint16_t val = (uint16_t) val32;
+        int temp2 = cpu_state.flags & C_FLAG;
+        while (count > 0) {
+            int tempc = temp2 ? 0x8000 : 0;
+            temp2 = val & 1;
+            val = (val >> 1) | tempc;
+            count--;
+        }
+        cpu_state.flags &= ~(C_FLAG | V_FLAG);
+        if (temp2)
+            cpu_state.flags |= C_FLAG;
+        if ((val ^ (val >> 1)) & 0x4000)
+            cpu_state.flags |= V_FLAG;
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        return val;
+    }
+}
+
+static JIT_WRAPPER uint32_t
+jit_rcl32(uint32_t val, uint32_t count32)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        uint8_t count = count32 & 0x1f;
+        if (!count) {
+            codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+            return val;
+        }
+        flags_rebuild();
+        int temp2 = cpu_state.flags & C_FLAG;
+        while (count > 0) {
+            int tempc = temp2 ? 1 : 0;
+            temp2 = val & 0x80000000;
+            val = (val << 1) | tempc;
+            count--;
+        }
+        cpu_state.flags &= ~(C_FLAG | V_FLAG);
+        if (temp2)
+            cpu_state.flags |= C_FLAG;
+        if ((cpu_state.flags & C_FLAG) ^ (val >> 31))
+            cpu_state.flags |= V_FLAG;
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+        return val;
+    } else {
+        uint8_t count = count32 & 0x1f;
+        if (!count)
+            return val;
+        flags_rebuild();
+        int temp2 = cpu_state.flags & C_FLAG;
+        while (count > 0) {
+            int tempc = temp2 ? 1 : 0;
+            temp2 = val & 0x80000000;
+            val = (val << 1) | tempc;
+            count--;
+        }
+        cpu_state.flags &= ~(C_FLAG | V_FLAG);
+        if (temp2)
+            cpu_state.flags |= C_FLAG;
+        if ((cpu_state.flags & C_FLAG) ^ (val >> 31))
+            cpu_state.flags |= V_FLAG;
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        return val;
+    }
+}
+
+static JIT_WRAPPER uint32_t
+jit_rcr32(uint32_t val, uint32_t count32)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        uint8_t count = count32 & 0x1f;
+        if (!count) {
+            codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+            return val;
+        }
+        flags_rebuild();
+        int temp2 = cpu_state.flags & C_FLAG;
+        while (count > 0) {
+            uint32_t tempc = temp2 ? 0x80000000 : 0;
+            temp2 = val & 1;
+            val = (val >> 1) | tempc;
+            count--;
+        }
+        cpu_state.flags &= ~(C_FLAG | V_FLAG);
+        if (temp2)
+            cpu_state.flags |= C_FLAG;
+        if ((val ^ (val >> 1)) & 0x40000000)
+            cpu_state.flags |= V_FLAG;
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+        return val;
+    } else {
+        uint8_t count = count32 & 0x1f;
+        if (!count)
+            return val;
+        flags_rebuild();
+        int temp2 = cpu_state.flags & C_FLAG;
+        while (count > 0) {
+            uint32_t tempc = temp2 ? 0x80000000 : 0;
+            temp2 = val & 1;
+            val = (val >> 1) | tempc;
+            count--;
+        }
+        cpu_state.flags &= ~(C_FLAG | V_FLAG);
+        if (temp2)
+            cpu_state.flags |= C_FLAG;
+        if ((val ^ (val >> 1)) & 0x40000000)
+            cpu_state.flags |= V_FLAG;
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        return val;
+    }
+}
+
 #endif /* CODEGEN_OPS_JIT_WRAPPERS_H */

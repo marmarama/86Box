@@ -1106,19 +1106,46 @@ codegen_LOAD_FUNC_ARG0(codeblock_t *block, uop_t *uop)
 #    else
         host_x86_MOVZX_REG_32_16(block, REG_EDI, src_reg);
 #    endif
-    }
-#    ifdef RECOMPILER_DEBUG
-    else
-        fatal("codegen_LOAD_FUNC_ARG0 %02x\n", uop->src_reg_a_real);
+    } else if (REG_IS_B(src_size)) {
+#    if _WIN64
+        host_x86_MOVZX_REG_32_8(block, REG_ECX, src_reg);
+#    else
+        host_x86_MOVZX_REG_32_8(block, REG_EDI, src_reg);
 #    endif
+    } else {
+#    if _WIN64
+        host_x86_MOV32_REG_REG(block, REG_ECX, src_reg);
+#    else
+        host_x86_MOV32_REG_REG(block, REG_EDI, src_reg);
+#    endif
+    }
     return 0;
 }
 static int
-codegen_LOAD_FUNC_ARG1(UNUSED(codeblock_t *block), UNUSED(uop_t *uop))
+codegen_LOAD_FUNC_ARG1(codeblock_t *block, uop_t *uop)
 {
-#    ifdef RECOMPILER_DEBUG
-    fatal("codegen_LOAD_FUNC_ARG1 %02x\n", uop->src_reg_a_real);
+    int src_reg  = HOST_REG_GET(uop->src_reg_a_real);
+    int src_size = IREG_GET_SIZE(uop->src_reg_a_real);
+
+    if (REG_IS_W(src_size)) {
+#    if _WIN64
+        host_x86_MOVZX_REG_32_16(block, REG_EDX, src_reg);
+#    else
+        host_x86_MOVZX_REG_32_16(block, REG_ESI, src_reg);
 #    endif
+    } else if (REG_IS_B(src_size)) {
+#    if _WIN64
+        host_x86_MOVZX_REG_32_8(block, REG_EDX, src_reg);
+#    else
+        host_x86_MOVZX_REG_32_8(block, REG_ESI, src_reg);
+#    endif
+    } else {
+#    if _WIN64
+        host_x86_MOV32_REG_REG(block, REG_EDX, src_reg);
+#    else
+        host_x86_MOV32_REG_REG(block, REG_ESI, src_reg);
+#    endif
+    }
     return 0;
 }
 static int

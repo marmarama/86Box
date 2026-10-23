@@ -893,15 +893,28 @@ codegen_LOAD_FUNC_ARG0(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_W(src_size)) {
         host_arm64_AND_IMM(block, REG_ARG0, src_reg, 0xffff);
-    } else
-        fatal("codegen_LOAD_FUNC_ARG0 %02x\n", uop->src_reg_a_real);
+    } else if (REG_IS_B(src_size)) {
+        host_arm64_AND_IMM(block, REG_ARG0, src_reg, 0xff);
+    } else {
+        host_arm64_MOV_REG(block, REG_ARG0, src_reg);
+    }
 
     return 0;
 }
 static int
 codegen_LOAD_FUNC_ARG1(codeblock_t *block, uop_t *uop)
 {
-    fatal("codegen_LOAD_FUNC_ARG1 %02x\n", uop->src_reg_a_real);
+    int src_reg  = HOST_REG_GET(uop->src_reg_a_real);
+    int src_size = IREG_GET_SIZE(uop->src_reg_a_real);
+
+    if (REG_IS_W(src_size)) {
+        host_arm64_AND_IMM(block, REG_ARG1, src_reg, 0xffff);
+    } else if (REG_IS_B(src_size)) {
+        host_arm64_AND_IMM(block, REG_ARG1, src_reg, 0xff);
+    } else {
+        host_arm64_MOV_REG(block, REG_ARG1, src_reg);
+    }
+
     return 0;
 }
 static int

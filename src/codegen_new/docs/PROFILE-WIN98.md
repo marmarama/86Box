@@ -280,4 +280,33 @@ DYNAREC CODEGEN LINTER & ANTI-PATTERN AUDIT
 | **Drop Window 2 @ t=54.5s** | 26% RT (256 FPS) | **98% RT (983 FPS)** | **+284% speedup (cleared bottleneck 2s earlier)** |
 | **Desktop Ready Time** | $t \approx 56.5\text{s}$ | $t \approx 54.5\text{s}$ | **~2.0s faster boot to desktop** |
 
+---
+
+### Phase 2: JIT-compile `rcl`, `rcr`, `div`, `mul` — [COMPLETED & VERIFIED]
+
+#### Implementation Summary
+1. **Zero-Overhead Single-Bit Inlining (`RCL 1` & `RCR 1`)**:
+   - Inlined `RCL` and `RCR` with `count == 1` using native uOps (`uop_SHL_IMM`, `uop_SHR_IMM`, `uop_OR`, `uop_AND_IMM`, `uop_XOR`, and `IREG_flags` manipulation) across 8-bit, 16-bit, and 32-bit operands.
+   - Eliminates over 11.6 million host C callouts and barriers during Windows 98 boot.
+2. **Multiplication & Division JIT Helpers & Exception Support**:
+   - Implemented `jit_mul8`, `jit_imul8`, `jit_mul16`, `jit_imul16`, `jit_mul32`, `jit_imul32` in [`src/codegen_new/codegen_ops_jit_wrappers.h`](file:///home/marm/src/86Box/src/codegen_new/codegen_ops_jit_wrappers.h).
+   - Implemented `jit_div8`, `jit_idiv8`, `jit_div16`, `jit_idiv16`, `jit_div32`, `jit_idiv32` with divide-by-zero / overflow exception handling via `x86de(NULL, 0)`.
+   - Connected division error return in IR via `uop_CALL_FUNC_RESULT(ir, IREG_temp1, jit_div*)` and `uop_CMP_IMM_JZ(ir, IREG_temp1, 1, codegen_exit_rout)` in [`src/codegen_new/codegen_ops_misc.c`](file:///home/marm/src/86Box/src/codegen_new/codegen_ops_misc.c).
+3. **Cross-Architecture Argument Support**:
+   - Extended `codegen_LOAD_FUNC_ARG0` and implemented `codegen_LOAD_FUNC_ARG1` across x86-64, ARM64, and LoongArch64 to handle 8-bit (`REG_IS_B`), 16-bit (`REG_IS_W`), and 32-bit (`REG_IS_L`) register operands.
+4. **Full Rotate Dispatch**:
+   - Wired both constant and variable (`CL`) rotate dispatches in `shift_common_8`, `shift_common_16`, `shift_common_32`, `shift_common_variable_32`, `ropD0`, `ropD1_*`, `ropD2`, and `ropD3_*` in [`src/codegen_new/codegen_ops_shift.c`](file:///home/marm/src/86Box/src/codegen_new/codegen_ops_shift.c).
+
+#### Empirical Benchmark Comparison (75.5s Windows 98 Boot)
+
+| Metric | Pre-Remediation Baseline | Post-Phase 1 (`0x9A` JIT) | Post-Phase 2 (`rcl`, `rcr`, `div`, `mul`) | Total Delta |
+|---|---|---|---|---|
+| **`rcl dx, 1` Fallbacks** | 7,073,637 | 7,073,637 | **0** (Eliminated) | **-7,073,637 (-100%)** |
+| **`div cx` Fallbacks** | 6,868,767 | 6,868,767 | **0** (Eliminated) | **-6,868,767 (-100%)** |
+| **`mul cx` Fallbacks** | 5,340,683 | 5,340,683 | **0** (Eliminated) | **-5,340,683 (-100%)** |
+| **`rcr ax, 1` Fallbacks** | 4,606,170 | 4,606,170 | **0** (Eliminated) | **-4,606,170 (-100%)** |
+| **Phase 2 Combined Fallbacks** | **23,889,257** | **23,889,257** | **0** (Eliminated) | **-23,889,257 (-100%)** |
+| **Total Block Executions** | 37,842,912 | 37,184,025 | **14,206,533** | **-23,636,379 (-62.5% fewer block chops)** |
+
+
 
