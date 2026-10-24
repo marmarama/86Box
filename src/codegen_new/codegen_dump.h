@@ -236,6 +236,7 @@ void codegen_dump_perf_map_block(codeblock_t *block);
 void codegen_dump_perf_map_symbol(uintptr_t addr, size_t size, const char *name);
 
 void codegen_dump_enter_block(codeblock_t *block);
+void codegen_dump_notify_idle(void);
 void codegen_profile_exit_chain(void);
 void codegen_dump_record_rt_sample(int speed_percent, int fps, uint32_t elapsed_ms);
 

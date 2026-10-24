@@ -1027,6 +1027,20 @@ exec386_dynarec(int32_t cycs)
     while (cycles_main > 0) {
         int32_t cycles_start;
 
+        if (cpu_is_halted && !(nmi && nmi_enable && nmi_mask) && !((cpu_state.flags & I_FLAG) && pic.int_pending) && !smi_line) {
+            int64_t to_timer = (int64_t) (timer_target - tsc);
+            if (to_timer > 0) {
+                int32_t extra = (to_timer < (int64_t) cycles_main) ? (int32_t) to_timer : cycles_main;
+                if (extra > 0) {
+                    cycles_main -= extra;
+                    tsc         += extra;
+                    if (TIMER_VAL_LESS_THAN_VAL(timer_target, (uint64_t) tsc))
+                        timer_process();
+                    continue;
+                }
+            }
+        }
+
         cycles += cyc_period;
         cycles_start = cycles;
 #    ifdef USE_NEW_DYNAREC
@@ -1049,8 +1063,10 @@ exec386_dynarec(int32_t cycs)
             tsc_old          = tsc;
             if (cpu_cache_enabled || cpu_force_interpreter || cpu_override_dynarec || cpu_flush_pending || (!CACHE_ON())) /*Interpret block*/
             {
+                cpu_is_halted = 0;
                 exec386_dynarec_int();
             } else {
+                cpu_is_halted = 0;
                 exec386_dynarec_dyn();
                 /* A CR0 paging toggle ends the block it is in, so it was the
                    last instruction executed. */
@@ -1094,9 +1110,11 @@ exec386_dynarec(int32_t cycs)
                 x86_int(16);
             }
 
-            if (smi_line)
+            if (smi_line) {
+                cpu_is_halted = 0;
                 enter_smm_check(0);
-            else if (nmi && nmi_enable && nmi_mask) {
+            } else if (nmi && nmi_enable && nmi_mask) {
+                cpu_is_halted = 0;
                 oldcs = CS;
                 cpu_state.oldpc = cpu_state.pc;
                 x86_int(2);
@@ -1113,6 +1131,7 @@ exec386_dynarec(int32_t cycs)
             } else if ((cpu_state.flags & I_FLAG) && pic.int_pending) {
                 vector = picinterrupt();
                 if (vector != -1) {
+                    cpu_is_halted = 0;
                     oldcs = CS;
                     cpu_state.oldpc = cpu_state.pc;
                     x86_int(vector);

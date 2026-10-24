@@ -83,6 +83,7 @@ int soft_reset_mask = 0;
 int smi_latched = 0;
 int smm_in_hlt  = 0;
 int smi_block   = 0;
+int cpu_is_halted = 0;
 
 int prefetch_prefixes = 0;
 int rf_flag_no_clear = 0;

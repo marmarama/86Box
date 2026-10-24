@@ -838,6 +838,12 @@ codegen_dump_enter_block(codeblock_t *block)
 }
 
 void
+codegen_dump_notify_idle(void)
+{
+    hang_spin_iterations = 0;
+}
+
+void
 codegen_profile_exit_chain(void)
 {
     if (codegen_profile_active && codegen_current_executing_block) {

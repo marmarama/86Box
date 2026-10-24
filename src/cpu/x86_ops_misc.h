@@ -707,12 +707,39 @@ opHLT(UNUSED(uint32_t fetchdat))
         x86gpf(NULL, 0);
         return 1;
     }
-    if (smi_line)
+    if (smi_line) {
         enter_smm_check(1);
-    else if (!((cpu_state.flags & I_FLAG) && pic.int_pending)) {
-        CLOCK_CYCLES_ALWAYS(100);
-        if (!((cpu_state.flags & I_FLAG) && pic.int_pending))
+    } else if (!(nmi && nmi_enable && nmi_mask) && !((cpu_state.flags & I_FLAG) && pic.int_pending)) {
+#ifdef USE_NEW_DYNAREC
+        extern void codegen_dump_notify_idle(void);
+        codegen_dump_notify_idle();
+#endif
+        int32_t cycles_to_burn = 100;
+
+#ifdef USE_DYNAREC
+        if (is_dynarec_active()) {
+            /* Reconcile any cycles already consumed earlier in this block into tsc */
+            update_tsc();
+        }
+#endif
+        if (cycles > 0) {
+            int64_t cycles_to_timer = (int64_t) (timer_target - tsc);
+
+            if (cycles_to_timer > 0) {
+                cycles_to_burn = (cycles_to_timer < (int64_t) cycles)
+                                     ? (int32_t) cycles_to_timer
+                                     : cycles;
+            } else {
+                cycles_to_burn = 1;
+            }
+        }
+
+        CLOCK_CYCLES_ALWAYS(cycles_to_burn);
+
+        if (!(nmi && nmi_enable && nmi_mask) && !((cpu_state.flags & I_FLAG) && pic.int_pending)) {
             cpu_state.pc--;
+            cpu_is_halted = 1;
+        }
     } else {
         CLOCK_CYCLES(5);
     }

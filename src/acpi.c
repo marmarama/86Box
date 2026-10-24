@@ -22,6 +22,7 @@
 #define HAVE_STDARG_H
 #include <86box/86box.h>
 #include "cpu.h"
+#include <86box/nmi.h>
 #include <86box/device.h>
 #include <86box/mem.h>
 #include <86box/io.h>
@@ -272,6 +273,34 @@ acpi_raise_smi(void *priv, int do_smi)
     }
 }
 
+static void
+acpi_c2_c3_sleep(void)
+{
+    if (smi_line || (nmi && nmi_enable && nmi_mask) || ((cpu_state.flags & I_FLAG) && pic.int_pending))
+        return;
+
+#ifdef USE_NEW_DYNAREC
+    extern void codegen_dump_notify_idle(void);
+    codegen_dump_notify_idle();
+#endif
+
+#ifdef USE_DYNAREC
+    if (is_dynarec_active())
+        update_tsc();
+#endif
+
+    if (cycles > 0) {
+        int64_t to_timer = (int64_t) (timer_target - tsc);
+        if (to_timer > 0) {
+            int32_t cycles_to_burn = (to_timer < (int64_t) cycles) ? (int32_t) to_timer : cycles;
+            cycles -= cycles_to_burn;
+
+            if (!(nmi && nmi_enable && nmi_mask) && !((cpu_state.flags & I_FLAG) && pic.int_pending) && !smi_line)
+                cpu_is_halted = 1;
+        }
+    }
+}
+
 static uint32_t
 acpi_reg_read_common_regs(UNUSED(int size), uint16_t addr, void *priv)
 {
@@ -349,10 +378,12 @@ acpi_reg_read_ali(int size, uint16_t addr, void *priv)
             break;
         case 0x14:
             /* LVL2 - Processor Level 2 Register */
+            acpi_c2_c3_sleep();
             ret = dev->regs.plvl2;
             break;
         case 0x15:
             /* LVL3 - Processor Level 3 Register */
+            acpi_c2_c3_sleep();
             ret = dev->regs.plvl3;
             break;
         case 0x18:
@@ -424,6 +455,16 @@ acpi_reg_read_intel(int size, uint16_t addr, void *priv)
         case 0x13:
             /* PCNTRL - Processor Control Register (IO) */
             ret = (dev->regs.pcntrl >> shift32) & 0xff;
+            break;
+        case 0x14:
+            /* LVL2 - Processor Level 2 Register */
+            acpi_c2_c3_sleep();
+            ret = dev->regs.plvl2;
+            break;
+        case 0x15:
+            /* LVL3 - Processor Level 3 Register */
+            acpi_c2_c3_sleep();
+            ret = dev->regs.plvl3;
             break;
         case 0x18:
         case 0x19:
@@ -509,6 +550,16 @@ acpi_reg_read_via_common(int size, uint16_t addr, void *priv)
         case 0x13:
             /* PCNTRL - Processor Control Register (IO) */
             ret = (dev->regs.pcntrl >> shift32) & 0xff;
+            break;
+        case 0x14:
+            /* LVL2 - Processor Level 2 Register */
+            acpi_c2_c3_sleep();
+            ret = dev->regs.plvl2;
+            break;
+        case 0x15:
+            /* LVL3 - Processor Level 3 Register */
+            acpi_c2_c3_sleep();
+            ret = dev->regs.plvl3;
             break;
         case 0x20:
         case 0x21:
@@ -772,9 +823,11 @@ acpi_reg_read_sis_5582(int size, uint16_t addr, void *priv)
             ret = (dev->regs.reg_0c >> shift32) & 0xff;
             break;
         case 0x10:
+            acpi_c2_c3_sleep();
             ret = dev->regs.enter_c2_ps;
             break;
         case 0x11:
+            acpi_c2_c3_sleep();
             ret = dev->regs.enter_c3_ps;
             break;
         case 0x12:
@@ -863,9 +916,11 @@ acpi_reg_read_sis_5595(int size, uint16_t addr, void *priv)
             ret = (dev->regs.reg_0c >> shift32) & 0xff;
             break;
         case 0x10:
+            acpi_c2_c3_sleep();
             ret = dev->regs.enter_c2_ps;
             break;
         case 0x11:
+            acpi_c2_c3_sleep();
             ret = dev->regs.enter_c3_ps;
             break;
         case 0x12:
