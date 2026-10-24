@@ -60,7 +60,10 @@ enum {
     FLAGS_SBC32,
 
     FLAGS_SHRD16,
-    FLAGS_SHRD32
+    FLAGS_SHRD32,
+
+    FLAGS_IMUL16,
+    FLAGS_IMUL32
 #endif
 };
 
@@ -111,6 +114,8 @@ ZF_SET(void)
         case FLAGS_ROR8:
         case FLAGS_ROR16:
         case FLAGS_ROR32:
+        case FLAGS_IMUL16:
+        case FLAGS_IMUL32:
 #endif
         case FLAGS_UNKNOWN:
             return cpu_state.flags & Z_FLAG;
@@ -180,6 +185,8 @@ NF_SET(void)
         case FLAGS_ROR8:
         case FLAGS_ROR16:
         case FLAGS_ROR32:
+        case FLAGS_IMUL16:
+        case FLAGS_IMUL32:
 #endif
         case FLAGS_UNKNOWN:
             return cpu_state.flags & N_FLAG;
@@ -241,6 +248,8 @@ PF_SET(void)
         case FLAGS_ROR8:
         case FLAGS_ROR16:
         case FLAGS_ROR32:
+        case FLAGS_IMUL16:
+        case FLAGS_IMUL32:
 #endif
         case FLAGS_UNKNOWN:
             return cpu_state.flags & P_FLAG;
@@ -338,6 +347,15 @@ VF_SET(void)
             return ((cpu_state.flags_res ^ cpu_state.flags_op1) & 0x8000) ? 1 : 0;
         case FLAGS_SHRD32:
             return ((cpu_state.flags_res ^ cpu_state.flags_op1) & 0x80000000) ? 1 : 0;
+
+        case FLAGS_IMUL16: {
+            int32_t templ = (int32_t) (int16_t) (uint16_t) cpu_state.flags_op1 * (int32_t) (int16_t) (uint16_t) cpu_state.flags_op2;
+            return ((templ >> 15) != 0 && (templ >> 15) != -1);
+        }
+        case FLAGS_IMUL32: {
+            int64_t temp64 = (int64_t) (int32_t) cpu_state.flags_op1 * (int64_t) (int32_t) cpu_state.flags_op2;
+            return ((temp64 >> 31) != 0 && (temp64 >> 31) != -1);
+        }
 #endif
 
         case FLAGS_UNKNOWN:
@@ -412,6 +430,8 @@ AF_SET(void)
         case FLAGS_ROR8:
         case FLAGS_ROR16:
         case FLAGS_ROR32:
+        case FLAGS_IMUL16:
+        case FLAGS_IMUL32:
 #endif
         case FLAGS_UNKNOWN:
             return cpu_state.flags & A_FLAG;
@@ -498,6 +518,15 @@ CF_SET(void)
             return (cpu_state.flags_res & 0x8000) ? 1 : 0;
         case FLAGS_ROR32:
             return (cpu_state.flags_res & 0x80000000) ? 1 : 0;
+
+        case FLAGS_IMUL16: {
+            int32_t templ = (int32_t) (int16_t) (uint16_t) cpu_state.flags_op1 * (int32_t) (int16_t) (uint16_t) cpu_state.flags_op2;
+            return ((templ >> 15) != 0 && (templ >> 15) != -1);
+        }
+        case FLAGS_IMUL32: {
+            int64_t temp64 = (int64_t) (int32_t) cpu_state.flags_op1 * (int64_t) (int32_t) cpu_state.flags_op2;
+            return ((temp64 >> 31) != 0 && (temp64 >> 31) != -1);
+        }
 #endif
 
         case FLAGS_DEC8:
@@ -586,7 +615,8 @@ flags_rebuild_c(void)
 static __inline int
 flags_res_valid(void)
 {
-    if ((cpu_state.flags_op == FLAGS_UNKNOWN) || ((cpu_state.flags_op >= FLAGS_ROL8) && (cpu_state.flags_op <= FLAGS_ROR32)))
+    if ((cpu_state.flags_op == FLAGS_UNKNOWN) || ((cpu_state.flags_op >= FLAGS_ROL8) && (cpu_state.flags_op <= FLAGS_ROR32)) ||
+        (cpu_state.flags_op == FLAGS_IMUL16) || (cpu_state.flags_op == FLAGS_IMUL32))
         return 0;
 
     return 1;

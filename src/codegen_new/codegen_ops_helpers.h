@@ -1,5 +1,30 @@
 #include "386_common.h"
 #include "codegen_backend.h"
+#include "x86_flags.h"
+#include "codegen_ops_jit_wrappers.h"
+
+/*
+ * Emit flags_rebuild_zpna with compile-time skip optimization.
+ * When codegen_flags_changed is set, the previous flags_op is known at
+ * compile time.  For ROL/ROR/IMUL/UNKNOWN, ZPNA is already materialized in
+ * cpu_state.flags so the call can be elided entirely — zero extra uops.
+ */
+static inline void
+emit_flags_rebuild_zpna(ir_data_t *ir)
+{
+    if (codegen_flags_changed) {
+        switch (codegen_last_flags_op) {
+            case FLAGS_ROL8:  case FLAGS_ROL16: case FLAGS_ROL32:
+            case FLAGS_ROR8:  case FLAGS_ROR16: case FLAGS_ROR32:
+            case FLAGS_IMUL16: case FLAGS_IMUL32:
+            case FLAGS_UNKNOWN:
+                return;
+            default:
+                break;
+        }
+    }
+    uop_CALL_FUNC(ir, jit_flags_rebuild_zpna);
+}
 
 static inline int
 LOAD_SP_WITH_OFFSET(ir_data_t *ir, int offset)

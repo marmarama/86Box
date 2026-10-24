@@ -174,6 +174,9 @@ codegen_ir_peephole(ir_data_t *ir)
             } else if (uop_masked == (UOP_SAR_IMM & UOP_MASK)) {
                 res    = (uint32_t) (((int32_t) c_val_a) >> (uop->imm_data & 31));
                 folded = 1;
+            } else if (uop_masked == (UOP_IMUL_IMM & UOP_MASK)) {
+                res    = (uint32_t) (((int32_t) c_val_a) * ((int32_t) uop->imm_data));
+                folded = 1;
             }
 
             if (folded) {
