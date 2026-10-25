@@ -251,15 +251,17 @@ With Phase 1 (`0x9A`), Phase 2 (Port I/O), and Phase 3 (String Ops) fully stabil
   - **Net Reduction**: **~19.8 Million interpreter callouts completely eliminated** from the Windows 98 boot path.
   - Core ALU workload ratio increased to **37.36%**.
 
-### Priority 2: Inlining Host `RDTSC` (`0x0F 0x31`)
+### Priority 2: Inlining Host `RDTSC` (`0x0F 0x31`) — [ANALYSIS & DEFERRED]
 - **Impact**: Eliminates **5.78 Million** C function callouts.
-- **Implementation**:
-  - Map `0F 31` (`RDTSC`) to a native host instruction emission sequence (`rdtsc`, moving EDX:EAX into the guest register state without leaving the dynarec block).
+- **Finding**: Direct inlining of `update_tsc()` inside mid-block `ropRDTSC` creates an `IREG_cycles` stale-register hazard. Because `IREG_cycles` is marked `REG_PERMANENT`, `update_tsc()` adjusting `cycles -= (tsc - timer_target)` in memory is clobbered by the JIT block epilogue writing back its stale host register, halting device timer interrupts (freezing mouse/keyboard input on interactive desktop).
+- **Plan**: Deferred for dedicated cycle/timer synchronization refactoring after Integer Division.
 
-### Priority 3: Integer Division JIT Lowering (`DIV CX`, `DIV ECX`)
-- **Impact**: Eliminates **~11.0 Million** interpreter fallbacks (`div cx`: 6.9M, `div ecx`: 4.1M).
+### Priority 3: Integer Division JIT Lowering (`DIV` rm8, rm16, rm32) — [IN PROGRESS]
+- **Impact**: Eliminates **~11.0 Million** interpreter fallbacks (`div cx`: 6.9M, `div ecx`: 4.1M, plus 8-bit `div` operations).
 - **Implementation**:
-  - Add native IR division lowering or an inlined fast-path check for divide-by-zero / quotient overflow, dispatching directly to `codegen_divide_zero_rout` on exception and executing native 64-bit host division on fast path.
+  - Lower unsigned integer division (`fetchdat & 0x38 == 0x30`) across `ropF6` (8-bit), `ropF7_16` (16-bit), and `ropF7_32` (32-bit).
+  - Fast-path execution with zero-divisor check jumping to divide-by-zero / exception handling (`x86de` / `x86_int(0)`).
+  - Pure arithmetic computation with zero side effects on `tsc`, cycles, or timer targets.
 
 ### Priority 4: Dead Flag Elimination (DSE) Pass (Roadmap P4)
 - **Impact**: Eliminates **257 Million** redundant host cycles spent writing `cpu_state.flags_*` structures across basic blocks.
