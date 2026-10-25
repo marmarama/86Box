@@ -287,4 +287,6 @@ With Phase 1 (`0x9A`), Phase 2 (Port I/O), and Phase 3 (String Ops) fully stabil
 | **Emulation Speed at Desktop** | Sustained Real-Time (100% RT) | 1,000 FPS / 100% RT sustained | **PASS** |
 | **Build Cleanliness** | 0 warnings, 0 errors | Release & Debug compile cleanly | **PASS** |
 | **Priority 1 JIT Arithmetic (`IMUL`/`RCL`/`RCR`/`MUL`)** | 0 interpreter fallbacks | 19.8M fallbacks eliminated | **PASS** |
+| **Priority 2 Host RDTSC Inlining** | 0 fallbacks / safe cycle pacing | Deferred (stale `IREG_cycles` hazard) | **DEFERRED** |
+| **Priority 3 Integer Division (`DIV`)** | 0 fallbacks for rm8/16/32 | Active implementation | **IN PROGRESS** |
 
