@@ -370,7 +370,10 @@ In [`src/acpi.c`](file:///home/marm/src/86Box/src/acpi.c), when an I/O read occu
   static void
   acpi_c2_c3_sleep(void)
   {
-      if (smi_line || (nmi && nmi_enable && nmi_mask) || ((cpu_state.flags & I_FLAG) && pic.int_pending))
+      /* ACPI C2/C3 (P_LVL2/P_LVL3) is entered by the OS with interrupts disabled
+         (CLI, I_FLAG == 0); any pending PIC interrupt unstops the processor clock
+         so the CPU can finish the IN instruction, read PM_TMR, and execute STI. */
+      if (smi_line || (nmi && nmi_enable && nmi_mask) || pic.int_pending)
           return;
 
   #ifdef USE_NEW_DYNAREC
@@ -379,7 +382,7 @@ In [`src/acpi.c`](file:///home/marm/src/86Box/src/acpi.c), when an I/O read occu
   #endif
 
   #ifdef USE_DYNAREC
-      if (is_dynarec_active())
+      if (cpu_use_dynarec)
           update_tsc();
   #endif
 
@@ -388,13 +391,22 @@ In [`src/acpi.c`](file:///home/marm/src/86Box/src/acpi.c), when an I/O read occu
           if (to_timer > 0) {
               int32_t cycles_to_burn = (to_timer < (int64_t) cycles) ? (int32_t) to_timer : cycles;
               cycles -= cycles_to_burn;
-
-              if (!(nmi && nmi_enable && nmi_mask) && !((cpu_state.flags & I_FLAG) && pic.int_pending) && !smi_line)
-                  cpu_is_halted = 1;
+  #ifdef USE_DYNAREC
+              /* Advance tsc immediately so a subsequent PM_TMR read in the same
+                 basic block sees the elapsed sleep ticks and expired timers fire. */
+              if (cpu_use_dynarec)
+                  update_tsc();
+  #endif
           }
       }
   }
   ```
+  > [!WARNING]
+  > **Critical Difference Between `HLT` and ACPI `P_LVL2`/`P_LVL3` (`I_FLAG == 0` & `cpu_is_halted`)**:
+  > Per the ACPI specification (Section 8.1.2/8.1.3), OS idle handlers (including Windows 98 `ACPI.SYS`) enter C2/C3 (`IN AL, DX` on `P_LVL2`/`P_LVL3`) with **interrupts disabled (`CLI`, `EFLAGS.IF == 0`)**, then read `PM_TMR` and execute `STI` upon wakeup.
+  > 1. `acpi_c2_c3_sleep()` must check `pic.int_pending` **unconditionally** (not gated by `I_FLAG`), because hardware `INTR` deasserts `STPCLK#` and wakes the CPU from C2/C3 even when `EFLAGS.IF == 0`.
+  > 2. `acpi_c2_c3_sleep()` must **never** set `cpu_is_halted = 1`. Unlike `opHLT()` (which rewinds `cpu_state.pc--` to stay parked on `HLT`), `IN AL, DX` does not rewind `pc`. Setting `cpu_is_halted = 1` while `I_FLAG == 0` causes the outer loop in `exec386_dynarec()` (`!((cpu_state.flags & I_FLAG) && pic.int_pending)`) to evaluate true forever and permanently deadlock the CPU.
+  > 3. `acpi_c2_c3_sleep()` must call `update_tsc()` **after** `cycles -= cycles_to_burn` so that `tsc` (and thus `PM_TMR`, which `ACPI.SYS` reads immediately after `IN AL, DX` in the same basic block) reflects the elapsed sleep ticks.
 - Hooked `acpi_c2_c3_sleep()` into:
   - `acpi_reg_read_intel` (Intel PIIX4, 440BX): handles `0x14` (`P_LVL2`) and `0x15` (`P_LVL3`).
   - `acpi_reg_read_ali` (ALi M1543/M1535): handles `0x14` and `0x15`.
@@ -433,7 +445,7 @@ The full two-tier idle optimization design was implemented and verified on Octob
    - Resets `cpu_is_halted = 0` whenever an interrupt, NMI, SMI, or non-HLT block executes.
 3. **ACPI C2/C3 Stop-Grant Sleep (`src/acpi.c`)**:
    - Implemented `acpi_c2_c3_sleep()` for hardware-level sleep states initiated by reading `P_LVL2` / `P_LVL3` (`PMBASE + 0x14` / `0x15` on Intel, ALi, VIA; `0x10` / `0x11` on SiS 5582/5595).
-   - Advances cycles directly to `timer_target` and engages outer-loop pacing (`cpu_is_halted = 1`), eliminating host CPU spinning during ACPI processor sleep.
+   - Wakes on `pic.int_pending` regardless of `I_FLAG` (since ACPI enters C2/C3 with `CLI`), burns the sub-slice up to `timer_target`, and reconciles `tsc` via `update_tsc()` immediately so subsequent `PM_TMR` reads in the same block observe the elapsed sleep time.
 
 ### 7.2 Empirical Telemetry (75.5s Windows 98 Boot Run)
 - **`HLT` Block Executions**:

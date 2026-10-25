@@ -276,7 +276,10 @@ acpi_raise_smi(void *priv, int do_smi)
 static void
 acpi_c2_c3_sleep(void)
 {
-    if (smi_line || (nmi && nmi_enable && nmi_mask) || ((cpu_state.flags & I_FLAG) && pic.int_pending))
+    /* ACPI C2/C3 (P_LVL2/P_LVL3) is entered by the OS with interrupts disabled
+       (CLI, I_FLAG == 0); any pending PIC interrupt unstops the processor clock
+       so the CPU can finish the IN instruction, read PM_TMR, and execute STI. */
+    if (smi_line || (nmi && nmi_enable && nmi_mask) || pic.int_pending)
         return;
 
 #ifdef USE_NEW_DYNAREC
@@ -285,7 +288,7 @@ acpi_c2_c3_sleep(void)
 #endif
 
 #ifdef USE_DYNAREC
-    if (is_dynarec_active())
+    if (cpu_use_dynarec)
         update_tsc();
 #endif
 
@@ -294,9 +297,12 @@ acpi_c2_c3_sleep(void)
         if (to_timer > 0) {
             int32_t cycles_to_burn = (to_timer < (int64_t) cycles) ? (int32_t) to_timer : cycles;
             cycles -= cycles_to_burn;
-
-            if (!(nmi && nmi_enable && nmi_mask) && !((cpu_state.flags & I_FLAG) && pic.int_pending) && !smi_line)
-                cpu_is_halted = 1;
+#ifdef USE_DYNAREC
+            /* Advance tsc immediately so a subsequent PM_TMR read in the same
+               basic block sees the elapsed sleep ticks and expired timers fire. */
+            if (cpu_use_dynarec)
+                update_tsc();
+#endif
         }
     }
 }

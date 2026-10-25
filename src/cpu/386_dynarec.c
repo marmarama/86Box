@@ -1027,7 +1027,7 @@ exec386_dynarec(int32_t cycs)
     while (cycles_main > 0) {
         int32_t cycles_start;
 
-        if (cpu_is_halted && !(nmi && nmi_enable && nmi_mask) && !((cpu_state.flags & I_FLAG) && pic.int_pending) && !smi_line) {
+        if (cpu_is_halted && !cpu_init && !(nmi && nmi_enable && nmi_mask) && !((cpu_state.flags & I_FLAG) && pic.int_pending) && !smi_line) {
             int64_t to_timer = (int64_t) (timer_target - tsc);
             if (to_timer > 0) {
                 int32_t extra = (to_timer < (int64_t) cycles_main) ? (int32_t) to_timer : cycles_main;

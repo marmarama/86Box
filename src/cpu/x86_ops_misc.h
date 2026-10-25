@@ -717,7 +717,7 @@ opHLT(UNUSED(uint32_t fetchdat))
         int32_t cycles_to_burn = 100;
 
 #ifdef USE_DYNAREC
-        if (is_dynarec_active()) {
+        if (cpu_use_dynarec) {
             /* Reconcile any cycles already consumed earlier in this block into tsc */
             update_tsc();
         }
@@ -747,8 +747,10 @@ opHLT(UNUSED(uint32_t fetchdat))
     CPU_BLOCK_END();
     PREFETCH_RUN(100, 1, -1, 0, 0, 0, 0, 0);
 
-    if (hlt_reset_pending)
+    if (hlt_reset_pending) {
+        cpu_is_halted = 0;
         softresetx86();
+    }
 
     return 0;
 }
