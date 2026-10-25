@@ -598,7 +598,6 @@ extern uint32_t cpu_features;
 extern int smi_latched;
 extern int smm_in_hlt;
 extern int smi_block;
-extern int cpu_is_halted;
 
 #ifdef USE_NEW_DYNAREC
 extern uint16_t cpu_cur_status;
