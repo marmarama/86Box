@@ -55,7 +55,7 @@ ropF6(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchd
     uint8_t imm_data;
     int     reg;
 
-    if ((fetchdat & 0x38) > 0x20)
+    if ((fetchdat & 0x38) > 0x30)
         return 0;
 
     codegen_mark_code_present(block, cs + op_pc, 1);
@@ -131,6 +131,16 @@ ropF6(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchd
             codegen_flags_changed = 1;
             return op_pc + 1;
 
+        case 0x30: /*DIV AL, rm8*/
+            if ((fetchdat & 0xc0) == 0xc0)
+                uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
+            uop_LOAD_FUNC_ARG_REG(ir, 0, reg);
+            uop_CALL_FUNC_RESULT(ir, IREG_temp1, jit_div8);
+            uop_CMP_IMM_JZ(ir, IREG_temp1, 1, codegen_exit_rout);
+
+            codegen_flags_changed = 0;
+            return op_pc + 1;
+
         default:
             break;
     }
@@ -143,7 +153,7 @@ ropF7_16(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fet
     uint16_t imm_data;
     int      reg;
 
-    if ((fetchdat & 0x38) > 0x20)
+    if ((fetchdat & 0x38) > 0x30)
         return 0;
 
     codegen_mark_code_present(block, cs + op_pc, 1);
@@ -220,6 +230,16 @@ ropF7_16(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fet
             codegen_flags_changed = 1;
             return op_pc + 1;
 
+        case 0x30: /*DIV AX, rm16*/
+            if ((fetchdat & 0xc0) == 0xc0)
+                uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
+            uop_LOAD_FUNC_ARG_REG(ir, 0, reg);
+            uop_CALL_FUNC_RESULT(ir, IREG_temp1, jit_div16);
+            uop_CMP_IMM_JZ(ir, IREG_temp1, 1, codegen_exit_rout);
+
+            codegen_flags_changed = 0;
+            return op_pc + 1;
+
         default:
             break;
     }
@@ -232,7 +252,7 @@ ropF7_32(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fet
     uint32_t imm_data;
     int      reg;
 
-    if ((fetchdat & 0x38) > 0x20)
+    if ((fetchdat & 0x38) > 0x30)
         return 0;
 
     codegen_mark_code_present(block, cs + op_pc, 1);
@@ -287,6 +307,16 @@ ropF7_32(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fet
             uop_MOV_IMM(ir, IREG_flags_op1, 0);
 
             codegen_flags_changed = 1;
+            return op_pc + 1;
+
+        case 0x30: /*DIV EAX, rm32*/
+            if ((fetchdat & 0xc0) == 0xc0)
+                uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
+            uop_LOAD_FUNC_ARG_REG(ir, 0, reg);
+            uop_CALL_FUNC_RESULT(ir, IREG_temp1, jit_div32);
+            uop_CMP_IMM_JZ(ir, IREG_temp1, 1, codegen_exit_rout);
+
+            codegen_flags_changed = 0;
             return op_pc + 1;
 
         default:
