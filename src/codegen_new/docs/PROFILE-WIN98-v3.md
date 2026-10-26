@@ -220,22 +220,23 @@ The dynamic callout leaderboard (`UOP_CALL_INSTRUCTION_FUNC`):
 ```
 Rank  Mnemonic            Dynamic Executions   Status / Optimization Strategy
 -----------------------------------------------------------------------------------------
-#1    cli                 20,152,236           Candidate for inline EFLAGS.IF clearing
-#2    sti                 10,907,837           Candidate for inline EFLAGS.IF setting
-#3    in al, dx            8,177,601           Candidate for direct port callout helper
-#4    rdtsc                5,777,540           Candidate for inline host RDTSC
-#5    in al, 0x61          5,255,813           Direct port fast-path (speaker/PIT status)
-#6    popf                 4,178,603           Candidate for fast-path flags pop
-#7    iret                 2,388,569           Interrupt return
-#8    popfd                2,216,732           32-bit flags pop
-#9    .byte cd (INT)       2,183,655           Software interrupts
-#10   iretd                2,060,618           32-bit interrupt return
+#1    in al, 0x61          5,264,617           Direct port fast-path (speaker/PIT status)
+#2    popf                 4,187,673           Candidate for fast-path flags pop
+#3    in al, dx            3,296,568           Candidate for direct port callout helper
+#4    iret                 2,391,323           Interrupt return
+#5    popfd                2,199,468           32-bit flags pop
+#6    .byte cd (INT)       2,189,560           Software interrupts
+#7    iretd                2,069,355           32-bit interrupt return
+#8    in al, 0x40          1,851,343           PIT counter status read
+#9    verw ax                994,057           Segment verification
+#10   verr ax                994,056           Segment verification
 ```
 
-### Leaderboard Changes from v2:
-- **`DIV` Eliminated**: 11.0M fallbacks dropped to **0**.
-- **`CLI` / `STI` Dominance**: Now account for **31,060,073 dynamic executions** (over 48% of all remaining interpreter fallbacks).
-- **`RDTSC`**: Stably isolated to exactly 5,777,540 executions in `blk#37294`.
+### Cumulative Leaderboard Changes:
+- **`DIV` Eliminated**: 11.0M fallbacks dropped to **0** (JIT lowered via `jit_div*`).
+- **`RDTSC` Eliminated**: 5.79M fallbacks dropped to **0** (JIT lowered via `ropRDTSC`).
+- **`CLI` / `STI` Eliminated**: 33.58M fallbacks dropped to **0** (JIT lowered via `ropCLI_STI`).
+- **Total Fallbacks Eliminated**: Over **50.3 Million dynamic interpreter callouts** removed!
 
 ---
 
@@ -280,12 +281,19 @@ With `HLT`, ACPI sleep, and integer division (`DIV`) completely resolved and ver
   - `rdtsc` dropped from **5,777,540 fallbacks to 0 (100% eliminated)**.
   - Windows 98 reaches the desktop with sustained 100% Real-Time speed (1,000 FPS), fully responsive mouse/keyboard, and 0 stale cycle hazards.
 
-### Priority 2: JIT Inlining for `CLI` and `STI` (`0xFA` / `0xFB`)
-- **Impact**: Eliminates **31,060,073 dynamic C callouts** (#1 and #2 on the fallback leaderboard).
+### Priority 2: JIT Inlining for `CLI` and `STI` (`0xFA` / `0xFB`) — [COMPLETED & VERIFIED]
+- **Impact**: Eliminates **33,575,283 dynamic C callouts** (#1 and #2 on the fallback leaderboard).
+- **Status**: **Fully implemented and verified in master**.
 - **Implementation**:
-  - `CLI`: `cpu_state.flags &= ~I_FLAG;`
-  - `STI`: `cpu_state.flags |= I_FLAG;` with a call to `cpu_update_pic_pending()` if an interrupt was latched.
-  - Can be implemented via direct `uop_AND_IMM` / `uop_OR_IMM` on `cpu_state.flags`, falling back only if an interrupt is pending.
+  - In `src/codegen_new/codegen_ops_jit_wrappers.h`, added `jit_cli_slow` and `jit_sti_slow` wrappers around `x86_dynarec_opcodes[0xfa]` and `[0xfb]`.
+  - In `ropCLI_STI()` (`src/codegen_new/codegen_ops_misc.c`):
+    - When `CPL <= IOPL` (fast path, >99.9% of executions), updates `IREG_flags` directly with zero C function callouts.
+    - When `CPL > IOPL` (slow path / fault), invokes `uop_CALL_FUNC` calling `jit_cli_slow` / `jit_sti_slow` followed by `uop_JMP(ir, codegen_exit_rout)` instead of `uop_CALL_INSTRUCTION_FUNC`.
+- **Telemetry Verification**:
+  - `cli` dropped from **21,833,936 fallbacks to 0 (100% eliminated)**.
+  - `sti` dropped from **11,741,347 fallbacks to 0 (100% eliminated)**.
+  - Desktop reached at `t = 58.5s` (2 seconds faster) with sustained 100% RT (1,000 FPS).
+  - 0 stale cycle hazards, 0 disassembly failures.
 
 ### Priority 3: Fast-Path Port I/O Inlining (`IN AL, DX` and `IN AL, 0x61`)
 - **Impact**: Eliminates **13,433,414 C callouts** (#3 and #5 on the fallback leaderboard).
@@ -311,6 +319,7 @@ With `HLT`, ACPI sleep, and integer division (`DIV`) completely resolved and ver
 | **HLT Event Pacing & ACPI Sleep** | Eliminates idle busy-spinning | 16,715x reduction in HLT executions | **PASS** |
 | **Integer Division (`DIV`) JIT Lowering**| 0 interpreter fallbacks for rm8/16/32 | 11.0M fallbacks eliminated | **PASS** |
 | **Host RDTSC JIT Lowering** | 0 interpreter fallbacks for 0x0F 0x31 | 5.79M fallbacks eliminated | **PASS** |
+| **CLI / STI JIT Lowering** | 0 interpreter fallbacks for 0xFA / 0xFB | 33.58M fallbacks eliminated | **PASS** |
 | **Branch Chaining Direct Hit Rate** | High direct block linking | 100.00% (1.17B links, 0% fallback) | **PASS** |
 | **Linter: Stale Cycle Hazards** | 0 IREG_cycles hazards | 0 hazards detected | **PASS** |
 

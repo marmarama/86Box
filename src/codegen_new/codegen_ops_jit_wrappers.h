@@ -36,6 +36,30 @@ jit_update_tsc(void)
 }
 
 static JIT_WRAPPER void
+jit_cli_slow(void)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        x86_dynarec_opcodes[0xfa](0);
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        x86_dynarec_opcodes[0xfa](0);
+    }
+}
+
+static JIT_WRAPPER void
+jit_sti_slow(void)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        x86_dynarec_opcodes[0xfb](0);
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        x86_dynarec_opcodes[0xfb](0);
+    }
+}
+
+static JIT_WRAPPER void
 jit_flags_rebuild(void)
 {
     if (codegen_profile_active) {
