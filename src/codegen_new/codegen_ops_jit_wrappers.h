@@ -24,6 +24,18 @@
 /* --- flags_rebuild family (void → void) --- */
 
 static JIT_WRAPPER void
+jit_update_tsc(void)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        update_tsc();
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        update_tsc();
+    }
+}
+
+static JIT_WRAPPER void
 jit_flags_rebuild(void)
 {
     if (codegen_profile_active) {

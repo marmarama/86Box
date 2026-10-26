@@ -751,6 +751,24 @@ ropSTI(UNUSED(codeblock_t *block), ir_data_t *ir, uint8_t opcode, uint32_t fetch
 }
 
 uint32_t
+ropRDTSC(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), uint32_t op_pc)
+{
+    if (!cpu_has_feature(CPU_FEATURE_RDTSC))
+        return 0;
+
+    if (cr4 & CR4_TSD)
+        return 0;
+
+    codegen_accumulate_flush(ir);
+
+    uop_CALL_FUNC(ir, jit_update_tsc);
+    uop_MOV_REG_PTR(ir, IREG_EAX, (uint32_t *) &tsc);
+    uop_MOV_REG_PTR(ir, IREG_EDX, ((uint32_t *) &tsc) + 1);
+
+    return op_pc;
+}
+
+uint32_t
 ropSETcc(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
 {
     int cond = opcode & 0x0f;
