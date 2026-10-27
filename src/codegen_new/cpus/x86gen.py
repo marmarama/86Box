@@ -152,9 +152,22 @@ class ISADatabase:
         self.padlock_opcodes: List[OpcodeEncoding] = []
         self.dnow_opcodes: List[OpcodeEncoding] = []
         self.families: Dict[str, Dict[str, Any]] = {}
+        self.modrm_groups: Dict[str, Dict[str, Any]] = {}
+        self.micro_semantics: Dict[str, Dict[str, Any]] = {}
+        self.primitive_ops: Dict[str, Dict[str, Any]] = {}
+        self.immediate_encodings: Dict[str, Dict[str, Any]] = {}
         self.load_all()
 
     def load_all(self):
+        types_fpath = os.path.join(ISA_DIR, "types_and_operands.yaml")
+        if os.path.isfile(types_fpath):
+            with open(types_fpath, "r", encoding="utf-8") as fp:
+                types_doc = yaml.safe_load(fp) or {}
+            self.modrm_groups = types_doc.get("modrm_groups", {})
+            self.micro_semantics = types_doc.get("micro_semantics", {})
+            self.primitive_ops = self.micro_semantics.get("primitive_ops", {})
+            self.immediate_encodings = types_doc.get("immediate_encodings", {})
+
         isa_files = sorted(glob.glob(os.path.join(ISA_DIR, "*.yaml")))
         for fpath in isa_files:
             if os.path.basename(fpath) in ("types_and_operands.yaml", "README.md"):
@@ -895,6 +908,129 @@ def inspect_cpu(manifest_path: str, isa: ISADatabase, reg_db: Optional[RegisterD
         print(f"Sample 0F #UD traps on {cpu.name}:      {', '.join(sample_ud_0f)}")
 
 
+def list_groups(isa: ISADatabase):
+    """Displays all ModR/M group tables and their extension slots."""
+    if not isa.modrm_groups:
+        print("No modrm_groups found in types_and_operands.yaml")
+        return
+
+    print("=" * 78)
+    print("ModR/M Group Extension Architecture (x86 Metacompiler)")
+    print("=" * 78)
+
+    for g_id, g_data in sorted(isa.modrm_groups.items()):
+        desc = g_data.get("desc", g_id)
+        opcodes = g_data.get("opcodes", {})
+        slots = g_data.get("slots", {})
+
+        opc_summary = []
+        for opc, oinfo in sorted(opcodes.items()):
+            sz = oinfo.get("size")
+            sz_str = f"{sz}-bit" if isinstance(sz, int) else f"{sz[0]}/{sz[1]}-bit" if isinstance(sz, list) else "var"
+            imm = oinfo.get("imm") or oinfo.get("cnt")
+            imm_str = f" + {imm}" if imm else ""
+            opc_summary.append(f"{opc} ({sz_str}{imm_str})")
+
+        print(f"\n{g_id.upper()}: {desc}")
+        print(f"  Opcodes: {', '.join(opc_summary)}")
+        print(f"  {'Slot':<6} {'Mnemonic':<14} {'Action':<18} {'Operation / Lowering':<26}")
+        print("  " + "-" * 70)
+
+        for slot_idx in range(8):
+            if slot_idx in slots:
+                s_info = slots[slot_idx]
+                name = s_info.get("name", "")
+                act = s_info.get("action", "")
+                op_prim = s_info.get("op", "")
+                h_fn = s_info.get("helper_fn", "")
+                detail = h_fn if h_fn else op_prim
+                if s_info.get("carry_in"):
+                    detail += " (CF in)"
+                print(f"  /{slot_idx:<5} {name:<14} {act:<18} {detail:<26}")
+            else:
+                print(f"  /{slot_idx:<5} {'[Unused / #UD]':<14} {'-':<18} {'-':<26}")
+    print("=" * 78)
+
+
+def inspect_semantics(mnemonic: Optional[str], isa: ISADatabase):
+    """Displays formal micro-semantics and flag update rules for instruction families."""
+    if not mnemonic or mnemonic.lower() == "all":
+        print(f"{'Mnemonic':<14} {'Class':<16} {'Action':<18} {'Availability':<14} {'Flags Tag':<16}")
+        print("-" * 78)
+        for fname, fdef in sorted(isa.families.items()):
+            cls = fdef.get("class", "alu")
+            sem = fdef.get("semantics", {})
+            act = sem.get("action", "CUSTOM")
+            avail = fdef.get("availability", {}).get("min_cpu", "CPU_8086")
+            flg = sem.get("flags", {})
+            flg_tag = flg.get("tag", "-") if isinstance(flg, dict) else "-"
+            print(f"{fname:<14} {cls:<16} {act:<18} {avail:<14} {flg_tag:<16}")
+        print(f"\nTotal Instruction Families: {len(isa.families)}")
+        return
+
+    m_upper = mnemonic.upper()
+    fdef = isa.families.get(m_upper)
+    if not fdef:
+        matches = [k for k in isa.families if m_upper in k]
+        if matches:
+            fdef = isa.families[matches[0]]
+            m_upper = matches[0]
+        else:
+            print(f"Error: Instruction family '{mnemonic}' not found in ISA database")
+            return
+
+    sem = fdef.get("semantics", {})
+    avail = fdef.get("availability", {})
+    cls = fdef.get("class", "alu")
+    opmap = fdef.get("opcode_map", {})
+
+    print("=" * 78)
+    print(f"Instruction Micro-Semantics: {m_upper}")
+    print(f"Description:  {fdef.get('description', 'N/A')}")
+    print(f"Architecture: Class: {cls} | Min CPU: {avail.get('min_cpu', 'CPU_8086')}")
+    if "feature" in avail:
+        print(f"Requirement:  {avail['feature']}")
+    print("=" * 78)
+
+    print("Formal Semantics:")
+    print(f"  Action:        {sem.get('action', 'N/A')}")
+    if "op" in sem:
+        print(f"  Primitive Op:  {sem['op']}")
+    if "carry" in sem:
+        print(f"  Carry Policy:  {sem['carry']}")
+    if "inputs" in sem:
+        print(f"  Inputs:        {', '.join(str(x) for x in sem['inputs'])}")
+    if "output" in sem:
+        print(f"  Output:        {sem['output']}")
+    if "fault_policy" in sem:
+        print(f"  Fault Policy:  {sem['fault_policy']}")
+
+    flg = sem.get("flags")
+    if isinstance(flg, dict):
+        print("\nFlag Behavior:")
+        print(f"  Tag:           {flg.get('tag', 'None')}")
+        if "update" in flg:
+            print(f"  Updated:       {', '.join(flg['update'])}")
+        if "preserve" in flg:
+            print(f"  Preserved:     {', '.join(flg['preserve'])}")
+        if "forced_clear" in flg:
+            print(f"  Forced Clear:  {', '.join(flg['forced_clear'])}")
+        if "undefined" in flg:
+            print(f"  Undefined:     {', '.join(flg['undefined'])}")
+        if "notes" in flg:
+            print(f"  Notes:         {flg['notes']}")
+    elif flg == "none":
+        print("\nFlag Behavior:   Flags unaffected")
+
+    print(f"\nOpcode Encodings ({len(opmap)} patterns):")
+    for op_str, odata in sorted(opmap.items()):
+        grp = odata.get("group")
+        grp_str = f" [Group: {grp} /{odata.get('group_ext')}]" if grp else ""
+        operands = ", ".join(f"{k}: {v}" for k, v in odata.items() if k not in ("group", "group_ext", "min_cpu"))
+        print(f"  {op_str:<16} -> {operands}{grp_str}")
+    print("=" * 78)
+
+
 def emit_c_deps(output_path: str, isa: ISADatabase):
     """Emits standalone C implementation of opcode_deps tables."""
     deps, mod3 = synthesize_tables(isa, match_86box_dispatch=True)
@@ -929,12 +1065,18 @@ def emit_jit_ops(output_path: str, isa: ISADatabase):
     lines.append('#include "codegen_ir.h"')
     lines.append('#include "codegen_ops.h"')
     lines.append("")
+    lines.append("static inline void")
+    lines.append("get_cf(ir_data_t *ir, int dest_reg)")
+    lines.append("{")
+    lines.append("    uop_CALL_FUNC_RESULT(ir, dest_reg, jit_CF_SET);")
+    lines.append("}")
+    lines.append("")
 
     UOP_MAP = {
         "ADD": "uop_ADD",
-        "ADC": "uop_ADC",
+        "ADC": "uop_ADD",
         "SUB": "uop_SUB",
-        "SBB": "uop_SBB",
+        "SBB": "uop_SUB",
         "AND": "uop_AND",
         "OR": "uop_OR",
         "XOR": "uop_XOR",
@@ -945,7 +1087,9 @@ def emit_jit_ops(output_path: str, isa: ISADatabase):
         action = sem.get("action")
         if action == "ALU_BINARY":
             op_prim = sem.get("op", fname)
-            uop_fn = UOP_MAP.get(op_prim, f"uop_{op_prim}")
+            is_carry = (op_prim in ("ADC", "SBB"))
+            uop_prim = "uop_ADD" if op_prim in ("ADD", "ADC") else "uop_SUB" if op_prim in ("SUB", "SBB") else UOP_MAP.get(op_prim, f"uop_{op_prim}")
+            carry_op = "uop_ADD" if op_prim == "ADC" else "uop_SUB" if op_prim == "SBB" else None
             flg_tag = sem.get("flags", {}).get("tag", f"FLAGS_{op_prim}")
 
             for suffix, sz_name, ireg_fn, temp0, temp1, flg_const, is_32 in [
@@ -959,11 +1103,15 @@ def emit_jit_ops(output_path: str, isa: ISADatabase):
                 lines.append("{")
                 lines.append("    int src_reg = (fetchdat >> 3) & 7;")
                 lines.append("    codegen_mark_code_present(block, cs + op_pc, 1);")
+                if is_carry:
+                    lines.append("    get_cf(ir, IREG_temp2);")
                 lines.append("    if ((fetchdat & 0xc0) == 0xc0) {")
                 lines.append("        int dest_reg = fetchdat & 7;")
                 lines.append(f"        {mov_flags}(ir, IREG_flags_op1, {ireg_fn}(dest_reg));")
                 lines.append(f"        {mov_flags}(ir, IREG_flags_op2, {ireg_fn}(src_reg));")
-                lines.append(f"        {uop_fn}(ir, {ireg_fn}(dest_reg), {ireg_fn}(dest_reg), {ireg_fn}(src_reg));")
+                lines.append(f"        {uop_prim}(ir, {ireg_fn}(dest_reg), {ireg_fn}(dest_reg), {ireg_fn}(src_reg));")
+                if is_carry:
+                    lines.append(f"        {carry_op}(ir, {ireg_fn}(dest_reg), {ireg_fn}(dest_reg), IREG_temp2_B);")
                 lines.append(f"        {mov_flags}(ir, IREG_flags_res, {ireg_fn}(dest_reg));")
                 lines.append("    } else {")
                 lines.append("        x86seg *target_seg;")
@@ -971,7 +1119,9 @@ def emit_jit_ops(output_path: str, isa: ISADatabase):
                 lines.append("        target_seg = codegen_generate_ea(ir, op_ea_seg, fetchdat, op_ssegs, &op_pc, op_32, 0);")
                 lines.append("        codegen_check_seg_write(block, ir, target_seg);")
                 lines.append(f"        uop_MEM_LOAD_REG(ir, {temp0}, ireg_seg_base(target_seg), IREG_eaaddr);")
-                lines.append(f"        {uop_fn}(ir, {temp1}, {temp0}, {ireg_fn}(src_reg));")
+                lines.append(f"        {uop_prim}(ir, {temp1}, {temp0}, {ireg_fn}(src_reg));")
+                if is_carry:
+                    lines.append(f"        {carry_op}(ir, {temp1}, {temp1}, IREG_temp2_B);")
                 lines.append(f"        uop_MEM_STORE_REG(ir, ireg_seg_base(target_seg), IREG_eaaddr, {temp1});")
                 lines.append(f"        {mov_flags}(ir, IREG_flags_op1, {temp0});")
                 lines.append(f"        {mov_flags}(ir, IREG_flags_op2, {ireg_fn}(src_reg));")
@@ -994,11 +1144,15 @@ def emit_jit_ops(output_path: str, isa: ISADatabase):
                 lines.append("{")
                 lines.append("    int dest_reg = (fetchdat >> 3) & 7;")
                 lines.append("    codegen_mark_code_present(block, cs + op_pc, 1);")
+                if is_carry:
+                    lines.append("    get_cf(ir, IREG_temp2);")
                 lines.append("    if ((fetchdat & 0xc0) == 0xc0) {")
                 lines.append("        int src_reg = fetchdat & 7;")
                 lines.append(f"        {mov_flags}(ir, IREG_flags_op1, {ireg_fn}(dest_reg));")
                 lines.append(f"        {mov_flags}(ir, IREG_flags_op2, {ireg_fn}(src_reg));")
-                lines.append(f"        {uop_fn}(ir, {ireg_fn}(dest_reg), {ireg_fn}(dest_reg), {ireg_fn}(src_reg));")
+                lines.append(f"        {uop_prim}(ir, {ireg_fn}(dest_reg), {ireg_fn}(dest_reg), {ireg_fn}(src_reg));")
+                if is_carry:
+                    lines.append(f"        {carry_op}(ir, {ireg_fn}(dest_reg), {ireg_fn}(dest_reg), IREG_temp2_B);")
                 lines.append(f"        {mov_flags}(ir, IREG_flags_res, {ireg_fn}(dest_reg));")
                 lines.append("    } else {")
                 lines.append("        x86seg *target_seg;")
@@ -1008,7 +1162,9 @@ def emit_jit_ops(output_path: str, isa: ISADatabase):
                 lines.append(f"        uop_MEM_LOAD_REG(ir, {temp0}, ireg_seg_base(target_seg), IREG_eaaddr);")
                 lines.append(f"        {mov_flags}(ir, IREG_flags_op1, {ireg_fn}(dest_reg));")
                 lines.append(f"        {mov_flags}(ir, IREG_flags_op2, {temp0});")
-                lines.append(f"        {uop_fn}(ir, {ireg_fn}(dest_reg), {ireg_fn}(dest_reg), {temp0});")
+                lines.append(f"        {uop_prim}(ir, {ireg_fn}(dest_reg), {ireg_fn}(dest_reg), {temp0});")
+                if is_carry:
+                    lines.append(f"        {carry_op}(ir, {ireg_fn}(dest_reg), {ireg_fn}(dest_reg), IREG_temp2_B);")
                 lines.append(f"        {mov_flags}(ir, IREG_flags_res, {ireg_fn}(dest_reg));")
                 lines.append("    }")
                 lines.append(f"    uop_MOV_IMM(ir, IREG_flags_op, {flg_const});")
@@ -1016,6 +1172,70 @@ def emit_jit_ops(output_path: str, isa: ISADatabase):
                 lines.append("    return op_pc + 1;")
                 lines.append("}")
                 lines.append("")
+
+        elif action == "ALU_UNARY":
+            op_prim = sem.get("op", fname)
+            if op_prim == "NOT":
+                for suffix, sz_name, ireg_fn, temp0, is_32, mask_val in [
+                    ("b_rm", "8-bit NOT", "IREG_8", "IREG_temp0_B", False, "0xff"),
+                    ("w_rm", "16-bit NOT", "IREG_16", "IREG_temp0_W", False, "0xffff"),
+                    ("l_rm", "32-bit NOT", "IREG_32", "IREG_temp0", True, "0xffffffff"),
+                ]:
+                    lines.append(f"/* Synthesized JIT Handler: NOT {sz_name} */")
+                    lines.append(f"uint32_t gen_ropNOT_{suffix}(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)")
+                    lines.append("{")
+                    lines.append("    codegen_mark_code_present(block, cs + op_pc, 1);")
+                    lines.append("    if ((fetchdat & 0xc0) == 0xc0) {")
+                    lines.append("        int reg = fetchdat & 7;")
+                    lines.append(f"        uop_XOR_IMM(ir, {ireg_fn}(reg), {ireg_fn}(reg), {mask_val});")
+                    lines.append("    } else {")
+                    lines.append("        x86seg *target_seg;")
+                    lines.append("        uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);")
+                    lines.append("        target_seg = codegen_generate_ea(ir, op_ea_seg, fetchdat, op_ssegs, &op_pc, op_32, 0);")
+                    lines.append("        codegen_check_seg_write(block, ir, target_seg);")
+                    lines.append(f"        uop_MEM_LOAD_REG(ir, {temp0}, ireg_seg_base(target_seg), IREG_eaaddr);")
+                    lines.append(f"        uop_XOR_IMM(ir, {temp0}, {temp0}, {mask_val});")
+                    lines.append(f"        uop_MEM_STORE_REG(ir, ireg_seg_base(target_seg), IREG_eaaddr, {temp0});")
+                    lines.append("    }")
+                    lines.append("    codegen_flags_changed = 1;")
+                    lines.append("    return op_pc + 1;")
+                    lines.append("}")
+                    lines.append("")
+            elif op_prim == "NEG":
+                for suffix, sz_name, ireg_fn, temp0, temp1, flg_const, is_32 in [
+                    ("b_rm", "8-bit NEG", "IREG_8", "IREG_temp0_B", "IREG_temp1_B", "FLAGS_SUB8", False),
+                    ("w_rm", "16-bit NEG", "IREG_16", "IREG_temp0_W", "IREG_temp1_W", "FLAGS_SUB16", False),
+                    ("l_rm", "32-bit NEG", "IREG_32", "IREG_temp0", "IREG_temp1", "FLAGS_SUB32", True),
+                ]:
+                    mov_flags = "uop_MOV" if is_32 else "uop_MOVZX"
+                    lines.append(f"/* Synthesized JIT Handler: NEG {sz_name} */")
+                    lines.append(f"uint32_t gen_ropNEG_{suffix}(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)")
+                    lines.append("{")
+                    lines.append("    codegen_mark_code_present(block, cs + op_pc, 1);")
+                    lines.append(f"    uop_MOV_IMM(ir, {temp1}, 0);")
+                    lines.append("    if ((fetchdat & 0xc0) == 0xc0) {")
+                    lines.append("        int reg = fetchdat & 7;")
+                    lines.append(f"        {mov_flags}(ir, IREG_flags_op2, {ireg_fn}(reg));")
+                    lines.append(f"        uop_SUB(ir, {temp1}, {temp1}, {ireg_fn}(reg));")
+                    lines.append(f"        {mov_flags}(ir, IREG_flags_res, {temp1});")
+                    lines.append(f"        uop_MOV(ir, {ireg_fn}(reg), {temp1});")
+                    lines.append("    } else {")
+                    lines.append("        x86seg *target_seg;")
+                    lines.append("        uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);")
+                    lines.append("        target_seg = codegen_generate_ea(ir, op_ea_seg, fetchdat, op_ssegs, &op_pc, op_32, 0);")
+                    lines.append("        codegen_check_seg_write(block, ir, target_seg);")
+                    lines.append(f"        uop_MEM_LOAD_REG(ir, {temp0}, ireg_seg_base(target_seg), IREG_eaaddr);")
+                    lines.append(f"        uop_SUB(ir, {temp1}, {temp1}, {temp0});")
+                    lines.append(f"        uop_MEM_STORE_REG(ir, ireg_seg_base(target_seg), IREG_eaaddr, {temp1});")
+                    lines.append(f"        {mov_flags}(ir, IREG_flags_op2, {temp0});")
+                    lines.append(f"        {mov_flags}(ir, IREG_flags_res, {temp1});")
+                    lines.append("    }")
+                    lines.append(f"    uop_MOV_IMM(ir, IREG_flags_op, {flg_const});")
+                    lines.append("    uop_MOV_IMM(ir, IREG_flags_op1, 0);")
+                    lines.append("    codegen_flags_changed = 1;")
+                    lines.append("    return op_pc + 1;")
+                    lines.append("}")
+                    lines.append("")
 
         elif action == "ALU_COMPARE":
             op_prim = sem.get("op", "SUB")
@@ -1130,6 +1350,8 @@ def main():
     parser.add_argument("--emit-deps-c", type=str, help="Emit C source containing opcode_deps tables")
     parser.add_argument("--emit-jit-ops", type=str, help="Emit C source containing JIT instruction handlers")
     parser.add_argument("--emit-interpreter-ops", type=str, help="Emit C header containing interpreter instruction handlers")
+    parser.add_argument("--groups", action="store_true", help="List all ModR/M group tables and their extension slots")
+    parser.add_argument("--semantics", type=str, nargs="?", const="all", help="Inspect formal micro-semantics for an instruction family (or all)")
     parser.add_argument("--summary", action="store_true", help="Print ISA, register, and FPU specification summary")
 
     args = parser.parse_args()
@@ -1191,10 +1413,19 @@ def main():
         covered_0f = sum(1 for e in isa.ext_0f_opcodes.values() if e)
         print(f"Primary table coverage: {covered_primary} / 256 opcodes")
         print(f"0F table coverage:      {covered_0f} / 256 opcodes")
+        print(f"ModR/M Groups:          {len(isa.modrm_groups)} defined groups")
         print(f"VIA PadLock opcodes:    {len(isa.padlock_opcodes)}")
         print(f"AMD 3DNow! opcodes:     {len(isa.dnow_opcodes)}")
         print(f"Register Groups:        GPR, Segments, Flags, CR0..CR4, DR0..DR7, x87/MMX, XMM0..XMM7, MSRs")
         print(f"FPU Specifications:     {len(fpu_db.discrete)} discrete coprocessors, {len(fpu_db.integrated)} integrated FPUs ({len(fpu_db.by_id)} total)")
+        return
+
+    if args.groups:
+        list_groups(isa)
+        return
+
+    if args.semantics:
+        inspect_semantics(args.semantics, isa)
         return
 
     parser.print_help()

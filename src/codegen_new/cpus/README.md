@@ -13,6 +13,7 @@ This directory is the single source of truth for all CPU emulation in 86Box, spa
 ```
 src/codegen_new/cpus/
 ├── README.md               # Master architecture documentation
+├── ROADMAP.md              # Modernization and code-generation implementation roadmap
 │
 ├── isa/                    # Abstract Instruction Set Architecture (ISA) specifications
 │   ├── types_and_operands.yaml

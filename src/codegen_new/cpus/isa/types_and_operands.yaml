@@ -138,24 +138,159 @@ micro_semantics:
     CALL_HELPER:        { desc: "Invoke verified C runtime helper function" }
 
   primitive_ops:
-    ADD:     { uop: "uop_ADD",     c_op: "+" }
-    ADC:     { uop: "uop_ADC",     c_op: "+ cf +" }
-    SUB:     { uop: "uop_SUB",     c_op: "-" }
-    SBB:     { uop: "uop_SBB",     c_op: "- cf -" }
-    AND:     { uop: "uop_AND",     c_op: "&" }
-    OR:      { uop: "uop_OR",      c_op: "|" }
-    XOR:     { uop: "uop_XOR",     c_op: "^" }
-    NOT:     { uop: "uop_NOT",     c_op: "~" }
-    NEG:     { uop: "uop_NEG",     c_op: "0 -" }
-    MOV:     { uop: "uop_MOV",     c_op: "=" }
-    MOVZX:   { uop: "uop_MOVZX",   c_op: "(uint32_t)" }
-    MOVSX:   { uop: "uop_MOVSX",   c_op: "(int32_t)" }
-    SHL:     { uop: "uop_SHL",     c_op: "<<" }
-    SHR:     { uop: "uop_SHR",     c_op: ">>" }
-    SAR:     { uop: "uop_SAR",     c_op: ">> (signed)" }
-    BSWAP:   { uop: "uop_BSWAP",   c_op: "bswap32" }
+    ADD:     { uop: "uop_ADD",     direct_uop: true,  c_op: "+" }
+    ADC:     { uop: "uop_ADD",     direct_uop: false, lowering: "get_cf_then_add", c_op: "+ cf +" }
+    SUB:     { uop: "uop_SUB",     direct_uop: true,  c_op: "-" }
+    SBB:     { uop: "uop_SUB",     direct_uop: false, lowering: "get_cf_then_sub", c_op: "- cf -" }
+    AND:     { uop: "uop_AND",     direct_uop: true,  c_op: "&" }
+    OR:      { uop: "uop_OR",      direct_uop: true,  c_op: "|" }
+    XOR:     { uop: "uop_XOR",     direct_uop: true,  c_op: "^" }
+    NOT:     { uop: "uop_XOR_IMM", direct_uop: false, lowering: "xor_all_ones", c_op: "~" }
+    NEG:     { uop: "uop_SUB",     direct_uop: false, lowering: "sub_from_zero", c_op: "0 -" }
+    MOV:     { uop: "uop_MOV",     direct_uop: true,  c_op: "=" }
+    MOVZX:   { uop: "uop_MOVZX",   direct_uop: true,  c_op: "(uint32_t)" }
+    MOVSX:   { uop: "uop_MOVSX",   direct_uop: true,  c_op: "(int32_t)" }
+    SHL:     { uop: "uop_SHL",     direct_uop: true,  c_op: "<<" }
+    SHR:     { uop: "uop_SHR",     direct_uop: true,  c_op: ">>" }
+    SAR:     { uop: "uop_SAR",     direct_uop: true,  c_op: ">> (signed)" }
+    ROL:     { uop: "uop_ROL",     direct_uop: true,  c_op: "rol" }
+    ROR:     { uop: "uop_ROR",     direct_uop: true,  c_op: "ror" }
+    BSWAP:   { uop: "uop_BSWAP",   direct_uop: true,  c_op: "bswap32" }
 
   fault_policies:
     FAULT_ATOMIC: { desc: "5-phase staging: validate seg -> read -> compute -> store -> commit" }
     READ_ONLY:    { desc: "Segment read-check only" }
     NONE:         { desc: "Pure register or non-faulting operation" }
+
+# Immediate operand encoding and decoding rules
+immediate_encodings:
+  Ib:
+    desc: "Unsigned 8-bit immediate byte"
+    fetch_fn: "fastreadb(cs + op_pc + offset)"
+    type: "uint8_t"
+    sext: false
+  Iv:
+    desc: "Unsigned 16-bit or 32-bit immediate depending on operand size (op_32)"
+    fetch_16_fn: "fastreadw(cs + op_pc + offset)"
+    fetch_32_fn: "fastreadl(cs + op_pc + offset)"
+    type: "uint32_t"
+    sext: false
+  Ib_sext:
+    desc: "Signed 8-bit immediate sign-extended to operand size (16 or 32 bits)"
+    fetch_fn: "(int8_t) fastreadb(cs + op_pc + offset)"
+    type: "int32_t"
+    sext: true
+  Iw:
+    desc: "Unsigned 16-bit immediate word"
+    fetch_fn: "fastreadw(cs + op_pc + offset)"
+    type: "uint16_t"
+    sext: false
+  Id:
+    desc: "Unsigned 32-bit immediate dword"
+    fetch_fn: "fastreadl(cs + op_pc + offset)"
+    type: "uint32_t"
+    sext: false
+  Jb:
+    desc: "Signed 8-bit relative branch displacement"
+    fetch_fn: "(int8_t) fastreadb(cs + op_pc + offset)"
+    type: "int32_t"
+    rel_branch: true
+  Jv:
+    desc: "Signed 16-bit or 32-bit relative branch displacement depending on op_32"
+    fetch_16_fn: "(int16_t) fastreadw(cs + op_pc + offset)"
+    fetch_32_fn: "(int32_t) fastreadl(cs + op_pc + offset)"
+    type: "int32_t"
+    rel_branch: true
+
+# ModR/M Group Extension Architecture (sub-opcodes dispatched via ModR/M 'reg' field)
+modrm_groups:
+  group_1:
+    desc: "Immediate ALU Group (ADD, OR, ADC, SBB, AND, SUB, XOR, CMP)"
+    opcodes:
+      "0x80": { size: 8,  imm: Ib }
+      "0x81": { size: [16, 32], imm: Iv }
+      "0x82": { size: 8,  imm: Ib, alias_of: "0x80" }
+      "0x83": { size: [16, 32], imm: Ib_sext }
+    slots:
+      0: { name: ADD, action: ALU_BINARY,  op: ADD }
+      1: { name: OR,  action: ALU_BINARY,  op: OR }
+      2: { name: ADC, action: ALU_BINARY,  op: ADC, carry_in: true }
+      3: { name: SBB, action: ALU_BINARY,  op: SBB, carry_in: true }
+      4: { name: AND, action: ALU_BINARY,  op: AND }
+      5: { name: SUB, action: ALU_BINARY,  op: SUB }
+      6: { name: XOR, action: ALU_BINARY,  op: XOR }
+      7: { name: CMP, action: ALU_COMPARE, op: SUB }
+
+  group_2:
+    desc: "Shift / Rotate Group (ROL, ROR, RCL, RCR, SHL, SHR, SAR)"
+    opcodes:
+      "0xC0": { size: 8,  cnt: Ib, min_cpu: CPU_186 }
+      "0xC1": { size: [16, 32], cnt: Ib, min_cpu: CPU_186 }
+      "0xD0": { size: 8,  cnt: 1 }
+      "0xD1": { size: [16, 32], cnt: 1 }
+      "0xD2": { size: 8,  cnt: CL }
+      "0xD3": { size: [16, 32], cnt: CL }
+    slots:
+      0: { name: ROL, action: SHIFT_ROTATE, op: ROL }
+      1: { name: ROR, action: SHIFT_ROTATE, op: ROR }
+      2: { name: RCL, action: SHIFT_ROTATE, op: RCL, carry_in: true }
+      3: { name: RCR, action: SHIFT_ROTATE, op: RCR, carry_in: true }
+      4: { name: SHL, action: SHIFT_ROTATE, op: SHL }
+      5: { name: SHR, action: SHIFT_ROTATE, op: SHR }
+      6: { name: SAL, action: SHIFT_ROTATE, op: SHL, alias_of: SHL }
+      7: { name: SAR, action: SHIFT_ROTATE, op: SAR }
+
+  group_3:
+    desc: "Unary & Math Group (TEST, NOT, NEG, MUL, IMUL, DIV, IDIV)"
+    opcodes:
+      "0xF6": { size: 8 }
+      "0xF7": { size: [16, 32] }
+    slots:
+      0: { name: TEST, action: ALU_COMPARE, op: AND, imm: [Ib, Iv] }
+      1: { name: TEST, action: ALU_COMPARE, op: AND, imm: [Ib, Iv], alias_of: 0 }
+      2: { name: NOT,  action: ALU_UNARY,   op: NOT }
+      3: { name: NEG,  action: ALU_UNARY,   op: NEG }
+      4: { name: MUL,  action: CALL_HELPER, helper_fn: op_mul }
+      5: { name: IMUL, action: CALL_HELPER, helper_fn: op_imul }
+      6: { name: DIV,  action: CALL_HELPER, helper_fn: op_div }
+      7: { name: IDIV, action: CALL_HELPER, helper_fn: op_idiv }
+
+  group_4:
+    desc: "Byte Increment / Decrement Group"
+    opcodes:
+      "0xFE": { size: 8 }
+    slots:
+      0: { name: INC, action: ALU_UNARY, op: ADD, imm_val: 1, flags: { tag: FLAGS_INC, preserve: [CF] } }
+      1: { name: DEC, action: ALU_UNARY, op: SUB, imm_val: 1, flags: { tag: FLAGS_DEC, preserve: [CF] } }
+
+  group_5:
+    desc: "Word/Dword Increment, Decrement, Indirect Jump, Call, and Push Group"
+    opcodes:
+      "0xFF": { size: [16, 32] }
+    slots:
+      0: { name: INC,       action: ALU_UNARY, op: ADD, imm_val: 1, flags: { tag: FLAGS_INC, preserve: [CF] } }
+      1: { name: DEC,       action: ALU_UNARY, op: SUB, imm_val: 1, flags: { tag: FLAGS_DEC, preserve: [CF] } }
+      2: { name: CALL_NEAR, action: BRANCH_NEAR, indirect: true }
+      3: { name: CALL_FAR,  action: CALL_HELPER, helper_fn: op_call_far }
+      4: { name: JMP_NEAR,  action: BRANCH_NEAR, indirect: true }
+      5: { name: JMP_FAR,   action: CALL_HELPER, helper_fn: op_jmp_far }
+      6: { name: PUSH,      action: STACK_OP,    push: true }
+
+  group_8:
+    desc: "Bit Test & Modify Immediate Group (0x0F 0xBA)"
+    opcodes:
+      "0x0F 0xBA": { size: [16, 32], imm: Ib, min_cpu: CPU_386 }
+    slots:
+      4: { name: BT,  action: CALL_HELPER, helper_fn: op_bt }
+      5: { name: BTS, action: CALL_HELPER, helper_fn: op_bts }
+      6: { name: BTR, action: CALL_HELPER, helper_fn: op_btr }
+      7: { name: BTC, action: CALL_HELPER, helper_fn: op_btc }
+
+  group_11:
+    desc: "Move Immediate Group (0xC6, 0xC7)"
+    opcodes:
+      "0xC6": { size: 8, imm: Ib }
+      "0xC7": { size: [16, 32], imm: Iv }
+    slots:
+      0: { name: MOV, action: DATA_TRANSFER, op: MOV }
+

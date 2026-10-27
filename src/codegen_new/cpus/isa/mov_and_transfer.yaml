@@ -18,14 +18,15 @@ families:
       "0xA3": { dst: Ov, src: eAX }
       "0xB0..0xB7": { dst: "gpr8[reg]", src: Ib }
       "0xB8..0xBF": { dst: "gprv[reg]", src: Iv }
-      "0xC6 /0": { dst: Eb, src: Ib }
-      "0xC7 /0": { dst: Ev, src: Iv }
+      "0xC6 /0": { dst: Eb, src: Ib, group: group_11, group_ext: 0 }
+      "0xC7 /0": { dst: Ev, src: Iv, group: group_11, group_ext: 0 }
     semantics:
       action: DATA_TRANSFER
       op: MOV
+      carry: none
       inputs: [src]
       output: dst
-      fault_atomic: true
+      fault_policy: FAULT_ATOMIC
       flags: none
 
   MOVZX:
@@ -38,9 +39,10 @@ families:
     semantics:
       action: DATA_TRANSFER
       op: MOVZX
+      carry: none
       inputs: [src]
       output: dst
-      fault_atomic: true
+      fault_policy: READ_ONLY
       flags: none
 
   MOVSX:
@@ -53,9 +55,10 @@ families:
     semantics:
       action: DATA_TRANSFER
       op: MOVSX
+      carry: none
       inputs: [src]
       output: dst
-      fault_atomic: true
+      fault_policy: READ_ONLY
       flags: none
 
   LEA:

@@ -7,23 +7,27 @@ families:
       min_cpu: CPU_8086 # 0xD0..0xD3 on 8086; 0xC0..0xC1 (imm count) requires CPU_186
     class: shift
     opcode_map:
-      "0xD0 /4": { dst: Eb, cnt: 1 }
-      "0xD1 /4": { dst: Ev, cnt: 1 }
-      "0xD2 /4": { dst: Eb, cnt: CL }
-      "0xD3 /4": { dst: Ev, cnt: CL }
-      "0xC0 /4": { dst: Eb, cnt: Ib, min_cpu: CPU_186 }
-      "0xC1 /4": { dst: Ev, cnt: Ib, min_cpu: CPU_186 }
+      "0xD0 /4": { dst: Eb, cnt: 1,  group: group_2, group_ext: 4 }
+      "0xD1 /4": { dst: Ev, cnt: 1,  group: group_2, group_ext: 4 }
+      "0xD2 /4": { dst: Eb, cnt: CL, group: group_2, group_ext: 4 }
+      "0xD3 /4": { dst: Ev, cnt: CL, group: group_2, group_ext: 4 }
+      "0xC0 /4": { dst: Eb, cnt: Ib, group: group_2, group_ext: 4, min_cpu: CPU_186 }
+      "0xC1 /4": { dst: Ev, cnt: Ib, group: group_2, group_ext: 4, min_cpu: CPU_186 }
     semantics:
       action: SHIFT_ROTATE
       op: SHL
+      carry: none
       inputs: [dst, cnt]
       output: dst
-      fault_atomic: true
+      fault_policy: FAULT_ATOMIC
       flags:
         tag: FLAGS_SHL
         op1: dst
         op2: cnt
         res: output
+        update: [CF, PF, ZF, SF, OF]
+        undefined: [AF]
+        notes: "If cnt == 0, flags unchanged. OF defined only if cnt == 1."
 
   SHR:
     description: "Shift Logical Right"
@@ -31,23 +35,27 @@ families:
       min_cpu: CPU_8086 # 0xD0..0xD3 on 8086; 0xC0..0xC1 (imm count) requires CPU_186
     class: shift
     opcode_map:
-      "0xD0 /5": { dst: Eb, cnt: 1 }
-      "0xD1 /5": { dst: Ev, cnt: 1 }
-      "0xD2 /5": { dst: Eb, cnt: CL }
-      "0xD3 /5": { dst: Ev, cnt: CL }
-      "0xC0 /5": { dst: Eb, cnt: Ib, min_cpu: CPU_186 }
-      "0xC1 /5": { dst: Ev, cnt: Ib, min_cpu: CPU_186 }
+      "0xD0 /5": { dst: Eb, cnt: 1,  group: group_2, group_ext: 5 }
+      "0xD1 /5": { dst: Ev, cnt: 1,  group: group_2, group_ext: 5 }
+      "0xD2 /5": { dst: Eb, cnt: CL, group: group_2, group_ext: 5 }
+      "0xD3 /5": { dst: Ev, cnt: CL, group: group_2, group_ext: 5 }
+      "0xC0 /5": { dst: Eb, cnt: Ib, group: group_2, group_ext: 5, min_cpu: CPU_186 }
+      "0xC1 /5": { dst: Ev, cnt: Ib, group: group_2, group_ext: 5, min_cpu: CPU_186 }
     semantics:
       action: SHIFT_ROTATE
       op: SHR
+      carry: none
       inputs: [dst, cnt]
       output: dst
-      fault_atomic: true
+      fault_policy: FAULT_ATOMIC
       flags:
         tag: FLAGS_SHR
         op1: dst
         op2: cnt
         res: output
+        update: [CF, PF, ZF, SF, OF]
+        undefined: [AF]
+        notes: "If cnt == 0, flags unchanged. OF defined only if cnt == 1."
 
   SAR:
     description: "Shift Arithmetic Right (Signed)"
@@ -55,23 +63,27 @@ families:
       min_cpu: CPU_8086 # 0xD0..0xD3 on 8086; 0xC0..0xC1 (imm count) requires CPU_186
     class: shift
     opcode_map:
-      "0xD0 /7": { dst: Eb, cnt: 1 }
-      "0xD1 /7": { dst: Ev, cnt: 1 }
-      "0xD2 /7": { dst: Eb, cnt: CL }
-      "0xD3 /7": { dst: Ev, cnt: CL }
-      "0xC0 /7": { dst: Eb, cnt: Ib, min_cpu: CPU_186 }
-      "0xC1 /7": { dst: Ev, cnt: Ib, min_cpu: CPU_186 }
+      "0xD0 /7": { dst: Eb, cnt: 1,  group: group_2, group_ext: 7 }
+      "0xD1 /7": { dst: Ev, cnt: 1,  group: group_2, group_ext: 7 }
+      "0xD2 /7": { dst: Eb, cnt: CL, group: group_2, group_ext: 7 }
+      "0xD3 /7": { dst: Ev, cnt: CL, group: group_2, group_ext: 7 }
+      "0xC0 /7": { dst: Eb, cnt: Ib, group: group_2, group_ext: 7, min_cpu: CPU_186 }
+      "0xC1 /7": { dst: Ev, cnt: Ib, group: group_2, group_ext: 7, min_cpu: CPU_186 }
     semantics:
       action: SHIFT_ROTATE
       op: SAR
+      carry: none
       inputs: [dst, cnt]
       output: dst
-      fault_atomic: true
+      fault_policy: FAULT_ATOMIC
       flags:
         tag: FLAGS_SAR
         op1: dst
         op2: cnt
         res: output
+        update: [CF, PF, ZF, SF, OF]
+        undefined: [AF]
+        notes: "If cnt == 0, flags unchanged. OF defined only if cnt == 1 (always 0)."
 
   ROL:
     description: "Rotate Left"
@@ -79,15 +91,26 @@ families:
       min_cpu: CPU_8086 # 0xD0..0xD3 on 8086; 0xC0..0xC1 (imm count) requires CPU_186
     class: shift
     opcode_map:
-      "0xD0 /0": { dst: Eb, cnt: 1 }
-      "0xD1 /0": { dst: Ev, cnt: 1 }
-      "0xD2 /0": { dst: Eb, cnt: CL }
-      "0xD3 /0": { dst: Ev, cnt: CL }
-      "0xC0 /0": { dst: Eb, cnt: Ib, min_cpu: CPU_186 }
-      "0xC1 /0": { dst: Ev, cnt: Ib, min_cpu: CPU_186 }
+      "0xD0 /0": { dst: Eb, cnt: 1,  group: group_2, group_ext: 0 }
+      "0xD1 /0": { dst: Ev, cnt: 1,  group: group_2, group_ext: 0 }
+      "0xD2 /0": { dst: Eb, cnt: CL, group: group_2, group_ext: 0 }
+      "0xD3 /0": { dst: Ev, cnt: CL, group: group_2, group_ext: 0 }
+      "0xC0 /0": { dst: Eb, cnt: Ib, group: group_2, group_ext: 0, min_cpu: CPU_186 }
+      "0xC1 /0": { dst: Ev, cnt: Ib, group: group_2, group_ext: 0, min_cpu: CPU_186 }
     semantics:
-      action: CALL_HELPER
-      helper_fn: op_rol
+      action: SHIFT_ROTATE
+      op: ROL
+      carry: none
+      inputs: [dst, cnt]
+      output: dst
+      fault_policy: FAULT_ATOMIC
+      flags:
+        tag: FLAGS_ROL
+        op1: dst
+        op2: cnt
+        res: output
+        update: [CF, OF]
+        preserve: [PF, AF, ZF, SF]
 
   ROR:
     description: "Rotate Right"
@@ -95,15 +118,26 @@ families:
       min_cpu: CPU_8086 # 0xD0..0xD3 on 8086; 0xC0..0xC1 (imm count) requires CPU_186
     class: shift
     opcode_map:
-      "0xD0 /1": { dst: Eb, cnt: 1 }
-      "0xD1 /1": { dst: Ev, cnt: 1 }
-      "0xD2 /1": { dst: Eb, cnt: CL }
-      "0xD3 /1": { dst: Ev, cnt: CL }
-      "0xC0 /1": { dst: Eb, cnt: Ib, min_cpu: CPU_186 }
-      "0xC1 /1": { dst: Ev, cnt: Ib, min_cpu: CPU_186 }
+      "0xD0 /1": { dst: Eb, cnt: 1,  group: group_2, group_ext: 1 }
+      "0xD1 /1": { dst: Ev, cnt: 1,  group: group_2, group_ext: 1 }
+      "0xD2 /1": { dst: Eb, cnt: CL, group: group_2, group_ext: 1 }
+      "0xD3 /1": { dst: Ev, cnt: CL, group: group_2, group_ext: 1 }
+      "0xC0 /1": { dst: Eb, cnt: Ib, group: group_2, group_ext: 1, min_cpu: CPU_186 }
+      "0xC1 /1": { dst: Ev, cnt: Ib, group: group_2, group_ext: 1, min_cpu: CPU_186 }
     semantics:
-      action: CALL_HELPER
-      helper_fn: op_ror
+      action: SHIFT_ROTATE
+      op: ROR
+      carry: none
+      inputs: [dst, cnt]
+      output: dst
+      fault_policy: FAULT_ATOMIC
+      flags:
+        tag: FLAGS_ROR
+        op1: dst
+        op2: cnt
+        res: output
+        update: [CF, OF]
+        preserve: [PF, AF, ZF, SF]
 
   RCL:
     description: "Rotate Left through Carry"
@@ -111,15 +145,22 @@ families:
       min_cpu: CPU_8086 # 0xD0..0xD3 on 8086; 0xC0..0xC1 (imm count) requires CPU_186
     class: shift
     opcode_map:
-      "0xD0 /2": { dst: Eb, cnt: 1 }
-      "0xD1 /2": { dst: Ev, cnt: 1 }
-      "0xD2 /2": { dst: Eb, cnt: CL }
-      "0xD3 /2": { dst: Ev, cnt: CL }
-      "0xC0 /2": { dst: Eb, cnt: Ib, min_cpu: CPU_186 }
-      "0xC1 /2": { dst: Ev, cnt: Ib, min_cpu: CPU_186 }
+      "0xD0 /2": { dst: Eb, cnt: 1,  group: group_2, group_ext: 2 }
+      "0xD1 /2": { dst: Ev, cnt: 1,  group: group_2, group_ext: 2 }
+      "0xD2 /2": { dst: Eb, cnt: CL, group: group_2, group_ext: 2 }
+      "0xD3 /2": { dst: Ev, cnt: CL, group: group_2, group_ext: 2 }
+      "0xC0 /2": { dst: Eb, cnt: Ib, group: group_2, group_ext: 2, min_cpu: CPU_186 }
+      "0xC1 /2": { dst: Ev, cnt: Ib, group: group_2, group_ext: 2, min_cpu: CPU_186 }
     semantics:
-      action: CALL_HELPER
-      helper_fn: op_rcl
+      action: SHIFT_ROTATE
+      op: RCL
+      carry: in_out
+      inputs: [dst, cnt]
+      output: dst
+      fault_policy: FAULT_ATOMIC
+      flags:
+        update: [CF, OF]
+        preserve: [PF, AF, ZF, SF]
 
   RCR:
     description: "Rotate Right through Carry"
@@ -127,15 +168,22 @@ families:
       min_cpu: CPU_8086 # 0xD0..0xD3 on 8086; 0xC0..0xC1 (imm count) requires CPU_186
     class: shift
     opcode_map:
-      "0xD0 /3": { dst: Eb, cnt: 1 }
-      "0xD1 /3": { dst: Ev, cnt: 1 }
-      "0xD2 /3": { dst: Eb, cnt: CL }
-      "0xD3 /3": { dst: Ev, cnt: CL }
-      "0xC0 /3": { dst: Eb, cnt: Ib, min_cpu: CPU_186 }
-      "0xC1 /3": { dst: Ev, cnt: Ib, min_cpu: CPU_186 }
+      "0xD0 /3": { dst: Eb, cnt: 1,  group: group_2, group_ext: 3 }
+      "0xD1 /3": { dst: Ev, cnt: 1,  group: group_2, group_ext: 3 }
+      "0xD2 /3": { dst: Eb, cnt: CL, group: group_2, group_ext: 3 }
+      "0xD3 /3": { dst: Ev, cnt: CL, group: group_2, group_ext: 3 }
+      "0xC0 /3": { dst: Eb, cnt: Ib, group: group_2, group_ext: 3, min_cpu: CPU_186 }
+      "0xC1 /3": { dst: Ev, cnt: Ib, group: group_2, group_ext: 3, min_cpu: CPU_186 }
     semantics:
-      action: CALL_HELPER
-      helper_fn: op_rcr
+      action: SHIFT_ROTATE
+      op: RCR
+      carry: in_out
+      inputs: [dst, cnt]
+      output: dst
+      fault_policy: FAULT_ATOMIC
+      flags:
+        update: [CF, OF]
+        preserve: [PF, AF, ZF, SF]
 
   SHLD:
     description: "Double Precision Shift Left"
@@ -145,8 +193,15 @@ families:
       "0x0F 0xA4": { dst: Ev, src: Gv, cnt: Ib }
       "0x0F 0xA5": { dst: Ev, src: Gv, cnt: CL }
     semantics:
-      action: CALL_HELPER
-      helper_fn: op_shld
+      action: DOUBLE_SHIFT
+      op: SHLD
+      carry: none
+      inputs: [dst, src, cnt]
+      output: dst
+      fault_policy: FAULT_ATOMIC
+      flags:
+        update: [CF, PF, ZF, SF, OF]
+        undefined: [AF]
 
   SHRD:
     description: "Double Precision Shift Right"
@@ -156,5 +211,12 @@ families:
       "0x0F 0xAC": { dst: Ev, src: Gv, cnt: Ib }
       "0x0F 0xAD": { dst: Ev, src: Gv, cnt: CL }
     semantics:
-      action: CALL_HELPER
-      helper_fn: op_shrd
+      action: DOUBLE_SHIFT
+      op: SHRD
+      carry: none
+      inputs: [dst, src, cnt]
+      output: dst
+      fault_policy: FAULT_ATOMIC
+      flags:
+        update: [CF, PF, ZF, SF, OF]
+        undefined: [AF]

@@ -12,21 +12,24 @@ families:
       "0x03": { dst: Gv, src: Ev }
       "0x04": { dst: AL, src: Ib }
       "0x05": { dst: eAX, src: Iv }
-      "0x80 /0": { dst: Eb, src: Ib }
-      "0x81 /0": { dst: Ev, src: Iv }
-      "0x82 /0": { dst: Eb, src: Ib }
-      "0x83 /0": { dst: Ev, src: Ib_sext }
+      "0x80 /0": { dst: Eb, src: Ib, group: group_1, group_ext: 0 }
+      "0x81 /0": { dst: Ev, src: Iv, group: group_1, group_ext: 0 }
+      "0x82 /0": { dst: Eb, src: Ib, group: group_1, group_ext: 0 }
+      "0x83 /0": { dst: Ev, src: Ib_sext, group: group_1, group_ext: 0 }
     semantics:
       action: ALU_BINARY
       op: ADD
+      carry: none
       inputs: [dst, src]
       output: dst
-      fault_atomic: true
+      fault_policy: FAULT_ATOMIC
       flags:
         tag: FLAGS_ADD
         op1: dst
         op2: src
         res: output
+        update: [CF, OF, SF, ZF, AF, PF]
+        preserve: []
 
   ADC:
     description: "Add with Carry"
@@ -39,22 +42,24 @@ families:
       "0x13": { dst: Gv, src: Ev }
       "0x14": { dst: AL, src: Ib }
       "0x15": { dst: eAX, src: Iv }
-      "0x80 /2": { dst: Eb, src: Ib }
-      "0x81 /2": { dst: Ev, src: Iv }
-      "0x82 /2": { dst: Eb, src: Ib }
-      "0x83 /2": { dst: Ev, src: Ib_sext }
+      "0x80 /2": { dst: Eb, src: Ib, group: group_1, group_ext: 2 }
+      "0x81 /2": { dst: Ev, src: Iv, group: group_1, group_ext: 2 }
+      "0x82 /2": { dst: Eb, src: Ib, group: group_1, group_ext: 2 }
+      "0x83 /2": { dst: Ev, src: Ib_sext, group: group_1, group_ext: 2 }
     semantics:
       action: ALU_BINARY
       op: ADC
-      carry_in: true
+      carry: in_out
       inputs: [dst, src]
       output: dst
-      fault_atomic: true
+      fault_policy: FAULT_ATOMIC
       flags:
         tag: FLAGS_ADC
         op1: dst
         op2: src
         res: output
+        update: [CF, OF, SF, ZF, AF, PF]
+        preserve: []
 
   SUB:
     description: "Subtract"
@@ -67,21 +72,24 @@ families:
       "0x2B": { dst: Gv, src: Ev }
       "0x2C": { dst: AL, src: Ib }
       "0x2D": { dst: eAX, src: Iv }
-      "0x80 /5": { dst: Eb, src: Ib }
-      "0x81 /5": { dst: Ev, src: Iv }
-      "0x82 /5": { dst: Eb, src: Ib }
-      "0x83 /5": { dst: Ev, src: Ib_sext }
+      "0x80 /5": { dst: Eb, src: Ib, group: group_1, group_ext: 5 }
+      "0x81 /5": { dst: Ev, src: Iv, group: group_1, group_ext: 5 }
+      "0x82 /5": { dst: Eb, src: Ib, group: group_1, group_ext: 5 }
+      "0x83 /5": { dst: Ev, src: Ib_sext, group: group_1, group_ext: 5 }
     semantics:
       action: ALU_BINARY
       op: SUB
+      carry: none
       inputs: [dst, src]
       output: dst
-      fault_atomic: true
+      fault_policy: FAULT_ATOMIC
       flags:
         tag: FLAGS_SUB
         op1: dst
         op2: src
         res: output
+        update: [CF, OF, SF, ZF, AF, PF]
+        preserve: []
 
   SBB:
     description: "Subtract with Borrow"
@@ -94,22 +102,24 @@ families:
       "0x1B": { dst: Gv, src: Ev }
       "0x1C": { dst: AL, src: Ib }
       "0x1D": { dst: eAX, src: Iv }
-      "0x80 /3": { dst: Eb, src: Ib }
-      "0x81 /3": { dst: Ev, src: Iv }
-      "0x82 /3": { dst: Eb, src: Ib }
-      "0x83 /3": { dst: Ev, src: Ib_sext }
+      "0x80 /3": { dst: Eb, src: Ib, group: group_1, group_ext: 3 }
+      "0x81 /3": { dst: Ev, src: Iv, group: group_1, group_ext: 3 }
+      "0x82 /3": { dst: Eb, src: Ib, group: group_1, group_ext: 3 }
+      "0x83 /3": { dst: Ev, src: Ib_sext, group: group_1, group_ext: 3 }
     semantics:
       action: ALU_BINARY
       op: SBB
-      carry_in: true
+      carry: in_out
       inputs: [dst, src]
       output: dst
-      fault_atomic: true
+      fault_policy: FAULT_ATOMIC
       flags:
         tag: FLAGS_SBB
         op1: dst
         op2: src
         res: output
+        update: [CF, OF, SF, ZF, AF, PF]
+        preserve: []
 
   CMP:
     description: "Compare Two Operands (SUB with suppressed writeback)"
@@ -123,42 +133,47 @@ families:
       "0x3B": { dst: Gv, src: Ev }
       "0x3C": { dst: AL, src: Ib }
       "0x3D": { dst: eAX, src: Iv }
-      "0x80 /7": { dst: Eb, src: Ib }
-      "0x81 /7": { dst: Ev, src: Iv }
-      "0x82 /7": { dst: Eb, src: Ib }
-      "0x83 /7": { dst: Ev, src: Ib_sext }
+      "0x80 /7": { dst: Eb, src: Ib, group: group_1, group_ext: 7 }
+      "0x81 /7": { dst: Ev, src: Iv, group: group_1, group_ext: 7 }
+      "0x82 /7": { dst: Eb, src: Ib, group: group_1, group_ext: 7 }
+      "0x83 /7": { dst: Ev, src: Ib_sext, group: group_1, group_ext: 7 }
     semantics:
       action: ALU_COMPARE
       op: SUB
+      carry: none
       inputs: [dst, src]
       output: none
-      fault_atomic: false
+      fault_policy: READ_ONLY
       flags:
         tag: FLAGS_SUB
         op1: dst
         op2: src
         res: compute_only
+        update: [CF, OF, SF, ZF, AF, PF]
+        preserve: []
 
   INC:
     description: "Increment by 1 (preserves Carry Flag)"
     availability: { min_cpu: CPU_8086 }
     class: alu
     opcode_map:
-      "0xFE /0":    { dst: Eb }
-      "0xFF /0":    { dst: Ev }
+      "0xFE /0":    { dst: Eb, group: group_4, group_ext: 0 }
+      "0xFF /0":    { dst: Ev, group: group_5, group_ext: 0 }
       "0x40..0x47": { dst: "gprv[reg]" }
     semantics:
       action: ALU_UNARY
       op: ADD
+      carry: none
       inputs: [dst]
       operand2_constant: 1
       output: dst
-      fault_atomic: true
+      fault_policy: FAULT_ATOMIC
       flags:
         tag: FLAGS_INC
         op1: dst
         op2: 1
         res: output
+        update: [OF, SF, ZF, AF, PF]
         preserve: [CF]
 
   DEC:
@@ -166,21 +181,23 @@ families:
     availability: { min_cpu: CPU_8086 }
     class: alu
     opcode_map:
-      "0xFE /1":    { dst: Eb }
-      "0xFF /1":    { dst: Ev }
+      "0xFE /1":    { dst: Eb, group: group_4, group_ext: 1 }
+      "0xFF /1":    { dst: Ev, group: group_5, group_ext: 1 }
       "0x48..0x4F": { dst: "gprv[reg]" }
     semantics:
       action: ALU_UNARY
       op: SUB
+      carry: none
       inputs: [dst]
       operand2_constant: 1
       output: dst
-      fault_atomic: true
+      fault_policy: FAULT_ATOMIC
       flags:
         tag: FLAGS_DEC
         op1: dst
         op2: 1
         res: output
+        update: [OF, SF, ZF, AF, PF]
         preserve: [CF]
 
   NEG:
@@ -188,19 +205,22 @@ families:
     availability: { min_cpu: CPU_8086 }
     class: alu
     opcode_map:
-      "0xF6 /3": { dst: Eb }
-      "0xF7 /3": { dst: Ev }
+      "0xF6 /3": { dst: Eb, group: group_3, group_ext: 3 }
+      "0xF7 /3": { dst: Ev, group: group_3, group_ext: 3 }
     semantics:
       action: ALU_UNARY
       op: NEG
+      carry: none
       inputs: [dst]
       output: dst
-      fault_atomic: true
+      fault_policy: FAULT_ATOMIC
       flags:
         tag: FLAGS_SUB
         op1: 0
         op2: dst
         res: output
+        update: [CF, OF, SF, ZF, AF, PF]
+        preserve: []
 
   IMUL:
     description: "Signed Multiply (Single/Two/Three Operand Forms)"
