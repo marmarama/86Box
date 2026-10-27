@@ -14,5 +14,11 @@ model:
 isa_level: CPU_386
 features: []
 
+supported_coprocessors:
+  - "fpus/discrete/intel_80387dx.yaml"
+  - "fpus/discrete/cyrix_83d87.yaml"
+  - "fpus/discrete/iit_3c87.yaml"
+  - "fpus/discrete/weitek_3167.yaml"
+
 timing_profile: "timings/386.yaml"
 

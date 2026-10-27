@@ -13,5 +13,8 @@ model:
 isa_level: CPU_8086
 features: []
 
+supported_coprocessors:
+  - "fpus/discrete/intel_8087.yaml"
+
 timing_profile: "timings/8086.yaml"
 

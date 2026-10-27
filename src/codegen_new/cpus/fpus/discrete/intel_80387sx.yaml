@@ -1,0 +1,24 @@
+# intel_80387sx.yaml - Intel 80387SX Math Coprocessor (16-bit Bus)
+
+fpu:
+  fpu_id: FPU_387SX
+  name: "Intel 80387SX Math Coprocessor"
+  vendor: "Intel"
+  release_year: 1989
+  package: [PLCC_68]
+  type: DISCRETE_COPROCESSOR
+  compatible_cpus: [CPU_386SX]
+
+interface:
+  protocol: COPROCESSOR_BUS_16BIT
+  bus_width_bits: 16 # 16-bit external data bus matching 386SX
+  clock_divider: 1.0
+
+standard:
+  ieee_754_version: IEEE_754_1985
+  infinity_mode: AFFINE
+  affine_mode_supported: true
+
+capabilities:
+  same_as: FPU_387DX
+

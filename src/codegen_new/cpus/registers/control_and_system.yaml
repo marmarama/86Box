@@ -1,0 +1,67 @@
+# control_and_system.yaml - Control, Debug and System Table Registers
+
+control_registers:
+  CR0:
+    min_cpu: CPU_386
+    width: 32
+    reset_value: 0x60000010 # CD=1, NW=1, ET=1 on 486+; 0x7FFFFFE0 on 386
+    bits:
+      PE: { bit: 0,  desc: "Protection Enable (Protected Mode when 1, Real Mode when 0)" }
+      MP: { bit: 1,  desc: "Monitor Coprocessor (Controls interaction of WAIT/FWAIT with TS)" }
+      EM: { bit: 2,  desc: "Emulation (Forces #NM exception on x87 FPU instructions)" }
+      TS: { bit: 3,  desc: "Task Switched (Set automatically on task switch; traps FPU/MMX #NM)" }
+      ET: { bit: 4,  desc: "Extension Type (1 = 387 math coprocessor 32-bit protocol on 386)" }
+      NE: { bit: 5,  desc: "Numeric Error (1 = Native #MF vector 16 exception, 0 = DOS PC/AT IRQ13/FERR#)" }
+      WP: { bit: 16, min_cpu: CPU_486, desc: "Write Protect (Disallows supervisor writes to read-only user pages)" }
+      AM: { bit: 18, min_cpu: CPU_486, desc: "Alignment Mask (Enables EFLAGS.AC checking for user mode)" }
+      NW: { bit: 29, min_cpu: CPU_486, desc: "Not Write-through (Controls L1 cache write-through/write-back)" }
+      CD: { bit: 30, min_cpu: CPU_486, desc: "Cache Disable (Globally disables CPU cache memory fills)" }
+      PG: { bit: 31, desc: "Paging Enable (Enables MMU address translation via page tables)" }
+
+  CR2:
+    min_cpu: CPU_386
+    width: 32
+    reset_value: 0x00000000
+    desc: "Page Fault Linear Address (Stores 32-bit linear address that triggered the last #PF exception)"
+
+  CR3:
+    min_cpu: CPU_386
+    width: 32
+    reset_value: 0x00000000
+    desc: "Page Directory Base Register (PDBR)"
+    fields:
+      pwt:  { bit: 3, min_cpu: CPU_486, desc: "Page-level Writes Transparent (Cache Write-Through for page dir)" }
+      pcd:  { bit: 4, min_cpu: CPU_486, desc: "Page-level Cache Disable (Cache disable for page dir)" }
+      base: { bits: [12, 31], desc: "Physical base address of 4KB page directory" }
+
+  CR4:
+    min_cpu: CPU_PENTIUM
+    width: 32
+    reset_value: 0x00000000
+    bits:
+      VME:        { bit: 0,  desc: "Virtual-8086 Mode Extensions (Hardware interrupt redirection)" }
+      PVI:        { bit: 1,  desc: "Protected-Mode Virtual Interrupts" }
+      TSD:        { bit: 2,  desc: "Time Stamp Disable (RDTSC restricted to ring 0 if set)" }
+      DE:         { bit: 3,  desc: "Debugging Extensions (Enables I/O breakpoints in DR7)" }
+      PSE:        { bit: 4,  desc: "Page Size Extensions (Enables 4MB large pages)" }
+      PAE:        { bit: 5,  desc: "Physical Address Extension (Enables 36-bit physical addressing)" }
+      MCE:        { bit: 6,  desc: "Machine Check Exception (Enables #MC exceptions on hardware errors)" }
+      PGE:        { bit: 7,  desc: "Page Global Enable (Prevents TLB flush of global pages on CR3 reload)" }
+      PCE:        { bit: 8,  desc: "Performance-Monitoring Counter Enable (Allows RDPMC in user mode)" }
+      OSFXSR:     { bit: 9,  desc: "OS Support for FXSAVE and FXRSTOR (Required before running SSE)" }
+      OSXMMEXCPT: { bit: 10, desc: "OS Support for Unmasked SIMD Floating-Point Exceptions (#XF)" }
+
+debug_registers:
+  DR0: { min_cpu: CPU_386, width: 32, desc: "Linear Breakpoint Address 0" }
+  DR1: { min_cpu: CPU_386, width: 32, desc: "Linear Breakpoint Address 1" }
+  DR2: { min_cpu: CPU_386, width: 32, desc: "Linear Breakpoint Address 2" }
+  DR3: { min_cpu: CPU_386, width: 32, desc: "Linear Breakpoint Address 3" }
+  DR6: { min_cpu: CPU_386, width: 32, desc: "Debug Status Register (Breakpoints hit, single-step)" }
+  DR7: { min_cpu: CPU_386, width: 32, desc: "Debug Control Register (Breakpoint enable, R/W/X conditions, lengths)" }
+
+table_registers:
+  GDTR: { min_cpu: CPU_286, limit_width: 16, base_width: 32, desc: "Global Descriptor Table Register" }
+  IDTR: { min_cpu: CPU_286, limit_width: 16, base_width: 32, desc: "Interrupt Descriptor Table Register" }
+  LDTR: { min_cpu: CPU_286, selector_width: 16, descriptor_cache: true, desc: "Local Descriptor Table Register" }
+  TR:   { min_cpu: CPU_286, selector_width: 16, descriptor_cache: true, desc: "Task Register (Active TSS)" }
+

@@ -1,0 +1,87 @@
+# k7.yaml - AMD K7 (Athlon / Thunderbird / Palomino / Barton) Microarchitecture Profile
+
+model:
+  cpu_level: CPU_K7
+  name: "AMD K7 (Athlon / Athlon XP / Duron / Sempron)"
+  pipeline_type: out_of_order
+  pipeline_stages: 10          # 10-stage integer pipeline (15-stage FP)
+  rob_entries: 72              # 72-entry Reorder Buffer (vs 40 on P6)
+  schedulers:
+    integer_entries: 24        # 24-entry Integer Scheduler (8 per ALU/AGU line)
+    floating_point_entries: 36 # 36-entry Floating-Point / SIMD Scheduler
+  branch_mispredict_penalty: 10 # 10-cycle pipeline flush penalty
+
+decoders:
+  template: "DirectPath / VectorPath"
+  decode_width: 3              # Decodes up to 3 x86 instructions per cycle into Macro-Ops
+  directpath_bandwidth: 3      # 1-2 Macro-Op instructions (1 cycle latency)
+  vectorpath_bandwidth: 1      # Complex/microcode instructions (>2 Macro-Ops via microcode ROM)
+
+execution_pipes:
+  integer_alus: 3              # 3 full integer ALUs (each with its own barrel shifter!)
+  address_generators: 3        # 3 AGUs (handles up to 2 loads and 1 store per cycle)
+  floating_point_units: 3      # 3 independent pipelined FP/3DNow! units
+    # FADD: FP Add, FP/Integer conversions, MMX ALU
+    # FMUL: FP Multiply, 3DNow! Multiply, MMX Multiply
+    # FSTORE: FP/MMX store data, FP move, FXCH
+
+execution_ports:
+  alu0: [ALU, SHIFT, BRANCH]
+  alu1: [ALU, SHIFT]
+  alu2: [ALU, SHIFT, MUL]      # Dedicated 3-cycle integer multiplier
+  agu0: [LOAD, STORE_ADDR]
+  agu1: [LOAD, STORE_ADDR]
+  agu2: [LOAD, STORE_ADDR]
+  fadd: [FP_ADD, MMX_ALU, SSE_ADD]
+  fmul: [FP_MUL, 3DNOW_MUL, MMX_MUL, SSE_MUL]
+  fstore: [FP_STORE, FXCH, FP_MOV]
+
+dispatch:
+  # Integer Arithmetic & Logic (3 symmetric ALUs: 0.33 cycle throughput!)
+  alu_reg:          { uops: 1, ports: [alu0, alu1, alu2], latency: 1.0, throughput: 0.33 }
+  alu_rm:           { uops: 2, ports: [agu0, alu0], latency: 3.0, throughput: 1.0 }
+  alu_rmw:          { uops: 4, ports: [agu0, alu0, agu1, agu2], latency: 4.0, throughput: 1.5 }
+  alu_carry_reg:    { uops: 1, ports: [alu0, alu1, alu2], latency: 1.0, throughput: 0.33 }
+  alu_carry_rm:     { uops: 2, ports: [agu0, alu0], latency: 3.0, throughput: 1.0 }
+  alu_carry_rmw:    { uops: 4, ports: [agu0, alu0, agu1, agu2], latency: 4.0, throughput: 1.5 }
+
+  # Shifts & Rotates (K7 has a dedicated barrel shifter on ALL 3 integer ALUs!)
+  shift_reg_1:      { uops: 1, ports: [alu0, alu1, alu2], latency: 1.0, throughput: 0.33 }
+  shift_reg_imm:    { uops: 1, ports: [alu0, alu1, alu2], latency: 1.0, throughput: 0.33 }
+  shift_reg_cl:     { uops: 3, ports: [alu0], latency: 3.0, throughput: 1.5 }
+  shift_mem_1:      { uops: 4, ports: [agu0, alu0, agu1, agu2], latency: 4.0, throughput: 1.5 }
+  shift_mem_imm:    { uops: 4, ports: [agu0, alu0, agu1, agu2], latency: 4.0, throughput: 1.5 }
+  shift_mem_cl:     { uops: 6, ports: [agu0, alu0, agu1, agu2], latency: 5.0, throughput: 2.0 }
+  double_shift:     { uops: 3, ports: [alu0, alu1], latency: 2.0, throughput: 1.0 }
+
+  # Multiplication and Division (Dedicated 3-cycle integer multiplier)
+  mul_reg:          { uops: 1, ports: [alu2], latency: 3.0, throughput: 1.0 } # 3 cycles (faster than P6/P4)
+  div_reg:          { uops: 14, ports: [alu0], latency: 24.0, throughput: 24.0 }
+
+  # Data Movement & Stack
+  mov_reg_reg:      { uops: 1, ports: [alu0, alu1, alu2], latency: 1.0, throughput: 0.33 }
+  mov_reg_mem:      { uops: 1, ports: [agu0, agu1], latency: 3.0, throughput: 0.5 } # Dual load AGUs
+  mov_mem_reg:      { uops: 1, ports: [agu2], latency: 1.0, throughput: 1.0 }
+  mov_extend:       { uops: 1, ports: [alu0, alu1, alu2], latency: 1.0, throughput: 0.33 }
+  xchg_reg_reg:     { uops: 3, ports: [alu0, alu1, alu2], latency: 2.0, throughput: 1.0 }
+  xchg_reg_mem:     { uops: 5, ports: [agu0, alu0, agu1, agu2], latency: 7.0, throughput: 6.0 }
+
+  stack_push:       { uops: 2, ports: [agu0, agu2], latency: 2.0, throughput: 1.0 }
+  stack_pop:        { uops: 2, ports: [agu0, alu0], latency: 2.0, throughput: 1.0 }
+
+  # Branching and Control Flow
+  branch_cond:
+    taken_latency: 1              # 1-cycle latency when predicted
+    untaken_latency: 1
+    mispredict_penalty: 10        # 10 cycles pipeline flush
+    btac_entries: 2048            # 2048-entry Branch Target Address Calculator
+    bht_entries: 4096             # 4096-entry Global History Bimodal Counter table
+
+  branch_uncond_near:
+    latency: 1
+
+  # Floating-Point, MMX, 3DNow!, and SSE Vector SIMD
+  simd_mov:         { uops: 1, ports: [fstore, agu0], latency: 2.0, throughput: 0.5 }
+  simd_alu:         { uops: 1, ports: [fadd], latency: 4.0, throughput: 1.0 }       # Fully pipelined 3DNow!/SSE Add
+  simd_mul:         { uops: 1, ports: [fmul], latency: 4.0, throughput: 1.0 }       # Fully pipelined 3DNow!/SSE Mul
+

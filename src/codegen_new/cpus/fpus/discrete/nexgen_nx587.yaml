@@ -1,0 +1,49 @@
+# nexgen_nx587.yaml - NexGen Nx587 Floating-Point Coprocessor
+
+fpu:
+  fpu_id: FPU_NEXGEN_NX587
+  name: "NexGen Nx587 Floating-Point Coprocessor"
+  vendor: "NexGen"
+  release_year: 1994
+  package: [PGA_463, MCM]
+  type: DISCRETE_COPROCESSOR
+  compatible_cpus: [CPU_NX586]
+
+interface:
+  protocol: NEXBUS_COPROCESSOR_INTERFACE
+  bus_width_bits: 64
+  clock_divider: 1.0 # Clocked synchronously with Nx586 CPU core
+
+architecture: |
+  Dedicated RISC floating-point coprocessor specifically paired with the NexGen Nx586 CPU.
+  Because the initial Nx586 core did not include on-die FPU silicon to maximize die yield,
+  the Nx587 was delivered either as a companion chip on specialized motherboards or
+  bonded together with the Nx586 on a Multi-Chip Module (MCM).
+  x87 instructions decoded by the Nx586's RISC86 decoder are dispatched over the dedicated
+  inter-chip bus directly to the Nx587 execution units.
+
+standard:
+  ieee_754_version: IEEE_754_1985
+  infinity_mode: AFFINE
+  affine_mode_supported: true
+
+registers:
+  stack_depth: 8
+  register_width_bits: 80
+
+capabilities:
+  same_as: FPU_387DX
+  features:
+    - "Full hardware IEEE 754 precision (single, double, extended)"
+    - "Direct integration with RISC86 micro-op dispatch unit"
+
+typical_cycles:
+  fadd: 4
+  fsub: 4
+  fmul: 6
+  fdiv: 30
+  fsqrt: 35
+  fsin: 60
+  fcos: 60
+  fsincos: 75
+

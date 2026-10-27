@@ -17,11 +17,16 @@ families:
       "0x82 /4": { dst: Eb, src: Ib }
       "0x83 /4": { dst: Ev, src: Ib_sext }
     semantics:
-      args: [dst, src]
-      body: |
-        res = dst & src
-        flags: { tag: FLAGS_LOGIC, op1: res, op2: 0, res: res }
-        writeback: dst = res
+      action: ALU_BINARY
+      op: AND
+      inputs: [dst, src]
+      output: dst
+      fault_atomic: true
+      flags:
+        tag: FLAGS_LOGIC
+        op1: output
+        op2: 0
+        res: output
 
   OR:
     description: "Logical Inclusive OR"
@@ -39,11 +44,16 @@ families:
       "0x82 /1": { dst: Eb, src: Ib }
       "0x83 /1": { dst: Ev, src: Ib_sext }
     semantics:
-      args: [dst, src]
-      body: |
-        res = dst | src
-        flags: { tag: FLAGS_LOGIC, op1: res, op2: 0, res: res }
-        writeback: dst = res
+      action: ALU_BINARY
+      op: OR
+      inputs: [dst, src]
+      output: dst
+      fault_atomic: true
+      flags:
+        tag: FLAGS_LOGIC
+        op1: output
+        op2: 0
+        res: output
 
   XOR:
     description: "Logical Exclusive OR"
@@ -61,11 +71,16 @@ families:
       "0x82 /6": { dst: Eb, src: Ib }
       "0x83 /6": { dst: Ev, src: Ib_sext }
     semantics:
-      args: [dst, src]
-      body: |
-        res = dst ^ src
-        flags: { tag: FLAGS_LOGIC, op1: res, op2: 0, res: res }
-        writeback: dst = res
+      action: ALU_BINARY
+      op: XOR
+      inputs: [dst, src]
+      output: dst
+      fault_atomic: true
+      flags:
+        tag: FLAGS_LOGIC
+        op1: output
+        op2: 0
+        res: output
 
   TEST:
     description: "Logical Compare (AND with suppressed writeback)"
@@ -80,11 +95,16 @@ families:
       "0xF6 /0": { dst: Eb, src: Ib }
       "0xF7 /0": { dst: Ev, src: Iv }
     semantics:
-      args: [dst, src]
-      body: |
-        res = dst & src
-        flags: { tag: FLAGS_LOGIC, op1: res, op2: 0, res: res }
-        writeback: none
+      action: ALU_COMPARE
+      op: AND
+      inputs: [dst, src]
+      output: none
+      fault_atomic: false
+      flags:
+        tag: FLAGS_LOGIC
+        op1: compute_only
+        op2: 0
+        res: compute_only
 
   NOT:
     description: "One's Complement Negation (~dst)"
@@ -94,11 +114,12 @@ families:
       "0xF6 /2": { dst: Eb }
       "0xF7 /2": { dst: Ev }
     semantics:
-      args: [dst]
-      body: |
-        res = ~dst
-        flags: none
-        writeback: dst = res
+      action: ALU_UNARY
+      op: NOT
+      inputs: [dst]
+      output: dst
+      fault_atomic: true
+      flags: none
 
   BT:
     description: "Bit Test (Copies selected bit into Carry Flag)"
@@ -108,11 +129,8 @@ families:
       "0x0F 0xA3":    { base: Ev, bit_offset: Gv }
       "0x0F 0xBA /4": { base: Ev, bit_offset: Ib }
     semantics:
-      args: [base, bit_offset]
-      body: |
-        cf = (base >> (bit_offset % sizeof_bits(base))) & 1
-        flags: { write: [CF: cf], preserve: [PF, AF, ZF, SF, OF] }
-        writeback: none
+      action: CALL_HELPER
+      helper_fn: op_bt
 
   BTS:
     description: "Bit Test and Set"
@@ -122,13 +140,8 @@ families:
       "0x0F 0xAB":    { base: Ev, bit_offset: Gv }
       "0x0F 0xBA /5": { base: Ev, bit_offset: Ib }
     semantics:
-      args: [base, bit_offset]
-      body: |
-        idx = bit_offset % sizeof_bits(base)
-        cf = (base >> idx) & 1
-        res = base | (1 << idx)
-        flags: { write: [CF: cf], preserve: [PF, AF, ZF, SF, OF] }
-        writeback: base = res
+      action: CALL_HELPER
+      helper_fn: op_bts
 
   BTR:
     description: "Bit Test and Reset"
@@ -138,13 +151,8 @@ families:
       "0x0F 0xB3":    { base: Ev, bit_offset: Gv }
       "0x0F 0xBA /6": { base: Ev, bit_offset: Ib }
     semantics:
-      args: [base, bit_offset]
-      body: |
-        idx = bit_offset % sizeof_bits(base)
-        cf = (base >> idx) & 1
-        res = base & ~(1 << idx)
-        flags: { write: [CF: cf], preserve: [PF, AF, ZF, SF, OF] }
-        writeback: base = res
+      action: CALL_HELPER
+      helper_fn: op_btr
 
   BTC:
     description: "Bit Test and Complement"
@@ -154,13 +162,8 @@ families:
       "0x0F 0xBB":    { base: Ev, bit_offset: Gv }
       "0x0F 0xBA /7": { base: Ev, bit_offset: Ib }
     semantics:
-      args: [base, bit_offset]
-      body: |
-        idx = bit_offset % sizeof_bits(base)
-        cf = (base >> idx) & 1
-        res = base ^ (1 << idx)
-        flags: { write: [CF: cf], preserve: [PF, AF, ZF, SF, OF] }
-        writeback: base = res
+      action: CALL_HELPER
+      helper_fn: op_btc
 
   BSF:
     description: "Bit Scan Forward (least significant 1-bit)"
@@ -169,15 +172,8 @@ families:
     opcode_map:
       "0x0F 0xBC": { dst: Gv, src: Ev }
     semantics:
-      args: [dst, src]
-      body: |
-        if src == 0:
-          flags: { write: [ZF: 1], undefined: [CF, PF, AF, SF, OF] }
-          writeback: none
-        else:
-          res = count_trailing_zeros(src)
-          flags: { write: [ZF: 0], undefined: [CF, PF, AF, SF, OF] }
-          writeback: dst = res
+      action: CALL_HELPER
+      helper_fn: op_bsf
 
   BSR:
     description: "Bit Scan Reverse (most significant 1-bit)"
@@ -186,13 +182,5 @@ families:
     opcode_map:
       "0x0F 0xBD": { dst: Gv, src: Ev }
     semantics:
-      args: [dst, src]
-      body: |
-        if src == 0:
-          flags: { write: [ZF: 1], undefined: [CF, PF, AF, SF, OF] }
-          writeback: none
-        else:
-          res = (sizeof_bits(src) - 1) - count_leading_zeros(src)
-          flags: { write: [ZF: 0], undefined: [CF, PF, AF, SF, OF] }
-          writeback: dst = res
-
+      action: CALL_HELPER
+      helper_fn: op_bsr

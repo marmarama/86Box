@@ -1,0 +1,76 @@
+# weitek_3167.yaml - Weitek Abacus 3167 Memory-Mapped Coprocessor
+
+fpu:
+  fpu_id: FPU_WEITEK_3167
+  name: "Weitek Abacus 3167 Coprocessor"
+  vendor: "Weitek"
+  release_year: 1988
+  package: [PGA_68, PGA_121]
+  type: MMIO_COPROCESSOR
+  compatible_cpus: [CPU_386DX]
+
+interface:
+  protocol: MEMORY_MAPPED_IO
+  address_space_size: 0x10000 # 64 KB memory window
+  default_base_physical: 0xC0000000
+  alternative_base_physical: 0x70000000
+  bus_width_bits: 32
+  clock_divider: 1.0 # Clocked synchronously with 386DX (20, 25, 33 MHz)
+
+architecture: |
+  Unlike Intel x87 coprocessors, the Weitek 3167 does not monitor CPU bus cycles for
+  ESC opcodes (0xD8-0xDF) nor does it use an 80-bit stack.
+  Instead, it is a high-speed RISC floating-point unit mapped directly into 64 KB of
+  physical memory space. Operations are triggered by host CPU memory instructions:
+    - Writes (MOV [addr], reg) initiate instructions or store data.
+    - Reads (MOV reg, [addr]) retrieve calculation results.
+  The 16-bit offset within the 64 KB window encodes:
+    - bits [15:10]: Opcode function (ADD, SUB, MUL, DIV, SQRT, CMP, etc.)
+    - bits [9:7]: Destination register / Precision (single or double)
+    - bits [6:2]: Source register 1
+    - bits [1:0]: Source register 2 / Data format
+
+standard:
+  ieee_754_version: IEEE_754_1985
+  precision_support:
+    - IEEE_SINGLE_32
+    - IEEE_DOUBLE_64
+  extended_precision_80bit: false # Weitek does not implement 80-bit extended precision
+
+registers:
+  register_organization: FLAT_REGISTER_FILE
+  single_precision_registers:
+    count: 32
+    naming: "WS0 .. WS31"
+    width_bits: 32
+  double_precision_registers:
+    count: 16
+    naming: "WD0 .. WD15 (aliased across WS pairs: WD0=WS0:WS1, etc.)"
+    width_bits: 64
+  control_registers:
+    - name: PCR
+      description: "Processor Control Register (rounding modes, exception masks and status)"
+      width_bits: 32
+
+instruction_set:
+  execution_method: MMIO_TRIGGERED
+  operations:
+    - FADD: "Single/Double floating point add (2-3 cycles)"
+    - FSUB: "Single/Double floating point subtract (2-3 cycles)"
+    - FMUL: "Single/Double floating point multiply (2-3 cycles)"
+    - FDIV: "Single/Double floating point divide (17-25 cycles)"
+    - FSQRT: "Single/Double square root (20-30 cycles)"
+    - FCMP: "Floating point compare returning condition codes"
+    - FABS: "Floating point absolute value"
+    - FNEG: "Floating point negate"
+    - FCVT: "Convert between integer, single, and double float"
+
+typical_cycles:
+  fadd: 2
+  fsub: 2
+  fmul: 3
+  fdiv: 17
+  fsqrt: 20
+  fsin: null    # Software subroutine required
+  fcos: null
+

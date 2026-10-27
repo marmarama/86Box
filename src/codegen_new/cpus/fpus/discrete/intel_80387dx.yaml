@@ -1,0 +1,47 @@
+# intel_80387dx.yaml - Intel 80387DX Math Coprocessor (32-bit Bus)
+
+fpu:
+  fpu_id: FPU_387DX
+  name: "Intel 80387DX Math Coprocessor"
+  vendor: "Intel"
+  release_year: 1987
+  package: [PGA_68]
+  type: DISCRETE_COPROCESSOR
+  compatible_cpus: [CPU_386DX]
+
+interface:
+  protocol: COPROCESSOR_BUS_32BIT
+  bus_width_bits: 32
+  clock_divider: 1.0 # Synchronous 1:1 with 386DX CPU clock (16 to 33 MHz)
+  opcode_range: [0xD8, 0xDF]
+
+standard:
+  ieee_754_version: IEEE_754_1985
+  infinity_mode: AFFINE # Affine infinity standard
+  affine_mode_supported: true
+
+capabilities:
+  added_instructions:
+    - FSIN      # Sine instruction
+    - FCOS      # Cosine instruction
+    - FSINCOS   # Simultaneous Sine and Cosine
+    - FPREM1    # IEEE 754-compliant partial remainder
+    - FUCOM     # Unordered compare (does not raise #IA on QNaN)
+    - FUCOMP    # Unordered compare and pop
+    - FUCOMPP   # Unordered compare and pop twice
+  transcendental_domain: "Full range: -2^62 <= theta <= +2^62"
+
+registers:
+  stack_depth: 8
+  register_width_bits: 80
+
+typical_cycles:
+  fadd: 30      # (23-34 cycles)
+  fsub: 30
+  fmul: 45      # (38-52 cycles)
+  fdiv: 90      # (88-91 cycles)
+  fsqrt: 122    # (120-125 cycles)
+  fsin: 350     # (122-772 cycles)
+  fcos: 350
+  fsincos: 400
+

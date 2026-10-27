@@ -14,5 +14,9 @@ model:
 isa_level: CPU_286
 features: []
 
+supported_coprocessors:
+  - "fpus/discrete/intel_80287.yaml"
+  - "fpus/discrete/intel_80287xl.yaml"
+
 timing_profile: "timings/286.yaml"
 

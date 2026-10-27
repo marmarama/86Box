@@ -32,6 +32,8 @@ features:
   - CPU_FEATURE_CMOV
   # Note: Pentium Pro does NOT have MMX! MMX opcodes automatically raise #UD.
 
+fpu_profile: "fpus/integrated/intel_p6.yaml"
+
 timing_profile: "timings/p6.yaml"
 
 cache:

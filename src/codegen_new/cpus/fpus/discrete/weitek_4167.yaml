@@ -1,0 +1,60 @@
+# weitek_4167.yaml - Weitek Abacus 4167 Memory-Mapped Coprocessor for 80486
+
+fpu:
+  fpu_id: FPU_WEITEK_4167
+  name: "Weitek Abacus 4167 Coprocessor"
+  vendor: "Weitek"
+  release_year: 1989
+  package: [PGA_142]
+  type: MMIO_COPROCESSOR
+  compatible_cpus: [CPU_486DX, CPU_486SX]
+
+interface:
+  protocol: MEMORY_MAPPED_IO
+  address_space_size: 0x10000 # 64 KB memory window
+  default_base_physical: 0xC0000000
+  alternative_base_physical: 0x70000000
+  bus_width_bits: 32
+  clock_divider: 1.0 # 25, 33, 40, 50 MHz bus interface
+
+architecture: |
+  Designed specifically for 80486 motherboards with a dedicated 142-pin Weitek socket.
+  Shares the same MMIO opcode and register encoding scheme as the 3167, but features
+  an optimized 486 bus interface that leverages single-cycle transfers and burst bus modes.
+  Crucially, it operates in parallel with the 486DX's internal x87 FPU, allowing high-performance
+  software (such as CAD, AutoCAD Weitek driver, 3D Studio, POV-Ray) to choose either
+  x87 or Weitek Abacus code paths for maximum floating-point speed.
+
+standard:
+  ieee_754_version: IEEE_754_1985
+  precision_support:
+    - IEEE_SINGLE_32
+    - IEEE_DOUBLE_64
+  extended_precision_80bit: false
+
+registers:
+  register_organization: FLAT_REGISTER_FILE
+  single_precision_registers:
+    count: 32
+    naming: "WS0 .. WS31"
+    width_bits: 32
+  double_precision_registers:
+    count: 16
+    naming: "WD0 .. WD15"
+    width_bits: 64
+  control_registers:
+    - name: PCR
+      description: "Processor Control Register"
+      width_bits: 32
+
+instruction_set:
+  execution_method: MMIO_TRIGGERED
+  coexistence: "Coexists alongside internal 486DX x87 FPU without conflict"
+
+typical_cycles:
+  fadd: 1       # Pipelined 1 cycle throughput on 486 bus
+  fsub: 1
+  fmul: 2
+  fdiv: 14
+  fsqrt: 17
+

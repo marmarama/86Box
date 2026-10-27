@@ -40,7 +40,19 @@ src/codegen_new/cpus/
 │   ├── pentium.yaml        # Pentium P5/P54C/P55C superscalar U/V pipe pairing
 │   ├── cyrix_686.yaml      # Cyrix 6x86 X/Y pairing with speculative data forwarding
 │   ├── k6.yaml             # AMD K6 / K6-2 decoupled RISC86 dual-ALU engine
-│   └── p6.yaml             # Intel P6 (Pentium Pro/II/III) 4-1-1 decoders, ROB, Ports 0-4
+│   ├── k7.yaml             # AMD K7 (Athlon / Athlon XP) 9-pipe symmetric execution
+│   ├── p6.yaml             # Intel P6 (Pentium Pro/II/III) 4-1-1 decoders, ROB, Ports 0-4
+│   └── pentium4.yaml       # Intel Pentium 4 (NetBurst) 20-stage pipeline, Trace Cache, 2x ALUs
+│
+├── registers/              # Declarative Architectural Register Specifications
+│   ├── README.md           # Register hierarchy and C code generation guide
+│   ├── gpr.yaml            # General Purpose Registers (EAX..EDI, AX..DI, AL..BH)
+│   ├── segments.yaml       # Segment Registers (ES, CS, SS, DS, FS, GS) & Descriptor Caches
+│   ├── flags.yaml          # FLAGS (16-bit) and EFLAGS (32-bit) Architectural Bitfields
+│   ├── control_and_system.yaml # Control Registers (CR0..CR4), Debug (DR0..DR7), Tables (GDTR..TR)
+│   ├── fpu_and_mmx.yaml    # x87 FPU Stack (ST0..ST7), Status/Control Words, MMX Aliasing
+│   ├── simd_xmm.yaml       # SSE / SSE2 128-bit Vector Registers (XMM0..XMM7) & MXCSR
+│   └── msr.yaml            # Model-Specific Registers (TSC, APIC, SYSENTER, MTRR, AMD STAR, VIA FCR)
 │
 ├── intel/                  # Intel CPU Manifests
 │   ├── 8088.yaml           # Intel 8088 4.77 MHz (IBM PC 5150 / PC-XT 5160)
@@ -56,8 +68,12 @@ src/codegen_new/cpus/
 │   ├── pentium_p54c.yaml   # Intel Pentium Classic 75-200 MHz (Socket 5/7)
 │   ├── pentium_mmx.yaml    # Intel Pentium MMX (P55C) 166-233 MHz (Socket 7)
 │   ├── pentium_pro.yaml    # Intel Pentium Pro (P6 debut, Socket 8, full-speed L2 MCM, NO MMX)
-│   ├── pentium2_deschutes.yaml # Pentium II 266-450 MHz (Slot 1)
-│   ├── pentium3_coppermine.yaml # Pentium III 500-1133 MHz (Socket 370 / Slot 1)
+│   ├── pentium2_klamath.yaml # Pentium II 233-300 MHz (Slot 1, 0.35 um, NO SEP/SYSENTER)
+│   ├── pentium2_deschutes.yaml # Pentium II 266-450 MHz (Slot 1, 0.25 um, SYSENTER, FXSR)
+│   ├── celeron_mendocino.yaml # Celeron 300-533 MHz (First on-die full-speed 128KB L2)
+│   ├── pentium3_katmai.yaml # Pentium III 450-600 MHz (Slot 1, SSE debut, off-die L2)
+│   ├── pentium3_coppermine.yaml # Pentium III 500-1133 MHz (Socket 370 / Slot 1, on-die 256KB ATC)
+│   ├── pentium3_tualatin.yaml # Pentium III-S 1.0-1.4 GHz (Socket 370, 0.13 um, Hardware Prefetcher)
 │   ├── pentium4_northwood.yaml # Pentium 4 1.6-3.4 GHz (Socket 478)
 │   └── pentium_m_dothan.yaml # Pentium M 90nm 1.0-2.26 GHz (Socket 479)
 │
@@ -65,7 +81,10 @@ src/codegen_new/cpus/
 │   ├── am386dx.yaml        # AMD Am386DX-40 (40 MHz)
 │   ├── am486dx4.yaml       # AMD Am486DX4-100 (100-120 MHz)
 │   ├── am5x86.yaml         # AMD Am5x86-P75 (133-160 MHz)
-│   ├── k6_2.yaml           # AMD K6-2 with 3DNow! (Super Socket 7)
+│   ├── k6.yaml             # AMD K6 (Model 6/7 Little Foot, MMX only, NO 3DNow!)
+│   ├── k6_2.yaml           # AMD K6-2 (Model 8 Chomper / K6-3D debut, 3DNow! + SYSCALL)
+│   ├── k6_3.yaml           # AMD K6-III (Model 9 Sharptooth, on-die 256KB Tri-Level cache)
+│   ├── k6_2plus.yaml       # AMD K6-2+ / K6-III+ (Model 13, 0.18 um, Enhanced 3DNow!)
 │   ├── k7_thunderbird.yaml # AMD Athlon 650-1400 MHz (Socket A / Slot A)
 │   ├── k7_barton.yaml      # AMD Athlon XP Barton (Socket A, 512KB L2)
 │   └── geode_lx800.yaml    # AMD Geode LX 800 (500 MHz, 3.3W TDP, OLPC XO-1)
@@ -124,16 +143,23 @@ src/codegen_new/cpus/
 | **1995** | AMD | Am5x86-P75 | `CPU_486` | [`timings/486.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/486.yaml) |
 | **1995** | Cyrix | 5x86 (M1sc) | `CPU_486` | [`timings/486.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/486.yaml) |
 | **1995** | Intel | Pentium Pro (P6) | `CPU_PENTIUMPRO` | [`timings/p6.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/p6.yaml) |
+| **1997** | AMD | K6 (Model 6/7) | `CPU_PENTIUM` | [`timings/k6.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/k6.yaml) |
 | **1997** | Intel | Pentium MMX (P55C) | `CPU_PENTIUM` | [`timings/pentium.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/pentium.yaml) |
+| **1997** | Intel | Pentium II (Klamath) | `CPU_PENTIUM2` | [`timings/p6.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/p6.yaml) |
 | **1997** | Cyrix | MediaGX / 6x86MX | `CPU_PENTIUM` | [`timings/cyrix_686.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/cyrix_686.yaml) |
-| **1998** | AMD | K6-2 (3DNow!) | `CPU_PENTIUM` | [`timings/k6.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/k6.yaml) |
+| **1998** | AMD | K6-2 (Chomper / K6-3D) | `CPU_PENTIUM` | [`timings/k6.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/k6.yaml) |
 | **1998** | Intel | Pentium II (Deschutes) | `CPU_PENTIUM2` | [`timings/p6.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/p6.yaml) |
+| **1998** | Intel | Celeron (Mendocino) | `CPU_PENTIUM2` | [`timings/p6.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/p6.yaml) |
 | **1998** | Rise | mP6 | `CPU_PENTIUM` | [`timings/pentium.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/pentium.yaml) |
+| **1999** | AMD | K6-III (Sharptooth) | `CPU_PENTIUM` | [`timings/k6.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/k6.yaml) |
+| **1999** | Intel | Pentium III (Katmai) | `CPU_PENTIUM3` | [`timings/p6.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/p6.yaml) |
 | **1999** | Intel | Pentium III (Coppermine) | `CPU_PENTIUM3` | [`timings/p6.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/p6.yaml) |
-| **2000** | AMD | Athlon (Thunderbird) | `CPU_K7` | [`timings/k6.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/k6.yaml) |
+| **2000** | AMD | K6-2+ / K6-III+ (Enhanced 3DNow!) | `CPU_PENTIUM` | [`timings/k6.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/k6.yaml) |
+| **2000** | AMD | Athlon (Thunderbird) | `CPU_K7` | [`timings/k7.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/k7.yaml) |
+| **2001** | Intel | Pentium III (Tualatin) | `CPU_PENTIUM3` | [`timings/p6.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/p6.yaml) |
 | **2001** | Transmeta | Crusoe TM5800 | `CPU_PENTIUM` | [`timings/p6.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/p6.yaml) |
-| **2002** | Intel | Pentium 4 (Northwood) | `CPU_PENTIUM4` | [`timings/p6.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/p6.yaml) |
-| **2003** | AMD | Athlon XP (Barton) | `CPU_PENTIUM_3` | [`timings/k6.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/k6.yaml) |
+| **2002** | Intel | Pentium 4 (Northwood) | `CPU_PENTIUM4` | [`timings/pentium4.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/pentium4.yaml) |
+| **2003** | AMD | Athlon XP (Barton) | `CPU_PENTIUM_3` | [`timings/k7.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/k7.yaml) |
 | **2003** | VIA | C3 (Nehemiah) | `CPU_PENTIUM3` | [`timings/p6.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/p6.yaml) |
 | **2004** | Intel | Pentium M (Dothan) | `CPU_PENTIUM_4` | [`timings/p6.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/p6.yaml) |
 | **2004** | Transmeta | Efficeon TM8600 | `CPU_PENTIUM_4` | [`timings/p6.yaml`](file:///home/marm/src/86Box/src/codegen_new/cpus/timings/p6.yaml) |

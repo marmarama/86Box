@@ -1,0 +1,78 @@
+# fpu_and_mmx.yaml - x87 FPU Stack, Status/Control Words, and MMX Register Aliasing
+
+fpu_stack:
+  registers:
+    ST0: { physical_index: 0, width: 80, desc: "FPU Stack Register 0 (80-bit Extended Precision Float)" }
+    ST1: { physical_index: 1, width: 80, desc: "FPU Stack Register 1" }
+    ST2: { physical_index: 2, width: 80, desc: "FPU Stack Register 2" }
+    ST3: { physical_index: 3, width: 80, desc: "FPU Stack Register 3" }
+    ST4: { physical_index: 4, width: 80, desc: "FPU Stack Register 4" }
+    ST5: { physical_index: 5, width: 80, desc: "FPU Stack Register 5" }
+    ST6: { physical_index: 6, width: 80, desc: "FPU Stack Register 6" }
+    ST7: { physical_index: 7, width: 80, desc: "FPU Stack Register 7" }
+  stack_pointer:
+    name: TOP
+    width: 3
+    desc: "Top of Stack Pointer (0..7). Logical ST(i) resolves to physical register (TOP + i) & 7"
+
+fpu_status_word:
+  name: FSW
+  width: 16
+  reset_value: 0x0000
+  bits:
+    IE:  { bit: 0,  desc: "Invalid Operation Exception" }
+    DE:  { bit: 1,  desc: "Denormalized Operand Exception" }
+    ZE:  { bit: 2,  desc: "Zero Divide Exception" }
+    OE:  { bit: 3,  desc: "Overflow Exception" }
+    UE:  { bit: 4,  desc: "Underflow Exception" }
+    PE:  { bit: 5,  desc: "Precision Exception" }
+    SF:  { bit: 6,  desc: "Stack Fault (Distinguishes invalid stack op from general invalid op)" }
+    ES:  { bit: 7,  desc: "Error Summary Status (Set if any unmasked exception bit is 1)" }
+    C0:  { bit: 8,  desc: "Condition Code 0" }
+    C1:  { bit: 9,  desc: "Condition Code 1 (Stack direction / overflow indicator)" }
+    C2:  { bit: 10, desc: "Condition Code 2" }
+    TOP: { bits: [11, 13], desc: "Current Top-of-Stack Pointer" }
+    C3:  { bit: 14, desc: "Condition Code 3" }
+    B:   { bit: 15, desc: "FPU Busy (Mirrors ES bit on 387+)" }
+
+fpu_control_word:
+  name: FCW
+  width: 16
+  reset_value: 0x037F # All exceptions masked, 64-bit extended precision, round to nearest
+  bits:
+    IM: { bit: 0, desc: "Invalid Operation Mask" }
+    DM: { bit: 1, desc: "Denormal Operand Mask" }
+    ZM: { bit: 2, desc: "Zero Divide Mask" }
+    OM: { bit: 3, desc: "Overflow Mask" }
+    UM: { bit: 4, desc: "Underflow Mask" }
+    PM: { bit: 5, desc: "Precision Mask" }
+    PC: { bits: [8, 9], desc: "Precision Control (00 = 24-bit single, 10 = 53-bit double, 11 = 64-bit extended)" }
+    RC: { bits: [10, 11], desc: "Rounding Control (00 = Nearest/Even, 01 = Down/-Inf, 10 = Up/+Inf, 11 = Truncate/Zero)" }
+
+fpu_tag_word:
+  name: FTW
+  width: 16
+  reset_value: 0xFFFF # All tags empty on reset
+  tag_encodings:
+    0b00: VALID
+    0b01: ZERO
+    0b10: SPECIAL # NaN, Infinity, Denormal
+    0b11: EMPTY
+
+mmx_aliasing:
+  min_cpu: CPU_PENTIUM
+  feature: CPU_FEATURE_MMX
+  description: "64-bit MMX registers directly aliased onto the 64-bit fraction/mantissa of x87 ST(0..7)"
+  registers:
+    MM0: { physical_alias: ST0, width: 64 }
+    MM1: { physical_alias: ST1, width: 64 }
+    MM2: { physical_alias: ST2, width: 64 }
+    MM3: { physical_alias: ST3, width: 64 }
+    MM4: { physical_alias: ST4, width: 64 }
+    MM5: { physical_alias: ST5, width: 64 }
+    MM6: { physical_alias: ST6, width: 64 }
+    MM7: { physical_alias: ST7, width: 64 }
+  state_transition:
+    on_mmx_instruction: "Sets all FTW tag bits to 0x0000 (VALID) and TOP to 0"
+    on_emms: "Resets all FTW tag bits to 0xFFFF (EMPTY)"
+

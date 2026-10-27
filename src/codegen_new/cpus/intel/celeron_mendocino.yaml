@@ -1,0 +1,49 @@
+# celeron_mendocino.yaml - Intel Celeron (Mendocino, First on-die full-speed L2 cache)
+
+model:
+  cpu_id: CPU_CELERON_MENDOCINO
+  name: "Intel Celeron (Mendocino)"
+  vendor: "GenuineIntel"
+  release_year: 1998
+  family: 6
+  model_id: 6 # Model 6
+  stepping: 5
+  package: [SOCKET_370, SLOT_1]
+  frequency_range_mhz: [300, 533]
+  bus_clock_mhz: [66]
+
+cpuid:
+  signature: 0x00000665
+  brand_string: "Intel Celeron(R) processor"
+  features_edx: 0x0183F9FF # Includes SEP, FXSR, MMX, CMOV, etc.
+
+isa_level: CPU_PENTIUM2
+features:
+  - CPU_FEATURE_FPU
+  - CPU_FEATURE_VME
+  - CPU_FEATURE_DE
+  - CPU_FEATURE_TSC
+  - CPU_FEATURE_MSR
+  - CPU_FEATURE_PAE
+  - CPU_FEATURE_MCE
+  - CPU_FEATURE_CX8
+  - CPU_FEATURE_APIC
+  - CPU_FEATURE_SEP   # SYSENTER / SYSEXIT enabled
+  - CPU_FEATURE_MTRR
+  - CPU_FEATURE_PGE
+  - CPU_FEATURE_CMOV
+  - CPU_FEATURE_PAT
+  - CPU_FEATURE_PSE36
+  - CPU_FEATURE_MMX
+  - CPU_FEATURE_FXSR  # FXSAVE / FXRSTOR enabled
+
+fpu_profile: "fpus/integrated/intel_p6.yaml"
+
+timing_profile: "timings/p6.yaml"
+
+cache:
+  l1_instruction_kb: 16
+  l1_data_kb: 16
+  l2_kb: 128
+  l2_speed: full_speed # First processor with full core clock speed on-die L2 cache
+

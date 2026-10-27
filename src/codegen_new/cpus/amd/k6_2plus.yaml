@@ -1,0 +1,45 @@
+# k6_2plus.yaml - AMD K6-2+ / K6-III+ (Model 13, 0.18 um)
+
+model:
+  cpu_id: CPU_K6_2_PLUS
+  name: "AMD K6-2+ / K6-III+ (Model 13)"
+  vendor: "AuthenticAMD"
+  release_year: 2000
+  family: 5
+  model_id: 13 # Model 13 (0.18 um die shrink)
+  stepping: 4
+  package: [SUPER_SOCKET_7]
+  frequency_range_mhz: [450, 570]
+  bus_clock_mhz: [100]
+
+cpuid:
+  signature: 0x000005D4
+  brand_string: "AMD-K6(tm)-2+ Processor"
+  features_edx: 0x008021BF # FPU, VME, DE, TSC, MSR, MCE, CX8, PGE, MMX
+  extended_features_edx: 0xC0400800 # 3DNow!, Enhanced 3DNow!, Enhanced MMX, SYSCALL/SYSRET
+
+isa_level: CPU_PENTIUM
+features:
+  - CPU_FEATURE_FPU
+  - CPU_FEATURE_VME
+  - CPU_FEATURE_DE
+  - CPU_FEATURE_TSC
+  - CPU_FEATURE_MSR
+  - CPU_FEATURE_CX8
+  - CPU_FEATURE_PGE
+  - CPU_FEATURE_MMX
+  - CPU_FEATURE_3DNOW   # Base 3DNow!
+  - CPU_FEATURE_3DNOWE  # Enhanced 3DNow! DSP extensions (PF2IW, PI2FW, PFNACC, PFPNACC, PSWAPD)
+  - CPU_FEATURE_SYSCALL # Fast System Call
+  # Note: Enhanced 3DNow! added here on K6-2+/III+; CMOV was still NOT present (CMOV debuted on K7).
+
+timing_profile: "timings/k6.yaml"
+
+cache:
+  l1_instruction_kb: 32
+  l1_data_kb: 32
+  l2_kb: 128 # 128KB (K6-2+) or 256KB (K6-III+) on-die L2 cache
+
+power_management:
+  amd_powernow: true # Dynamic voltage and frequency scaling
+

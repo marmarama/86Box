@@ -1,0 +1,41 @@
+# k6_3.yaml - AMD K6-III (Model 9 "Sharptooth")
+
+model:
+  cpu_id: CPU_K6_3
+  name: "AMD K6-III (Sharptooth)"
+  vendor: "AuthenticAMD"
+  release_year: 1999
+  family: 5
+  model_id: 9 # Model 9 (Sharptooth)
+  stepping: 1
+  package: [SUPER_SOCKET_7]
+  frequency_range_mhz: [400, 500]
+  bus_clock_mhz: [100]
+
+cpuid:
+  signature: 0x00000591
+  brand_string: "AMD-K6(tm)-III Processor"
+  features_edx: 0x008021BF # FPU, VME, DE, TSC, MSR, MCE, CX8, PGE, MMX
+  extended_features_edx: 0x80000800 # 3DNow!, SYSCALL/SYSRET
+
+isa_level: CPU_PENTIUM
+features:
+  - CPU_FEATURE_FPU
+  - CPU_FEATURE_VME
+  - CPU_FEATURE_DE
+  - CPU_FEATURE_TSC
+  - CPU_FEATURE_MSR
+  - CPU_FEATURE_CX8
+  - CPU_FEATURE_PGE
+  - CPU_FEATURE_MMX
+  - CPU_FEATURE_3DNOW
+  - CPU_FEATURE_SYSCALL
+  # Note: Instruction set identical to K6-2; architectural improvement was on-die 256KB L2 cache.
+
+timing_profile: "timings/k6.yaml"
+
+cache:
+  l1_instruction_kb: 32
+  l1_data_kb: 32
+  l2_kb: 256 # 256 KB on-die full-speed L2 ("Tri-Level Cache" architecture)
+

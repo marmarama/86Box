@@ -1,0 +1,52 @@
+# pentium3_tualatin.yaml - Intel Pentium III-S / Tualatin (0.13 um, Hardware Prefetcher)
+
+model:
+  cpu_id: CPU_PENTIUM3_TUALATIN
+  name: "Intel Pentium III (Tualatin)"
+  vendor: "GenuineIntel"
+  release_year: 2001
+  family: 6
+  model_id: 11 # Model 11 (0.13 um process)
+  stepping: 1
+  package: [SOCKET_370] # FC-PGA2 with integrated heat spreader (IHS)
+  frequency_range_mhz: [1000, 1400]
+  bus_clock_mhz: [133]
+
+cpuid:
+  signature: 0x000006B1
+  brand_string: "Intel(R) Pentium(R) III CPU family 1266MHz"
+  features_edx: 0x0383F9FF # SSE, FXSR, MMX, CMOV, SEP, etc.
+
+isa_level: CPU_PENTIUM3
+features:
+  - CPU_FEATURE_FPU
+  - CPU_FEATURE_VME
+  - CPU_FEATURE_DE
+  - CPU_FEATURE_TSC
+  - CPU_FEATURE_MSR
+  - CPU_FEATURE_PAE
+  - CPU_FEATURE_MCE
+  - CPU_FEATURE_CX8
+  - CPU_FEATURE_APIC
+  - CPU_FEATURE_SEP
+  - CPU_FEATURE_MTRR
+  - CPU_FEATURE_PGE
+  - CPU_FEATURE_CMOV
+  - CPU_FEATURE_PAT
+  - CPU_FEATURE_PSE36
+  - CPU_FEATURE_MMX
+  - CPU_FEATURE_FXSR
+  - CPU_FEATURE_SSE
+
+fpu_profile: "fpus/integrated/intel_p6.yaml"
+
+timing_profile: "timings/p6.yaml" # Enhanced P6 core; direct architectural ancestor of Pentium M / Core
+
+cache:
+  l1_instruction_kb: 16
+  l1_data_kb: 16
+  l2_kb: 512 # 512KB on Pentium III-S (Server/Mobile) or 256KB on Desktop
+  l2_speed: full_speed
+  l2_bus_width_bits: 256
+  hardware_data_prefetcher: true # Automatic hardware stream prefetching into L2
+

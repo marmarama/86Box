@@ -41,7 +41,9 @@ features:
   - CPU_FEATURE_3DNOWE
   - CPU_FEATURE_SYSCALL
 
-timing_profile: "timings/k6.yaml" # Or k7.yaml
+fpu_profile: "fpus/integrated/amd_k7.yaml"
+
+timing_profile: "timings/k7.yaml"
 
 cache:
   l1_instruction_kb: 64

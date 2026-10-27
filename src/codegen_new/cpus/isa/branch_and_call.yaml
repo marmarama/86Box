@@ -7,29 +7,28 @@ families:
       min_cpu: CPU_8086 # 0x70..0x7F on 8086; 0x0F 0x80..0x8F (near 16/32-bit) requires CPU_386
     class: branch_cond
     opcode_map:
-      "0x70..0x7F":      { cond: "condition_code(opcode & 0x0F)", target: Jb, min_cpu: CPU_8086 }
-      "0x0F 0x80..0x8F": { cond: "condition_code(opcode & 0x0F)", target: Jv, min_cpu: CPU_386 }
+      "0x70..0x7F":      { cond: "opcode & 0x0F", target: Jb, min_cpu: CPU_8086 }
+      "0x0F 0x80..0x8F": { cond: "opcode & 0x0F", target: Jv, min_cpu: CPU_386 }
     semantics:
-      args: [cond, target]
-      body: |
-        if test_condition(cond):
-          branch_target: eIP + target
-        else:
-          branch_fallthrough
-        flags: none
+      action: CONDITIONAL_BRANCH
+      condition: cond
+      displacement: target
+      exit_policy: COND_2
+      flags: none
 
   SETcc:
     description: "Set Byte on Condition"
     availability: { min_cpu: CPU_386 }
     class: alu_reg
     opcode_map:
-      "0x0F 0x90..0x9F": { cond: "condition_code(opcode & 0x0F)", dst: Eb }
+      "0x0F 0x90..0x9F": { cond: "opcode & 0x0F", dst: Eb }
     semantics:
-      args: [cond, dst]
-      body: |
-        res = test_condition(cond) ? 1 : 0
-        writeback: dst = res
-        flags: none
+      action: CONDITIONAL_SET
+      condition: cond
+      output: dst
+      true_value: 1
+      false_value: 0
+      flags: none
 
   JMP_NEAR:
     description: "Near Unconditional Jump"
@@ -40,13 +39,9 @@ families:
       "0xE9":    { target: Jv }
       "0xFF /4": { target: Ev } # Near indirect jump
     semantics:
-      args: [target]
-      body: |
-        if is_relative(target):
-          branch_target: eIP + target
-        else:
-          branch_target: target
-        flags: none
+      action: BRANCH_NEAR
+      target: target
+      flags: none
 
   JMP_FAR:
     description: "Far Unconditional Jump (Intersegment)"
@@ -56,11 +51,8 @@ families:
       "0xEA":    { target_cs: Iw, target_ip: Iv }
       "0xFF /5": { target_far_ptr: Mp }
     semantics:
-      args: [target_cs, target_ip]
-      body: |
-        load_cs(target_cs)
-        eIP = target_ip
-        flags: none
+      action: CALL_HELPER
+      helper_fn: op_jmp_far
 
   CALL_NEAR:
     description: "Near Call Procedure"
@@ -70,15 +62,10 @@ families:
       "0xE8":    { target: Jv }
       "0xFF /2": { target: Ev }
     semantics:
-      args: [target]
-      body: |
-        # Push return instruction pointer
-        push(eIP)
-        if is_relative(target):
-          branch_target: eIP + target
-        else:
-          branch_target: target
-        flags: none
+      action: BRANCH_NEAR
+      is_call: true
+      target: target
+      flags: none
 
   CALL_FAR:
     description: "Far Call Procedure (Intersegment)"
@@ -88,13 +75,8 @@ families:
       "0x9A":    { target_cs: Iw, target_ip: Iv }
       "0xFF /3": { target_far_ptr: Mp }
     semantics:
-      args: [target_cs, target_ip]
-      body: |
-        push(CS)
-        push(eIP)
-        load_cs(target_cs)
-        eIP = target_ip
-        flags: none
+      action: CALL_HELPER
+      helper_fn: op_call_far
 
   RET_NEAR:
     description: "Return from Near Procedure"
@@ -104,96 +86,58 @@ families:
       "0xC3": { pop_bytes: 0 }
       "0xC2": { pop_bytes: Iw }
     semantics:
-      args: [pop_bytes]
-      body: |
-        new_ip = pop()
-        eIP = new_ip
-        if pop_bytes > 0:
-          eSP = eSP + pop_bytes
-        branch_target: eIP
-        flags: none
+      action: PROC_RETURN
+      pop_bytes: pop_bytes
+      is_far: false
+      flags: none
 
   RET_FAR:
     description: "Return from Far Procedure"
     availability: { min_cpu: CPU_8086 }
-    class: branch_far
+    class: ret_far
     opcode_map:
       "0xCB": { pop_bytes: 0 }
       "0xCA": { pop_bytes: Iw }
     semantics:
-      args: [pop_bytes]
-      body: |
-        new_ip = pop()
-        new_cs = pop()
-        if pop_bytes > 0:
-          eSP = eSP + pop_bytes
-        load_cs(new_cs)
-        eIP = new_ip
-        branch_target: eIP
-        flags: none
+      action: CALL_HELPER
+      helper_fn: op_ret_far
 
   LOOP:
     description: "Loop with ECX Counter"
     availability: { min_cpu: CPU_8086 }
     class: branch_cond
     opcode_map:
-      "0xE2": { target: Jb }
+      "0xE2": { target: Jb, dst: eCX, src: eCX }
     semantics:
-      args: [target]
-      body: |
-        eCX = eCX - 1
-        if eCX != 0:
-          branch_target: eIP + target
-        else:
-          branch_fallthrough
-        flags: none
+      action: CALL_HELPER
+      helper_fn: op_loop
 
   LOOPE_LOOPZ:
     description: "Loop while Equal / Zero"
     availability: { min_cpu: CPU_8086 }
     class: branch_cond
     opcode_map:
-      "0xE1": { target: Jb }
+      "0xE1": { target: Jb, dst: eCX, src: eCX }
     semantics:
-      args: [target]
-      body: |
-        eCX = eCX - 1
-        zf = read_flag(ZF)
-        if (eCX != 0) && (zf == 1):
-          branch_target: eIP + target
-        else:
-          branch_fallthrough
-        flags: none
+      action: CALL_HELPER
+      helper_fn: op_loope
 
   LOOPNE_LOOPNZ:
     description: "Loop while Not Equal / Not Zero"
     availability: { min_cpu: CPU_8086 }
     class: branch_cond
     opcode_map:
-      "0xE0": { target: Jb }
+      "0xE0": { target: Jb, dst: eCX, src: eCX }
     semantics:
-      args: [target]
-      body: |
-        eCX = eCX - 1
-        zf = read_flag(ZF)
-        if (eCX != 0) && (zf == 0):
-          branch_target: eIP + target
-        else:
-          branch_fallthrough
-        flags: none
+      action: CALL_HELPER
+      helper_fn: op_loopne
 
   JCXZ_JECXZ:
     description: "Jump if CX/ECX is Zero"
     availability: { min_cpu: CPU_8086 }
     class: branch_cond
     opcode_map:
-      "0xE3": { target: Jb }
+      "0xE3": { target: Jb, src: eCX }
     semantics:
-      args: [target]
-      body: |
-        if eCX == 0:
-          branch_target: eIP + target
-        else:
-          branch_fallthrough
-        flags: none
-
+      action: CALL_HELPER
+      helper_fn: op_jcxz

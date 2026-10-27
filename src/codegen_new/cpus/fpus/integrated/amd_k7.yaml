@@ -1,0 +1,68 @@
+# amd_k7.yaml - AMD K7 (Athlon) Triple-Pipeline Integrated Out-of-Order FPU
+
+fpu:
+  fpu_id: FPU_AMD_K7_INTEGRATED
+  name: "AMD K7 Integrated Triple-Pipeline FPU"
+  vendor: "AMD"
+  release_year: 1999
+  type: INTEGRATED_ON_DIE
+  integrated_in_cpus:
+    - CPU_ATHLON_CLASSIC
+    - CPU_ATHLON_THUNDERBIRD
+    - CPU_ATHLON_XP_PALOMINO
+    - CPU_ATHLON_XP_THOROUGHBRED
+    - CPU_ATHLON_XP_BARTON
+
+interface:
+  protocol: INTERNAL_OOO_DISPATCH
+  fpu_scheduler_entries: 36 # Dedicated 36-entry out-of-order FP instruction scheduler
+  execution_pipes: 3        # 3 independent, concurrent execution pipelines
+  clock_divider: 1.0
+
+pipeline:
+  type: DEDICATED_TRIPLE_PIPELINED_OOO
+  pipes:
+    fadd_pipe:
+      operations: [FADD, FSUB, FCOMI, 3DNOW_ADD]
+      throughput: 1 # 1 operation every clock cycle
+      latency: 4
+    fmul_pipe:
+      operations: [FMUL, FDIV, FSQRT, 3DNOW_MUL]
+      throughput: 1 # 1 operation every clock cycle (single/double)
+      latency: 4
+    fstore_pipe:
+      operations: [FSTORE, FSTP, FIST, FMOV]
+      throughput: 1
+      latency: 1-3
+  concurrent_peak_throughput: |
+    Can execute ONE FADD, ONE FMUL, and ONE FSTORE simultaneously in the same cycle!
+    Significantly outperformed Intel P6/NetBurst which shared a single port for FADD and FMUL.
+
+standard:
+  ieee_754_version: IEEE_754_1985
+  infinity_mode: AFFINE
+  affine_mode_supported: true
+
+registers:
+  stack_depth: 8
+  physical_register_pool: 88 # Unified 88-entry FP/MMX/3DNow! physical register file
+  register_width_bits: 80
+
+capabilities:
+  same_as: FPU_P6_INTEGRATED
+  added_features:
+    - SIMULTANEOUS_FADD_AND_FMUL
+    - FAST_3DNOW_ACCELERATION
+    - ZERO_CYCLE_FXCH
+
+typical_cycles:
+  fadd: 4       # Latency: 4 cycles, Throughput: 1 cycle
+  fsub: 4       # Latency: 4 cycles, Throughput: 1 cycle
+  fmul: 4       # Latency: 4 cycles, Throughput: 1 cycle
+  fdiv: 16-24   # Latency: 16 (single), 24 (extended)
+  fsqrt: 19-27
+  fsin: 35-60
+  fcos: 35-60
+  fsincos: 45-70
+  fxch: 0       # Pure register renaming in scheduler
+

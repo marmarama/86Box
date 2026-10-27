@@ -24,6 +24,8 @@ features:
   - CPU_FEATURE_MSR
   - CPU_FEATURE_CX8
 
+fpu_profile: "fpus/integrated/intel_pentium.yaml"
+
 timing_profile: "timings/pentium.yaml"
 
 cache:

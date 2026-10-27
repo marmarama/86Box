@@ -17,11 +17,16 @@ families:
       "0x82 /0": { dst: Eb, src: Ib }
       "0x83 /0": { dst: Ev, src: Ib_sext }
     semantics:
-      args: [dst, src]
-      body: |
-        res = dst + src
-        flags: { tag: FLAGS_ADD, op1: dst, op2: src, res: res }
-        writeback: dst = res
+      action: ALU_BINARY
+      op: ADD
+      inputs: [dst, src]
+      output: dst
+      fault_atomic: true
+      flags:
+        tag: FLAGS_ADD
+        op1: dst
+        op2: src
+        res: output
 
   ADC:
     description: "Add with Carry"
@@ -39,12 +44,17 @@ families:
       "0x82 /2": { dst: Eb, src: Ib }
       "0x83 /2": { dst: Ev, src: Ib_sext }
     semantics:
-      args: [dst, src]
-      body: |
-        cf = read_flag(CF)
-        res = dst + src + cf
-        flags: { tag: FLAGS_ADC, op1: dst, op2: src, res: res }
-        writeback: dst = res
+      action: ALU_BINARY
+      op: ADC
+      carry_in: true
+      inputs: [dst, src]
+      output: dst
+      fault_atomic: true
+      flags:
+        tag: FLAGS_ADC
+        op1: dst
+        op2: src
+        res: output
 
   SUB:
     description: "Subtract"
@@ -62,11 +72,16 @@ families:
       "0x82 /5": { dst: Eb, src: Ib }
       "0x83 /5": { dst: Ev, src: Ib_sext }
     semantics:
-      args: [dst, src]
-      body: |
-        res = dst - src
-        flags: { tag: FLAGS_SUB, op1: dst, op2: src, res: res }
-        writeback: dst = res
+      action: ALU_BINARY
+      op: SUB
+      inputs: [dst, src]
+      output: dst
+      fault_atomic: true
+      flags:
+        tag: FLAGS_SUB
+        op1: dst
+        op2: src
+        res: output
 
   SBB:
     description: "Subtract with Borrow"
@@ -84,12 +99,17 @@ families:
       "0x82 /3": { dst: Eb, src: Ib }
       "0x83 /3": { dst: Ev, src: Ib_sext }
     semantics:
-      args: [dst, src]
-      body: |
-        cf = read_flag(CF)
-        res = dst - (src + cf)
-        flags: { tag: FLAGS_SBB, op1: dst, op2: src, res: res }
-        writeback: dst = res
+      action: ALU_BINARY
+      op: SBB
+      carry_in: true
+      inputs: [dst, src]
+      output: dst
+      fault_atomic: true
+      flags:
+        tag: FLAGS_SBB
+        op1: dst
+        op2: src
+        res: output
 
   CMP:
     description: "Compare Two Operands (SUB with suppressed writeback)"
@@ -108,11 +128,16 @@ families:
       "0x82 /7": { dst: Eb, src: Ib }
       "0x83 /7": { dst: Ev, src: Ib_sext }
     semantics:
-      args: [dst, src]
-      body: |
-        res = dst - src
-        flags: { tag: FLAGS_SUB, op1: dst, op2: src, res: res }
-        writeback: none
+      action: ALU_COMPARE
+      op: SUB
+      inputs: [dst, src]
+      output: none
+      fault_atomic: false
+      flags:
+        tag: FLAGS_SUB
+        op1: dst
+        op2: src
+        res: compute_only
 
   INC:
     description: "Increment by 1 (preserves Carry Flag)"
@@ -123,11 +148,18 @@ families:
       "0xFF /0":    { dst: Ev }
       "0x40..0x47": { dst: "gprv[reg]" }
     semantics:
-      args: [dst]
-      body: |
-        res = dst + 1
-        flags: { tag: FLAGS_INC, op1: dst, op2: 1, res: res, preserve: [CF] }
-        writeback: dst = res
+      action: ALU_UNARY
+      op: ADD
+      inputs: [dst]
+      operand2_constant: 1
+      output: dst
+      fault_atomic: true
+      flags:
+        tag: FLAGS_INC
+        op1: dst
+        op2: 1
+        res: output
+        preserve: [CF]
 
   DEC:
     description: "Decrement by 1 (preserves Carry Flag)"
@@ -138,11 +170,18 @@ families:
       "0xFF /1":    { dst: Ev }
       "0x48..0x4F": { dst: "gprv[reg]" }
     semantics:
-      args: [dst]
-      body: |
-        res = dst - 1
-        flags: { tag: FLAGS_DEC, op1: dst, op2: 1, res: res, preserve: [CF] }
-        writeback: dst = res
+      action: ALU_UNARY
+      op: SUB
+      inputs: [dst]
+      operand2_constant: 1
+      output: dst
+      fault_atomic: true
+      flags:
+        tag: FLAGS_DEC
+        op1: dst
+        op2: 1
+        res: output
+        preserve: [CF]
 
   NEG:
     description: "Two's Complement Negation (0 - dst)"
@@ -152,11 +191,16 @@ families:
       "0xF6 /3": { dst: Eb }
       "0xF7 /3": { dst: Ev }
     semantics:
-      args: [dst]
-      body: |
-        res = 0 - dst
-        flags: { tag: FLAGS_SUB, op1: 0, op2: dst, res: res }
-        writeback: dst = res
+      action: ALU_UNARY
+      op: NEG
+      inputs: [dst]
+      output: dst
+      fault_atomic: true
+      flags:
+        tag: FLAGS_SUB
+        op1: 0
+        op2: dst
+        res: output
 
   IMUL:
     description: "Signed Multiply (Single/Two/Three Operand Forms)"
@@ -169,10 +213,8 @@ families:
       "0x6B":    { dst: Gv, src: [Ev, Ib_sext], min_cpu: CPU_186 }
       "0x0F 0xAF": { dst: Gv, src: Ev, min_cpu: CPU_386 }
     semantics:
-      args: [dst, src]
-      body: |
-        res = dst * src
-        writeback: dst = res
+      action: CALL_HELPER
+      helper_fn: op_imul
 
   MUL:
     description: "Unsigned Multiply"
@@ -182,10 +224,8 @@ families:
       "0xF6 /4": { src: Eb, dst: AL, implicit_dst: AX }
       "0xF7 /4": { src: Ev, dst: eAX, implicit_dst: [eAX, eDX] }
     semantics:
-      args: [dst, src]
-      body: |
-        res = (uint64_t)dst * (uint64_t)src
-        writeback: dst = res
+      action: CALL_HELPER
+      helper_fn: op_mul
 
   IDIV:
     description: "Signed Integer Division"
@@ -195,9 +235,8 @@ families:
       "0xF6 /7": { src: Eb, implicit_src: AX, implicit_dst: [AL, AH] }
       "0xF7 /7": { src: Ev, implicit_src: [eAX, eDX], implicit_dst: [eAX, eDX] }
     semantics:
-      args: [src]
-      body: |
-        idiv_step(src)
+      action: CALL_HELPER
+      helper_fn: op_idiv
 
   DIV:
     description: "Unsigned Integer Division"
@@ -207,9 +246,8 @@ families:
       "0xF6 /6": { src: Eb, implicit_src: AX, implicit_dst: [AL, AH] }
       "0xF7 /6": { src: Ev, implicit_src: [eAX, eDX], implicit_dst: [eAX, eDX] }
     semantics:
-      args: [src]
-      body: |
-        div_step(src)
+      action: CALL_HELPER
+      helper_fn: op_div
 
   DAA:
     description: "Decimal Adjust AL after Addition"
@@ -218,9 +256,8 @@ families:
     opcode_map:
       "0x27": { dst: AL, src: AL }
     semantics:
-      args: [dst]
-      body: |
-        daa_step()
+      action: CALL_HELPER
+      helper_fn: op_daa
 
   DAS:
     description: "Decimal Adjust AL after Subtraction"
@@ -229,9 +266,8 @@ families:
     opcode_map:
       "0x2F": { dst: AL, src: AL }
     semantics:
-      args: [dst]
-      body: |
-        das_step()
+      action: CALL_HELPER
+      helper_fn: op_das
 
   AAA:
     description: "ASCII Adjust AL after Addition"
@@ -240,9 +276,8 @@ families:
     opcode_map:
       "0x37": { dst: eAX, src: eAX }
     semantics:
-      args: [dst]
-      body: |
-        aaa_step()
+      action: CALL_HELPER
+      helper_fn: op_aaa
 
   AAS:
     description: "ASCII Adjust AL after Subtraction"
@@ -251,9 +286,8 @@ families:
     opcode_map:
       "0x3F": { dst: eAX, src: eAX }
     semantics:
-      args: [dst]
-      body: |
-        aas_step()
+      action: CALL_HELPER
+      helper_fn: op_aas
 
   AAM:
     description: "ASCII Adjust AX after Multiply"
@@ -262,9 +296,8 @@ families:
     opcode_map:
       "0xD4": { dst: eAX, src: [eAX, Ib] }
     semantics:
-      args: [dst, src]
-      body: |
-        aam_step(src)
+      action: CALL_HELPER
+      helper_fn: op_aam
 
   AAD:
     description: "ASCII Adjust AX before Division"
@@ -273,18 +306,15 @@ families:
     opcode_map:
       "0xD5": { dst: eAX, src: [eAX, Ib] }
     semantics:
-      args: [dst, src]
-      body: |
-        aad_step(src)
+      action: CALL_HELPER
+      helper_fn: op_aad
 
   SALC:
     description: "Set AL on Carry (Undocumented 8086 opcode)"
     availability: { min_cpu: CPU_8086 }
-    class: alu_reg
+    class: salc
     opcode_map:
-      "0xD6": { dst: AL }
+      "0xD6": { dst: AL, src: AL }
     semantics:
-      args: [dst]
-      body: |
-        al = read_flag(CF) ? 0xFF : 0x00
-
+      action: CALL_HELPER
+      helper_fn: op_salc

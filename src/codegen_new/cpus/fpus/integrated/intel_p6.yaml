@@ -1,0 +1,73 @@
+# intel_p6.yaml - Intel P6 Microarchitecture Integrated Out-of-Order FPU
+
+fpu:
+  fpu_id: FPU_P6_INTEGRATED
+  name: "Intel P6 Out-of-Order Integrated FPU"
+  vendor: "Intel"
+  release_year: 1995
+  type: INTEGRATED_ON_DIE
+  integrated_in_cpus:
+    - CPU_PENTIUM_PRO
+    - CPU_PENTIUM2_KLAMATH
+    - CPU_PENTIUM2_DESCHUTES
+    - CPU_CELERON_MENDOCINO
+    - CPU_PENTIUM3_KATMAI
+    - CPU_PENTIUM3_COPPERMINE
+    - CPU_PENTIUM3_TUALATIN
+
+interface:
+  protocol: INTERNAL_OOO_DISPATCH
+  dispatch_ports:
+    port_0: [FADD, FMUL, FDIV, FSQRT, FP_MISC]
+    port_1: [FP_MOV]
+  clock_divider: 1.0
+
+pipeline:
+  type: OUT_OF_ORDER_RESERVATION_STATION
+  fxch_optimization:
+    mechanism: REGISTER_RENAMING
+    latency: 0
+    throughput_uops: 0 # Handled in the Register Alias Table (RAT) during decode/rename!
+  branchless_instructions:
+    fcmov:
+      instructions: [FCMOVB, FCMOVE, FCMOVBE, FCMOVU, FCMOVNB, FCMOVNE, FCMOVNBE, FCMOVNU]
+      benefit: "Eliminates branch mispredictions by selecting operands conditionally"
+    fcomi:
+      instructions: [FCOMI, FCOMIP, FUCOMI, FUCOMIP]
+      benefit: "Updates EFLAGS (ZF, PF, CF) directly, eliminating FSTSW AX + SAHF roundtrip"
+
+architecture: |
+  Revolutionary out-of-order execution core. x87 instructions are broken down into
+  micro-operations (uops) and queued into a unified 20-entry Reservation Station.
+  Register renaming via the Register Alias Table (RAT) completely eliminates the x87
+  stack bottleneck: FXCH is executed at 0 cycles in the frontend by simply swapping
+  physical register pointers, consuming zero execution resources.
+
+standard:
+  ieee_754_version: IEEE_754_1985
+  infinity_mode: AFFINE
+  affine_mode_supported: true
+
+registers:
+  stack_depth: 8
+  physical_register_pool: 40 # Speculative ROB / physical register file
+  register_width_bits: 80
+
+capabilities:
+  same_as: FPU_PENTIUM_INTEGRATED
+  added_features:
+    - FCMOVcc
+    - FCOMI / FUCOMI
+    - ZERO_CYCLE_FXCH
+
+typical_cycles:
+  fadd: 3       # Latency: 3 cycles, Throughput: 1 cycle
+  fsub: 3       # Latency: 3 cycles, Throughput: 1 cycle
+  fmul: 5       # Latency: 5 cycles, Throughput: 2 cycles
+  fdiv: 18-38   # Latency: 18 (single), 38 (extended)
+  fsqrt: 29-56
+  fsin: 40-70
+  fcos: 40-70
+  fsincos: 50-80
+  fxch: 0       # Pure register renaming in frontend
+

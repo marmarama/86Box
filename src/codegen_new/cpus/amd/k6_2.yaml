@@ -1,21 +1,22 @@
-# k6_2.yaml - AMD K6-2 (Chomper)
+# k6_2.yaml - AMD K6-2 (Model 8 "Chomper" / initially announced as "K6-3D")
 
 model:
   cpu_id: CPU_K6_2
-  name: "AMD K6-2 (Chomper)"
+  name: "AMD K6-2 (Chomper / K6-3D)"
   vendor: "AuthenticAMD"
   release_year: 1998
   family: 5
-  model_id: 8
+  model_id: 8 # Model 8 (Chomper) / Chomper A
   stepping: 0
   package: [SOCKET_7, SUPER_SOCKET_7]
   frequency_range_mhz: [266, 550]
+  bus_clock_mhz: [66, 100]
 
 cpuid:
   signature: 0x00000580
-  brand_string: "AMD-K6(tm) 3D processor"
+  brand_string: "AMD-K6(tm) 3D processor" # Pre-release / early engineering stepping brand string
   features_edx: 0x008021BF # FPU, VME, DE, TSC, MSR, MCE, CX8, PGE, MMX
-  extended_features_edx: 0x80000000 # 3DNow!
+  extended_features_edx: 0x80000800 # 3DNow!, SYSCALL/SYSRET
 
 isa_level: CPU_PENTIUM
 features:
@@ -27,11 +28,12 @@ features:
   - CPU_FEATURE_CX8
   - CPU_FEATURE_PGE
   - CPU_FEATURE_MMX
-  - CPU_FEATURE_3DNOW
+  - CPU_FEATURE_3DNOW   # 21 base 3DNow! instructions debuted here
+  - CPU_FEATURE_SYSCALL # Fast System Call (SYSCALL / SYSRET)
+  # Note: K6-2 has base 3DNow! but NO Enhanced 3DNow!, NO CMOV, and NO on-die L2 cache.
 
 timing_profile: "timings/k6.yaml"
 
 cache:
   l1_instruction_kb: 32
   l1_data_kb: 32
-

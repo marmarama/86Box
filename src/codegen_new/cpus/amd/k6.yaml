@@ -1,0 +1,38 @@
+# k6.yaml - Original AMD K6 (Model 6 / Model 7 "Little Foot")
+
+model:
+  cpu_id: CPU_K6
+  name: "AMD K6 (Model 6/7 Little Foot)"
+  vendor: "AuthenticAMD"
+  release_year: 1997
+  family: 5
+  model_id: 6 # Model 6 (0.35 um) or Model 7 (0.25 um Little Foot)
+  stepping: 2
+  package: [SOCKET_7]
+  frequency_range_mhz: [166, 300]
+  bus_clock_mhz: [66]
+
+cpuid:
+  signature: 0x00000562
+  brand_string: "AMD-K6tm w/ multimedia extensions"
+  features_edx: 0x008021BF # FPU, VME, DE, TSC, MSR, MCE, CX8, PGE, MMX
+  extended_features_edx: 0x00000000 # Pre-3DNow! (Original K6 had NO 3DNow!)
+
+isa_level: CPU_PENTIUM
+features:
+  - CPU_FEATURE_FPU
+  - CPU_FEATURE_VME
+  - CPU_FEATURE_DE
+  - CPU_FEATURE_TSC
+  - CPU_FEATURE_MSR
+  - CPU_FEATURE_CX8
+  - CPU_FEATURE_PGE
+  - CPU_FEATURE_MMX
+  # Note: The original K6 had NO 3DNow!, NO Enhanced 3DNow!, NO CMOV, and NO SYSCALL!
+
+timing_profile: "timings/k6.yaml"
+
+cache:
+  l1_instruction_kb: 32
+  l1_data_kb: 32
+

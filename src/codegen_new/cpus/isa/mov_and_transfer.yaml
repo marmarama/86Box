@@ -21,10 +21,12 @@ families:
       "0xC6 /0": { dst: Eb, src: Ib }
       "0xC7 /0": { dst: Ev, src: Iv }
     semantics:
-      args: [dst, src]
-      body: |
-        writeback: dst = src
-        flags: none
+      action: DATA_TRANSFER
+      op: MOV
+      inputs: [src]
+      output: dst
+      fault_atomic: true
+      flags: none
 
   MOVZX:
     description: "Move with Zero-Extend"
@@ -34,11 +36,12 @@ families:
       "0x0F 0xB6": { dst: Gv, src: Eb }
       "0x0F 0xB7": { dst: Gv, src: Ew }
     semantics:
-      args: [dst, src]
-      body: |
-        res = zero_extend(src, sizeof(dst))
-        writeback: dst = res
-        flags: none
+      action: DATA_TRANSFER
+      op: MOVZX
+      inputs: [src]
+      output: dst
+      fault_atomic: true
+      flags: none
 
   MOVSX:
     description: "Move with Sign-Extend"
@@ -48,11 +51,12 @@ families:
       "0x0F 0xBE": { dst: Gv, src: Eb }
       "0x0F 0xBF": { dst: Gv, src: Ew }
     semantics:
-      args: [dst, src]
-      body: |
-        res = sign_extend(src, sizeof(dst))
-        writeback: dst = res
-        flags: none
+      action: DATA_TRANSFER
+      op: MOVSX
+      inputs: [src]
+      output: dst
+      fault_atomic: true
+      flags: none
 
   LEA:
     description: "Load Effective Address"
@@ -61,11 +65,12 @@ families:
     opcode_map:
       "0x8D": { dst: Gv, src: M }
     semantics:
-      args: [dst, src]
-      body: |
-        # src is the unresolved effective address offset (no memory access performed)
-        writeback: dst = src.offset
-        flags: none
+      action: DATA_TRANSFER
+      op: MOV
+      inputs: [src]
+      output: dst
+      fault_atomic: false
+      flags: none
 
   XCHG:
     description: "Exchange Register/Memory with Register"
@@ -74,16 +79,14 @@ families:
     opcode_map:
       "0x86": { op1: Eb, op2: Gb }
       "0x87": { op1: Ev, op2: Gv }
-      "0x90": { op1: eAX, op2: eAX } # NOP when 0x90
       "0x91..0x97": { op1: eAX, op2: "gprv[reg]" }
     semantics:
-      args: [op1, op2]
-      body: |
-        tmp = op1
-        writeback:
-          op1 = op2
-          op2 = tmp
-        flags: none
+      action: DATA_TRANSFER
+      op: XCHG
+      inputs: [op1, op2]
+      output: [op1, op2]
+      fault_atomic: true
+      flags: none
 
   CBW_CWDE:
     description: "Convert Byte to Word / Word to Doubleword"
@@ -91,13 +94,14 @@ families:
       min_cpu: CPU_8086 # CBW on 8086; CWDE requires CPU_386
     class: alu_reg
     opcode_map:
-      "0x98": { operand_size_16: { dst: AX, src: AL }, operand_size_32: { dst: EAX, src: AX } }
+      "0x98": { dst: eAX, src: eAX }
     semantics:
-      args: [dst, src]
-      body: |
-        res = sign_extend(src, sizeof(dst))
-        writeback: dst = res
-        flags: none
+      action: DATA_TRANSFER
+      op: MOVSX
+      inputs: [src]
+      output: dst
+      fault_atomic: false
+      flags: none
 
   CWD_CDQ:
     description: "Convert Word to Doubleword / Doubleword to Quadword in EDX:EAX"
@@ -105,13 +109,10 @@ families:
       min_cpu: CPU_8086 # CWD on 8086; CDQ requires CPU_386
     class: alu_reg
     opcode_map:
-      "0x99": { operand_size_16: { high: DX, low: AX }, operand_size_32: { high: EDX, low: EAX } }
+      "0x99": { dst: eDX, src: eAX }
     semantics:
-      args: [high, low]
-      body: |
-        high = (low < 0) ? -1 : 0
-        writeback: high = high
-        flags: none
+      action: CALL_HELPER
+      helper_fn: op_cwd
 
   BSWAP:
     description: "Byte Swap (32-bit endian reversal)"
@@ -120,28 +121,22 @@ families:
     opcode_map:
       "0x0F 0xC8..0xCF": { dst: "gpr32[reg]" }
     semantics:
-      args: [dst]
-      body: |
-        res = ((dst & 0x000000FF) << 24) |
-              ((dst & 0x0000FF00) << 8)  |
-              ((dst & 0x00FF0000) >> 8)  |
-              ((dst & 0xFF000000) >> 24)
-        writeback: dst = res
-        flags: none
+      action: DATA_TRANSFER
+      op: BSWAP
+      inputs: [dst]
+      output: dst
+      fault_atomic: false
+      flags: none
 
   XLAT:
     description: "Table Look-up Translation (AL = [EBX + AL])"
     availability: { min_cpu: CPU_8086 }
-    class: mov_reg_mem
+    class: xlat
     opcode_map:
-      "0xD7": { dst: AL, base: eBX }
+      "0xD7": { dst: AL, src: AL, base: eBX }
     semantics:
-      args: [dst, base]
-      body: |
-        addr = base + dst
-        val = read_mem8(DS, addr)
-        writeback: dst = val
-        flags: none
+      action: CALL_HELPER
+      helper_fn: op_xlat
 
   LES:
     description: "Load Full Pointer into ES and Register"
@@ -150,9 +145,8 @@ families:
     opcode_map:
       "0xC4": { dst: [Gv, ES], src: Mp }
     semantics:
-      args: [dst, src]
-      body: |
-        load_far_ptr(ES, dst, src)
+      action: CALL_HELPER
+      helper_fn: op_les
 
   LDS:
     description: "Load Full Pointer into DS and Register"
@@ -161,9 +155,8 @@ families:
     opcode_map:
       "0xC5": { dst: [Gv, DS], src: Mp }
     semantics:
-      args: [dst, src]
-      body: |
-        load_far_ptr(DS, dst, src)
+      action: CALL_HELPER
+      helper_fn: op_lds
 
   LSS:
     description: "Load Full Pointer into SS and Register"
@@ -172,9 +165,8 @@ families:
     opcode_map:
       "0x0F 0xB2": { dst: [Gv, SS], src: Mp }
     semantics:
-      args: [dst, src]
-      body: |
-        load_far_ptr(SS, dst, src)
+      action: CALL_HELPER
+      helper_fn: op_lss
 
   LFS:
     description: "Load Full Pointer into FS and Register"
@@ -183,9 +175,8 @@ families:
     opcode_map:
       "0x0F 0xB4": { dst: [Gv, FS], src: Mp }
     semantics:
-      args: [dst, src]
-      body: |
-        load_far_ptr(FS, dst, src)
+      action: CALL_HELPER
+      helper_fn: op_lfs
 
   LGS:
     description: "Load Full Pointer into GS and Register"
@@ -194,8 +185,5 @@ families:
     opcode_map:
       "0x0F 0xB5": { dst: [Gv, GS], src: Mp }
     semantics:
-      args: [dst, src]
-      body: |
-        load_far_ptr(GS, dst, src)
-
-
+      action: CALL_HELPER
+      helper_fn: op_lgs

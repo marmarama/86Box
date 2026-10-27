@@ -14,15 +14,16 @@ families:
       "0xC0 /4": { dst: Eb, cnt: Ib, min_cpu: CPU_186 }
       "0xC1 /4": { dst: Ev, cnt: Ib, min_cpu: CPU_186 }
     semantics:
-      args: [dst, cnt]
-      body: |
-        effective_cnt = cnt & 0x1F
-        if effective_cnt > 0:
-          res = dst << effective_cnt
-          flags: { tag: FLAGS_SHL, op1: dst, op2: effective_cnt, res: res }
-          writeback: dst = res
-        else:
-          flags: preserve_all
+      action: SHIFT_ROTATE
+      op: SHL
+      inputs: [dst, cnt]
+      output: dst
+      fault_atomic: true
+      flags:
+        tag: FLAGS_SHL
+        op1: dst
+        op2: cnt
+        res: output
 
   SHR:
     description: "Shift Logical Right"
@@ -37,15 +38,16 @@ families:
       "0xC0 /5": { dst: Eb, cnt: Ib, min_cpu: CPU_186 }
       "0xC1 /5": { dst: Ev, cnt: Ib, min_cpu: CPU_186 }
     semantics:
-      args: [dst, cnt]
-      body: |
-        effective_cnt = cnt & 0x1F
-        if effective_cnt > 0:
-          res = dst >> effective_cnt
-          flags: { tag: FLAGS_SHR, op1: dst, op2: effective_cnt, res: res }
-          writeback: dst = res
-        else:
-          flags: preserve_all
+      action: SHIFT_ROTATE
+      op: SHR
+      inputs: [dst, cnt]
+      output: dst
+      fault_atomic: true
+      flags:
+        tag: FLAGS_SHR
+        op1: dst
+        op2: cnt
+        res: output
 
   SAR:
     description: "Shift Arithmetic Right (Signed)"
@@ -60,16 +62,16 @@ families:
       "0xC0 /7": { dst: Eb, cnt: Ib, min_cpu: CPU_186 }
       "0xC1 /7": { dst: Ev, cnt: Ib, min_cpu: CPU_186 }
     semantics:
-      args: [dst, cnt]
-      body: |
-        effective_cnt = cnt & 0x1F
-        if effective_cnt > 0:
-          s_dst = as_signed(dst)
-          res = as_unsigned(s_dst >> effective_cnt)
-          flags: { tag: FLAGS_SAR, op1: dst, op2: effective_cnt, res: res }
-          writeback: dst = res
-        else:
-          flags: preserve_all
+      action: SHIFT_ROTATE
+      op: SAR
+      inputs: [dst, cnt]
+      output: dst
+      fault_atomic: true
+      flags:
+        tag: FLAGS_SAR
+        op1: dst
+        op2: cnt
+        res: output
 
   ROL:
     description: "Rotate Left"
@@ -84,19 +86,8 @@ families:
       "0xC0 /0": { dst: Eb, cnt: Ib, min_cpu: CPU_186 }
       "0xC1 /0": { dst: Ev, cnt: Ib, min_cpu: CPU_186 }
     semantics:
-      args: [dst, cnt]
-      body: |
-        width = sizeof_bits(dst)
-        effective_cnt = cnt & 0x1F
-        masked_cnt = effective_cnt % width
-        if effective_cnt > 0:
-          res = (dst << masked_cnt) | (dst >> (width - masked_cnt))
-          cf = res & 1
-          of = (cnt == 1) ? ((res >> (width - 1)) ^ cf) : undefined
-          flags: { write: [CF: cf, OF: of], preserve: [PF, AF, ZF, SF] }
-          writeback: dst = res
-        else:
-          flags: preserve_all
+      action: CALL_HELPER
+      helper_fn: op_rol
 
   ROR:
     description: "Rotate Right"
@@ -111,19 +102,8 @@ families:
       "0xC0 /1": { dst: Eb, cnt: Ib, min_cpu: CPU_186 }
       "0xC1 /1": { dst: Ev, cnt: Ib, min_cpu: CPU_186 }
     semantics:
-      args: [dst, cnt]
-      body: |
-        width = sizeof_bits(dst)
-        effective_cnt = cnt & 0x1F
-        masked_cnt = effective_cnt % width
-        if effective_cnt > 0:
-          res = (dst >> masked_cnt) | (dst << (width - masked_cnt))
-          cf = (res >> (width - 1)) & 1
-          of = (cnt == 1) ? (((res >> (width - 1)) ^ (res >> (width - 2))) & 1) : undefined
-          flags: { write: [CF: cf, OF: of], preserve: [PF, AF, ZF, SF] }
-          writeback: dst = res
-        else:
-          flags: preserve_all
+      action: CALL_HELPER
+      helper_fn: op_ror
 
   RCL:
     description: "Rotate Left through Carry"
@@ -138,21 +118,8 @@ families:
       "0xC0 /2": { dst: Eb, cnt: Ib, min_cpu: CPU_186 }
       "0xC1 /2": { dst: Ev, cnt: Ib, min_cpu: CPU_186 }
     semantics:
-      args: [dst, cnt]
-      body: |
-        width = sizeof_bits(dst)
-        effective_cnt = (cnt & 0x1F) % (width + 1)
-        if effective_cnt > 0:
-          old_cf = read_flag(CF)
-          val = dst | (old_cf << width)
-          rot = (val << effective_cnt) | (val >> (width + 1 - effective_cnt))
-          res = rot & ((1 << width) - 1)
-          cf = (rot >> width) & 1
-          of = (cnt == 1) ? ((res >> (width - 1)) ^ cf) : undefined
-          flags: { write: [CF: cf, OF: of], preserve: [PF, AF, ZF, SF] }
-          writeback: dst = res
-        else:
-          flags: preserve_all
+      action: CALL_HELPER
+      helper_fn: op_rcl
 
   RCR:
     description: "Rotate Right through Carry"
@@ -167,21 +134,8 @@ families:
       "0xC0 /3": { dst: Eb, cnt: Ib, min_cpu: CPU_186 }
       "0xC1 /3": { dst: Ev, cnt: Ib, min_cpu: CPU_186 }
     semantics:
-      args: [dst, cnt]
-      body: |
-        width = sizeof_bits(dst)
-        effective_cnt = (cnt & 0x1F) % (width + 1)
-        if effective_cnt > 0:
-          old_cf = read_flag(CF)
-          val = (dst << 1) | old_cf
-          rot = (val >> effective_cnt) | (val << (width + 1 - effective_cnt))
-          res = (rot >> 1) & ((1 << width) - 1)
-          cf = rot & 1
-          of = (cnt == 1) ? (((res >> (width - 1)) ^ (res >> (width - 2))) & 1) : undefined
-          flags: { write: [CF: cf, OF: of], preserve: [PF, AF, ZF, SF] }
-          writeback: dst = res
-        else:
-          flags: preserve_all
+      action: CALL_HELPER
+      helper_fn: op_rcr
 
   SHLD:
     description: "Double Precision Shift Left"
@@ -191,17 +145,8 @@ families:
       "0x0F 0xA4": { dst: Ev, src: Gv, cnt: Ib }
       "0x0F 0xA5": { dst: Ev, src: Gv, cnt: CL }
     semantics:
-      args: [dst, src, cnt]
-      body: |
-        width = sizeof_bits(dst)
-        effective_cnt = cnt & 0x1F
-        if effective_cnt > 0:
-          res = (dst << effective_cnt) | (src >> (width - effective_cnt))
-          cf = (dst >> (width - effective_cnt)) & 1
-          flags: { write: [CF: cf], lazy: [PF, ZF, SF from res], undefined: [AF, OF] }
-          writeback: dst = res
-        else:
-          flags: preserve_all
+      action: CALL_HELPER
+      helper_fn: op_shld
 
   SHRD:
     description: "Double Precision Shift Right"
@@ -211,15 +156,5 @@ families:
       "0x0F 0xAC": { dst: Ev, src: Gv, cnt: Ib }
       "0x0F 0xAD": { dst: Ev, src: Gv, cnt: CL }
     semantics:
-      args: [dst, src, cnt]
-      body: |
-        width = sizeof_bits(dst)
-        effective_cnt = cnt & 0x1F
-        if effective_cnt > 0:
-          res = (dst >> effective_cnt) | (src << (width - effective_cnt))
-          cf = (dst >> (effective_cnt - 1)) & 1
-          flags: { write: [CF: cf], lazy: [PF, ZF, SF from res], undefined: [AF, OF] }
-          writeback: dst = res
-        else:
-          flags: preserve_all
-
+      action: CALL_HELPER
+      helper_fn: op_shrd

@@ -1,0 +1,97 @@
+# segments.yaml - Segment Registers and Descriptor Cache State
+
+segments:
+  ES:
+    index: 0
+    min_cpu: CPU_8086
+    type: DATA
+    default_base_reset: 0x00000000
+    default_limit_reset: 0x0000FFFF
+    default_selector_reset: 0x0000
+    description: "Extra Segment (Default segment for string destination ES:EDI)"
+
+  CS:
+    index: 1
+    min_cpu: CPU_8086
+    type: CODE
+    reset_state:
+      cpu_8086:
+        selector: 0xFFFF
+        base: 0x000FFFF0
+        limit: 0x0000FFFF
+      cpu_286:
+        selector: 0xF000
+        base: 0x00FF0000
+        limit: 0x0000FFFF
+      cpu_386_plus:
+        selector: 0xF000
+        base: 0xFFFF0000
+        limit: 0x0000FFFF
+        access_rights: 0x93 # Present, Ring 0, Code Executable/Readable
+    description: "Code Segment (Current instruction stream pointer CS:EIP)"
+
+  SS:
+    index: 2
+    min_cpu: CPU_8086
+    type: STACK
+    default_base_reset: 0x00000000
+    default_limit_reset: 0x0000FFFF
+    default_selector_reset: 0x0000
+    description: "Stack Segment (Default segment for stack pointer SS:ESP and frame pointer SS:EBP)"
+
+  DS:
+    index: 3
+    min_cpu: CPU_8086
+    type: DATA
+    default_base_reset: 0x00000000
+    default_limit_reset: 0x0000FFFF
+    default_selector_reset: 0x0000
+    description: "Data Segment (Default segment for general memory operands and string source DS:ESI)"
+
+  FS:
+    index: 4
+    min_cpu: CPU_386
+    type: DATA
+    default_base_reset: 0x00000000
+    default_limit_reset: 0x0000FFFF
+    default_selector_reset: 0x0000
+    description: "General Purpose Auxiliary Segment (Commonly used by OS for Thread Information Block / TIB)"
+
+  GS:
+    index: 5
+    min_cpu: CPU_386
+    type: DATA
+    default_base_reset: 0x00000000
+    default_limit_reset: 0x0000FFFF
+    default_selector_reset: 0x0000
+    description: "General Purpose Auxiliary Segment (Commonly used by OS for Per-CPU / TLS data)"
+
+descriptor_cache_fields:
+  selector:
+    width: 16
+    fields:
+      rpl: { bits: [0, 1], desc: "Requested Privilege Level (Ring 0..3)" }
+      ti:  { bit: 2,       desc: "Table Indicator (0 = GDT, 1 = LDT)" }
+      idx: { bits: [3, 15], desc: "Descriptor Table Entry Index" }
+  base:
+    width: 32 # 24-bit on 286, 32-bit on 386+
+    desc: "Linear Base Address of Segment"
+  limit:
+    width: 32 # 16-bit byte limit on 286, 20-bit page/byte limit on 386+
+    desc: "Segment Size Limit"
+  access:
+    width: 8
+    fields:
+      accessed:   { bit: 0 }
+      read_write: { bit: 1 }
+      conforming: { bit: 2 }
+      code_data:  { bit: 3 } # 1 = code/data, 0 = system descriptor
+      system:     { bit: 4 } # 1 = user/code/data, 0 = system (TSS, LDT, Gate)
+      dpl:        { bits: [5, 6], desc: "Descriptor Privilege Level (0..3)" }
+      present:    { bit: 7 }
+  attributes_high:
+    width: 8
+    fields:
+      default_size: { bit: 6, desc: "D/B bit: 0 = 16-bit default operands/stack, 1 = 32-bit" }
+      granularity:  { bit: 7, desc: "G bit: 0 = byte granularity, 1 = 4KB page granularity" }
+

@@ -1,0 +1,104 @@
+# msr.yaml - Model-Specific Registers (RDMSR / WRMSR 64-bit Architectural Interface)
+
+architectural_msrs:
+  TSC:
+    address: 0x00000010
+    min_cpu: CPU_PENTIUM
+    feature: CPU_FEATURE_TSC
+    width: 64
+    reset_value: 0x0000000000000000
+    access: READ_WRITE # Ring 0 WRMSR; RDTSC executable in user mode unless CR4.TSD = 1
+    desc: "Time-Stamp Counter (Monotonically increments every CPU clock cycle)"
+
+  APIC_BASE:
+    address: 0x0000001B
+    min_cpu: CPU_PENTIUMPRO
+    feature: CPU_FEATURE_APIC
+    width: 64
+    reset_value: 0x00000000FEE00900 # Base 0xFEE00000, Global APIC Enable bit 11, BSP bit 8
+    fields:
+      bsp:           { bit: 8,  desc: "Bootstrap Processor indicator (1 = BSP, 0 = AP)" }
+      global_enable: { bit: 11, desc: "Local APIC Global Enable" }
+      base_address:  { bits: [12, 35], desc: "24-bit physical base address of Local APIC registers" }
+
+  SYSENTER_CS:
+    address: 0x00000174
+    min_cpu: CPU_PENTIUM2
+    feature: CPU_FEATURE_SEP
+    width: 64
+    reset_value: 0x0000000000000000
+    desc: "Ring 0 Code Segment selector for SYSENTER entry"
+
+  SYSENTER_ESP:
+    address: 0x00000175
+    min_cpu: CPU_PENTIUM2
+    feature: CPU_FEATURE_SEP
+    width: 64
+    reset_value: 0x0000000000000000
+    desc: "Ring 0 Stack Pointer (ESP) for SYSENTER entry"
+
+  SYSENTER_EIP:
+    address: 0x00000176
+    min_cpu: CPU_PENTIUM2
+    feature: CPU_FEATURE_SEP
+    width: 64
+    reset_value: 0x0000000000000000
+    desc: "Ring 0 Instruction Pointer (EIP) entry point for SYSENTER"
+
+  MTRR_CAP:
+    address: 0x000000FE
+    min_cpu: CPU_PENTIUMPRO
+    feature: CPU_FEATURE_MTRR
+    width: 64
+    access: READ_ONLY
+    reset_value: 0x0000000000000508 # 8 variable ranges, fixed ranges supported, write-combining supported
+    fields:
+      vcnt: { bits: [0, 7], desc: "Number of variable-range MTRR register pairs (typically 8)" }
+      fix:  { bit: 8,       desc: "Fixed-range MTRRs supported" }
+      wc:   { bit: 10,      desc: "Write-Combining memory type supported" }
+
+  MTRR_DEF_TYPE:
+    address: 0x000002FF
+    min_cpu: CPU_PENTIUMPRO
+    feature: CPU_FEATURE_MTRR
+    width: 64
+    reset_value: 0x0000000000000000
+    fields:
+      default_type: { bits: [0, 7], desc: "Default memory type for addresses not covered by MTRRs (0 = UC)" }
+      fixed_enable: { bit: 10,      desc: "Fixed-range MTRRs enabled" }
+      mtrr_enable:  { bit: 11,      desc: "MTRRs globally enabled" }
+
+amd_msrs:
+  EFER:
+    address: 0xC0000080
+    min_cpu: CPU_K6
+    feature: CPU_FEATURE_SYSCALL
+    width: 64
+    reset_value: 0x0000000000000000
+    fields:
+      sce: { bit: 0, desc: "System Call Extensions (Enables SYSCALL / SYSRET instructions)" }
+
+  STAR:
+    address: 0xC0000081
+    min_cpu: CPU_K6
+    feature: CPU_FEATURE_SYSCALL
+    width: 64
+    reset_value: 0x0000000000000000
+    fields:
+      target_eip: { bits: [0, 31],  desc: "Ring 0 entry EIP for SYSCALL" }
+      syscall_cs: { bits: [32, 47], desc: "Base CS selector for SYSCALL" }
+      sysret_cs:  { bits: [48, 63], desc: "Base CS selector for SYSRET" }
+
+via_msrs:
+  CENTAUR_FCR:
+    address: 0x00001107
+    min_cpu: CPU_C3
+    feature: CPU_FEATURE_PADLOCK_RNG
+    width: 64
+    desc: "Centaur Feature Control Register (Controls VIA PadLock RNG, AES, and SHA hardware engines)"
+    fields:
+      rng_enable:     { bit: 6, desc: "Enable PadLock Hardware Random Number Generator" }
+      ace_enable:     { bit: 8, desc: "Enable PadLock Advanced Cryptography Engine (AES)" }
+      phe_enable:     { bit: 10, desc: "Enable PadLock Hash Engine (SHA-1 / SHA-256)" }
+      pmm_enable:     { bit: 12, desc: "Enable PadLock Montgomery Multiplier (RSA)" }
+

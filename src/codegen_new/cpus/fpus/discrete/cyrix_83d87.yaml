@@ -1,0 +1,38 @@
+# cyrix_83d87.yaml - Cyrix FasMath 83D87 High Performance Math Coprocessor
+
+fpu:
+  fpu_id: FPU_CYRIX_83D87
+  name: "Cyrix FasMath 83D87"
+  vendor: "Cyrix"
+  release_year: 1989
+  package: [PGA_68]
+  type: DISCRETE_COPROCESSOR
+  compatible_cpus: [CPU_386DX]
+
+interface:
+  protocol: COPROCESSOR_BUS_32BIT
+  clock_divider: 1.0 # Supports up to 40 MHz matching Am386DX-40
+
+architecture: |
+  Clean-room design featuring dedicated parallel 8-bit multiplier and divider arrays.
+  Executes basic floating-point arithmetic up to 4x faster and transcendentals
+  up to 8x faster than the Intel 80387DX.
+
+standard:
+  ieee_754_version: IEEE_754_1985
+  infinity_mode: AFFINE
+  affine_mode_supported: true
+
+capabilities:
+  same_as: FPU_387DX
+
+typical_cycles:
+  fadd: 12      # vs 30 cycles on Intel 387
+  fsub: 12
+  fmul: 16      # vs 45 cycles on Intel 387
+  fdiv: 38      # vs 90 cycles on Intel 387
+  fsqrt: 52     # vs 122 cycles on Intel 387
+  fsin: 96      # vs 350 cycles on Intel 387
+  fcos: 96
+  fsincos: 110
+

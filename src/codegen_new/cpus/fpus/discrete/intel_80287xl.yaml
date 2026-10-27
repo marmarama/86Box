@@ -1,0 +1,44 @@
+# intel_80287xl.yaml - Intel 80287XL Math Coprocessor (387 core in 287 pinout)
+
+fpu:
+  fpu_id: FPU_287XL
+  name: "Intel 80287XL Math Coprocessor"
+  vendor: "Intel"
+  release_year: 1990
+  package: [DIP_40]
+  type: DISCRETE_COPROCESSOR
+  compatible_cpus: [CPU_286]
+
+architecture: "387SX CHMOS core fitted into a 40-pin 80287 socket"
+
+interface:
+  protocol: IO_MAPPED_COPROCESSOR
+  io_port_range: [0x00F8, 0x00FF]
+  clock_divider: 1.0 # Supports 1:1 CPU clocking
+
+standard:
+  ieee_754_version: IEEE_754_1985 # Full IEEE 754-1985 standard compliance
+  infinity_mode: AFFINE           # Affine infinity mode (+inf != -inf)
+  affine_mode_supported: true
+
+capabilities:
+  supported_instructions:
+    - FSIN      # Supported on 287XL!
+    - FCOS      # Supported on 287XL!
+    - FSINCOS   # Supported on 287XL!
+    - FPREM1    # Supported on 287XL!
+    - FUCOM     # Supported on 287XL!
+    - FUCOMP    # Supported on 287XL!
+    - FUCOMPP   # Supported on 287XL!
+
+registers:
+  stack_depth: 8
+  register_width_bits: 80
+
+typical_cycles:
+  fadd: 30
+  fsub: 30
+  fmul: 45
+  fdiv: 90
+  fsqrt: 120
+

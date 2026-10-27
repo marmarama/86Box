@@ -1,0 +1,146 @@
+# flags.yaml - FLAGS and EFLAGS Architectural Bitfield Specification
+
+registers:
+  FLAGS:
+    width: 16
+    min_cpu: CPU_8086
+    reset_value: 0x0002
+    description: "16-bit Processor Status and Control Flags"
+
+  EFLAGS:
+    width: 32
+    min_cpu: CPU_386
+    reset_value: 0x00000002
+    description: "32-bit Extended Processor Status and Control Flags"
+
+bits:
+  CF:
+    bit: 0
+    name: "Carry Flag"
+    type: STATUS
+    min_cpu: CPU_8086
+    desc: "Set on unsigned arithmetic carry or borrow out of MSB"
+
+  RESERVED_1:
+    bit: 1
+    type: RESERVED
+    default: 1
+    desc: "Fixed at 1 on original 8086/8088 architecture"
+
+  PF:
+    bit: 2
+    name: "Parity Flag"
+    type: STATUS
+    min_cpu: CPU_8086
+    desc: "Set if low 8 bits of result contain even number of 1s"
+
+  AF:
+    bit: 4
+    name: "Auxiliary Carry Flag"
+    type: STATUS
+    min_cpu: CPU_8086
+    desc: "Set on BCD carry or borrow out of bit 3 into bit 4"
+
+  ZF:
+    bit: 6
+    name: "Zero Flag"
+    type: STATUS
+    min_cpu: CPU_8086
+    desc: "Set if arithmetic/logical result is zero"
+
+  SF:
+    bit: 7
+    name: "Sign Flag"
+    type: STATUS
+    min_cpu: CPU_8086
+    desc: "Equal to Most Significant Bit (MSB) of result"
+
+  TF:
+    bit: 8
+    name: "Trap Flag"
+    type: CONTROL
+    min_cpu: CPU_8086
+    desc: "Single-step debug mode (causes INT 1 after each instruction)"
+
+  IF:
+    bit: 9
+    name: "Interrupt Enable Flag"
+    type: CONTROL
+    min_cpu: CPU_8086
+    desc: "Controls masking of external INTR hardware interrupts (CLI / STI)"
+
+  DF:
+    bit: 10
+    name: "Direction Flag"
+    type: CONTROL
+    min_cpu: CPU_8086
+    desc: "String index increment (0 = increment / CLD, 1 = decrement / STD)"
+
+  OF:
+    bit: 11
+    name: "Overflow Flag"
+    type: STATUS
+    min_cpu: CPU_8086
+    desc: "Set on signed two's complement integer overflow"
+
+  IOPL:
+    bits: [12, 13]
+    name: "I/O Privilege Level"
+    type: SYSTEM
+    min_cpu: CPU_286
+    desc: "Maximum CPL allowed to execute I/O instructions (IN, OUT, CLI, STI)"
+
+  NT:
+    bit: 14
+    name: "Nested Task Flag"
+    type: SYSTEM
+    min_cpu: CPU_286
+    desc: "Controls IRET task switching chain via TSS back-link"
+
+  RF:
+    bit: 16
+    name: "Resume Flag"
+    type: SYSTEM
+    min_cpu: CPU_386
+    desc: "Suppresses debug instruction breakpoint faults (#DB) for next instruction"
+
+  VM:
+    bit: 17
+    name: "Virtual 8086 Mode"
+    type: SYSTEM
+    min_cpu: CPU_386
+    desc: "Enables virtual-8086 mode inside 32-bit protected mode OS"
+
+  AC:
+    bit: 18
+    name: "Alignment Check"
+    type: SYSTEM
+    min_cpu: CPU_486
+    desc: "Enables alignment checking for unaligned memory accesses (#AC)"
+
+  VIF:
+    bit: 19
+    name: "Virtual Interrupt Flag"
+    type: SYSTEM
+    min_cpu: CPU_PENTIUM
+    feature: CPU_FEATURE_VME
+    desc: "Virtual image of IF flag used by V86 monitor"
+
+  VIP:
+    bit: 20
+    name: "Virtual Interrupt Pending"
+    type: SYSTEM
+    min_cpu: CPU_PENTIUM
+    feature: CPU_FEATURE_VME
+    desc: "Indicates interrupt is pending for V86 task"
+
+  ID:
+    bit: 21
+    name: "CPUID Identification Flag"
+    type: SYSTEM
+    min_cpu: CPU_PENTIUM
+    desc: "If software can toggle this bit, the CPUID instruction is supported"
+
+user_mode_modifiable_mask: 0x00000DD5 # CF, PF, AF, ZF, SF, DF, OF
+ring0_only_mask:           0x003F6000 # IOPL, NT, RF, VM, AC, VIF, VIP, ID
+

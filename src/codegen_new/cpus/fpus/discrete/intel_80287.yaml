@@ -1,0 +1,43 @@
+# intel_80287.yaml - Intel 80287 Math Coprocessor
+
+fpu:
+  fpu_id: FPU_287
+  name: "Intel 80287 Math Coprocessor"
+  vendor: "Intel"
+  release_year: 1983
+  package: [DIP_40]
+  type: DISCRETE_COPROCESSOR
+  compatible_cpus: [CPU_286]
+
+interface:
+  protocol: IO_MAPPED_COPROCESSOR
+  io_port_range: [0x00F8, 0x00FF] # Coprocessor communication via 286 I/O bus cycles
+  clock_divider: 0.6667 # Runs at 2/3 CPU clock frequency on standard 286 motherboards
+  protected_mode_coprocessor_protocol: true # Traps handled via CPU exception 16 (#MF)
+
+standard:
+  ieee_754_version: DRAFT_1980
+  infinity_mode: PROJECTIVE # Projective infinity by default
+  affine_mode_supported: false
+
+limitations:
+  unsupported_instructions:
+    - FSIN
+    - FCOS
+    - FSINCOS
+    - FPREM1
+    - FUCOM
+    - FUCOMP
+    - FUCOMPP
+
+registers:
+  stack_depth: 8
+  register_width_bits: 80
+
+typical_cycles:
+  fadd: 85
+  fsub: 85
+  fmul: 135
+  fdiv: 198
+  fsqrt: 182
+

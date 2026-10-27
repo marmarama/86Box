@@ -1,0 +1,50 @@
+# simd_xmm.yaml - SSE / SSE2 128-bit Vector Registers and MXCSR Control
+
+xmm_registers:
+  min_cpu: CPU_PENTIUM3
+  feature: CPU_FEATURE_SSE
+  width: 128
+  registers:
+    XMM0: { index: 0, desc: "128-bit SIMD Vector Register 0" }
+    XMM1: { index: 1, desc: "128-bit SIMD Vector Register 1" }
+    XMM2: { index: 2, desc: "128-bit SIMD Vector Register 2" }
+    XMM3: { index: 3, desc: "128-bit SIMD Vector Register 3" }
+    XMM4: { index: 4, desc: "128-bit SIMD Vector Register 4" }
+    XMM5: { index: 5, desc: "128-bit SIMD Vector Register 5" }
+    XMM6: { index: 6, desc: "128-bit SIMD Vector Register 6" }
+    XMM7: { index: 7, desc: "128-bit SIMD Vector Register 7" }
+  data_views:
+    f32: { count: 4, width: 32, type: "float", desc: "4x 32-bit single-precision IEEE 754 floats (SSE)" }
+    f64: { count: 2, width: 64, type: "double", min_feature: CPU_FEATURE_SSE2, desc: "2x 64-bit double-precision floats (SSE2)" }
+    u8:  { count: 16, width: 8, type: "uint8_t", desc: "16x 8-bit unsigned bytes" }
+    s8:  { count: 16, width: 8, type: "int8_t", desc: "16x 8-bit signed bytes" }
+    u16: { count: 8, width: 16, type: "uint16_t", desc: "8x 16-bit unsigned words" }
+    s16: { count: 8, width: 16, type: "int16_t", desc: "8x 16-bit signed words" }
+    u32: { count: 4, width: 32, type: "uint32_t", desc: "4x 32-bit unsigned dwords" }
+    s32: { count: 4, width: 32, type: "int32_t", desc: "4x 32-bit signed dwords" }
+    u64: { count: 2, width: 64, type: "uint64_t", min_feature: CPU_FEATURE_SSE2, desc: "2x 64-bit unsigned qwords" }
+    s64: { count: 2, width: 64, type: "int64_t", min_feature: CPU_FEATURE_SSE2, desc: "2x 64-bit signed qwords" }
+
+mxcsr:
+  name: MXCSR
+  width: 32
+  min_cpu: CPU_PENTIUM3
+  feature: CPU_FEATURE_SSE
+  reset_value: 0x00001F80 # All exceptions masked, round nearest, DAZ=0, FTZ=0
+  bits:
+    IE:  { bit: 0,  desc: "Invalid Operation Flag (Sticky)" }
+    DE:  { bit: 1,  desc: "Denormal Flag (Sticky)" }
+    ZE:  { bit: 2,  desc: "Divide By Zero Flag (Sticky)" }
+    OE:  { bit: 3,  desc: "Overflow Flag (Sticky)" }
+    UE:  { bit: 4,  desc: "Underflow Flag (Sticky)" }
+    PE:  { bit: 5,  desc: "Precision Flag (Sticky)" }
+    DAZ: { bit: 6,  min_feature: CPU_FEATURE_SSE2, desc: "Denormals Are Zero (Treats denormal inputs as zero)" }
+    IM:  { bit: 7,  desc: "Invalid Operation Mask" }
+    DM:  { bit: 8,  desc: "Denormal Mask" }
+    ZM:  { bit: 9,  desc: "Divide By Zero Mask" }
+    OM:  { bit: 10, desc: "Overflow Mask" }
+    UM:  { bit: 11, desc: "Underflow Mask" }
+    PM:  { bit: 12, desc: "Precision Mask" }
+    RC:  { bits: [13, 14], desc: "Rounding Control (00=Nearest/Even, 01=Down, 10=Up, 11=Truncate)" }
+    FTZ: { bit: 15, desc: "Flush To Zero (Replaces underflowed result with positive zero)" }
+

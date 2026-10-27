@@ -1,0 +1,63 @@
+# iit_3c87.yaml - Integrated Information Technology IIT-3C87 Math Coprocessor
+
+fpu:
+  fpu_id: FPU_IIT_3C87
+  name: "IIT 3C87 Math Coprocessor"
+  vendor: "IIT"
+  release_year: 1989
+  package: [PGA_68]
+  type: DISCRETE_COPROCESSOR
+  compatible_cpus: [CPU_386DX]
+
+interface:
+  protocol: COPROCESSOR_BUS_32BIT
+  bus_width_bits: 32
+  clock_divider: 1.0 # Supports 16, 20, 25, 33, 40 MHz
+
+architecture: |
+  Clean-room CMOS x87 coprocessor designed by Integrated Information Technology.
+  Features a dedicated 24x24-bit multiplier array and a unique 32-register bank-switched
+  register file organized as 4 banks of 8 registers (Bank 0-3).
+  Introduced proprietary 4x4 matrix transformation acceleration instructions.
+
+standard:
+  ieee_754_version: IEEE_754_1985
+  infinity_mode: AFFINE
+  affine_mode_supported: true
+
+registers:
+  stack_depth: 8
+  register_banks: 4
+  total_registers: 32
+  register_width_bits: 80
+  bank_selection:
+    mechanism: "FSBP0, FSBP1, FSBP2, FSBP3 instructions switch active bank 0..3"
+
+extensions:
+  proprietary_instructions:
+    - name: FSBP0
+      opcode: [0xDB, 0xEB]
+      description: "Set Bank Pointer to Bank 0 (Default standard x87 bank)"
+    - name: FSBP1
+      opcode: [0xDB, 0xEA]
+      description: "Set Bank Pointer to Bank 1"
+    - name: FSBP2
+      opcode: [0xDB, 0xE9]
+      description: "Set Bank Pointer to Bank 2"
+    - name: FSBP3
+      opcode: [0xDB, 0xE8]
+      description: "Set Bank Pointer to Bank 3"
+    - name: F4X4
+      opcode: [0xDB, 0xF8]
+      description: "4x4 Matrix Multiply transform primitive across register banks"
+
+typical_cycles:
+  fadd: 18      # Faster than Intel 387 (30 cycles)
+  fsub: 18
+  fmul: 20      # Significantly faster due to hardware multiplier array
+  fdiv: 40
+  fsqrt: 55
+  fsin: 110
+  fcos: 110
+  fsincos: 130
+

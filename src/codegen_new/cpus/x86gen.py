@@ -20,6 +20,8 @@ from typing import Dict, List, Tuple, Optional, Any, Set
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ISA_DIR = os.path.join(SCRIPT_DIR, "isa")
 TIMINGS_DIR = os.path.join(SCRIPT_DIR, "timings")
+REGISTERS_DIR = os.path.join(SCRIPT_DIR, "registers")
+FPUS_DIR = os.path.join(SCRIPT_DIR, "fpus")
 ROOT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "../../.."))
 
 # CPU Generation Hierarchy (Monotonic)
@@ -117,7 +119,7 @@ GROUP_OPCODES = {
     0xC0, 0xC1,
     0xD0, 0xD1, 0xD2, 0xD3,
     0xF6, 0xF7,
-    0xFE, 0xFF
+    0xFF
 }
 
 
@@ -232,6 +234,8 @@ class CPUManifest:
         self.isa_level = self.data.get("isa_level", "CPU_8086")
         self.features: Set[str] = set(self.data.get("features", []))
         self.timing_profile = self.data.get("timing_profile", "timings/pentium.yaml")
+        self.fpu_profile = self.data.get("fpu_profile")
+        self.supported_coprocessors = self.data.get("supported_coprocessors", [])
 
     def supports_instruction(self, enc: OpcodeEncoding) -> bool:
         req_order = CPU_LEVEL_ORDER.get(enc.min_cpu, 0)
@@ -246,11 +250,143 @@ class CPUManifest:
         return True
 
 
+class RegisterDatabase:
+    """Loads and provides access to declarative architectural register definitions."""
+    def __init__(self):
+        self.gprs: Dict[str, Any] = {}
+        self.segments: Dict[str, Any] = {}
+        self.flags: Dict[str, Any] = {}
+        self.control: Dict[str, Any] = {}
+        self.fpu: Dict[str, Any] = {}
+        self.xmm: Dict[str, Any] = {}
+        self.msr: Dict[str, Any] = {}
+        self.load_all()
+
+    def load_all(self):
+        reg_files = {
+            "gprs": os.path.join(REGISTERS_DIR, "gpr.yaml"),
+            "segments": os.path.join(REGISTERS_DIR, "segments.yaml"),
+            "flags": os.path.join(REGISTERS_DIR, "flags.yaml"),
+            "control": os.path.join(REGISTERS_DIR, "control_and_system.yaml"),
+            "fpu": os.path.join(REGISTERS_DIR, "fpu_and_mmx.yaml"),
+            "xmm": os.path.join(REGISTERS_DIR, "simd_xmm.yaml"),
+            "msr": os.path.join(REGISTERS_DIR, "msr.yaml"),
+        }
+        for k, p in reg_files.items():
+            if os.path.isfile(p):
+                with open(p, "r", encoding="utf-8") as fp:
+                    setattr(self, k, yaml.safe_load(fp))
+
+    def cpu_registers(self, cpu: CPUManifest) -> Dict[str, List[str]]:
+        order = CPU_LEVEL_ORDER.get(cpu.isa_level, 0)
+        res = {}
+
+        # GPRs
+        gpr_list = []
+        is_32 = order >= CPU_LEVEL_ORDER["CPU_386"]
+        for name, data in self.gprs.get("registers", {}).items():
+            if is_32:
+                gpr_list.append(name)
+            else:
+                for sub in data.get("sub_registers", {}):
+                    if len(sub) == 2:
+                        gpr_list.append(sub)
+        res["General Purpose"] = gpr_list
+
+        # Segments
+        segs = []
+        for name, data in self.segments.get("segments", {}).items():
+            req = CPU_LEVEL_ORDER.get(data.get("min_cpu", "CPU_8086"), 0)
+            if order >= req:
+                segs.append(name)
+        res["Segments"] = segs
+
+        # Control Registers
+        crs = []
+        for name, data in self.control.get("control_registers", {}).items():
+            req = CPU_LEVEL_ORDER.get(data.get("min_cpu", "CPU_386"), 0)
+            if order >= req:
+                crs.append(name)
+        res["Control Registers"] = crs
+
+        # FPU / MMX
+        fpu_list = []
+        if "CPU_FEATURE_FPU" in cpu.features or order == 0:
+            fpu_list.extend(["ST(0)..ST(7)", "FCW", "FSW", "FTW"])
+        if "CPU_FEATURE_MMX" in cpu.features:
+            fpu_list.append("MM0..MM7 (aliased)")
+        res["x87 FPU & MMX"] = fpu_list
+
+        # XMM
+        xmms = []
+        if "CPU_FEATURE_SSE" in cpu.features:
+            xmms.append("XMM0..XMM7 (128-bit)")
+            xmms.append("MXCSR")
+        res["Vector SIMD (XMM)"] = xmms
+
+        return res
+
+
+class FPUDatabase:
+    """Loads and provides access to declarative FPU and math coprocessor specifications."""
+    def __init__(self):
+        self.discrete: Dict[str, Dict[str, Any]] = {}
+        self.integrated: Dict[str, Dict[str, Any]] = {}
+        self.by_id: Dict[str, Dict[str, Any]] = {}
+        self.by_filename: Dict[str, Dict[str, Any]] = {}
+        self.load_all()
+
+    def load_all(self):
+        for sub, cat, target in (("discrete", "DISCRETE", self.discrete), ("integrated", "INTEGRATED", self.integrated)):
+            pattern = os.path.join(FPUS_DIR, sub, "*.yaml")
+            for f in sorted(glob.glob(pattern)):
+                with open(f, "r", encoding="utf-8") as fp:
+                    data = yaml.safe_load(fp)
+                if not data or "fpu" not in data:
+                    continue
+                fpu_id = data["fpu"]["fpu_id"]
+                data["_file"] = f
+                data["_category"] = cat
+                target[fpu_id] = data
+                self.by_id[fpu_id] = data
+                base = os.path.splitext(os.path.basename(f))[0]
+                self.by_filename[base] = data
+
+    def get_fpu(self, identifier: str) -> Optional[Dict[str, Any]]:
+        if not identifier:
+            return None
+        if identifier in self.by_id:
+            return self.by_id[identifier]
+        base = os.path.splitext(os.path.basename(identifier))[0]
+        if base in self.by_filename:
+            return self.by_filename[base]
+        ident_lower = identifier.lower()
+        for k, v in self.by_filename.items():
+            if ident_lower in k.lower():
+                return v
+        for k, v in self.by_id.items():
+            if ident_lower in k.lower():
+                return v
+        return None
+
+
 def derive_dependencies(enc: OpcodeEncoding, opcode: int, is_mod3: bool) -> int:
     """Auto-synthesizes dependency bitmask for an opcode encoding."""
-    flags = 0
-    odata = enc.op_data
     cls = enc.class_name
+    if cls in ("nop", "string_rep", "sys_interrupt", "bounds_check", "arpl"):
+        return 0
+    if cls == "xlat":
+        return SRCDEP_EAX | SRCDEP_EBX
+    if cls == "salc":
+        return SRCDEP_EAX
+
+    odata = enc.op_data
+    if cls == "ret_near" and odata.get("pop_bytes"):
+        return SRCDEP_ESP | DSTDEP_ESP
+    if cls == "ret_far":
+        return IMPL_ESP
+
+    flags = 0
 
     dst = odata.get("dst")
     src = odata.get("src")
@@ -258,6 +394,7 @@ def derive_dependencies(enc: OpcodeEncoding, opcode: int, is_mod3: bool) -> int:
     op2 = odata.get("op2")
     bounds = odata.get("bounds")
     base = odata.get("base")
+    port = odata.get("port")
 
     writes: List[str] = []
     reads: List[str] = []
@@ -281,6 +418,8 @@ def derive_dependencies(enc: OpcodeEncoding, opcode: int, is_mod3: bool) -> int:
         src_list.extend(flatten(bounds))
     if base:
         src_list.extend(flatten(base))
+    if port:
+        src_list.extend(flatten(port))
 
     if cls in ("alu", "alu_carry"):
         writes.extend(dst_list)
@@ -305,7 +444,7 @@ def derive_dependencies(enc: OpcodeEncoding, opcode: int, is_mod3: bool) -> int:
     elif cls == "stack_pop":
         writes.extend(dst_list)
         flags |= IMPL_ESP
-    elif cls in ("call_near", "ret_near", "sys_interrupt"):
+    elif cls in ("call_near", "ret_near"):
         flags |= IMPL_ESP
     elif cls == "xchg":
         writes.extend(op1_list)
@@ -334,33 +473,40 @@ def derive_dependencies(enc: OpcodeEncoding, opcode: int, is_mod3: bool) -> int:
 
     # Process reads
     for r in reads:
-        if r in ("Eb", "Ev", "Ew", "Ed", "Mp", "Ma"):
+        if r in ("Eb", "Ev", "Ew", "Ed"):
             flags |= MODRM
             if is_mod3:
                 flags |= SRCDEP_RM
+        elif r in ("Mp", "Ma"):
+            flags |= MODRM
         elif r in ("Gb", "Gv", "Gw", "Gd"):
             flags |= MODRM | SRCDEP_REG
         elif r in ("Pq", "Qq", "Vps", "Wps", "Vpd", "Wpd"):
             flags |= MODRM
             if r in ("Gb", "Gv", "Pq", "Vps", "Vpd"):
                 flags |= SRCDEP_REG
-        elif r in ("AL", "AX", "eAX"):
+        elif r in ("AL", "AX", "eAX", "AH"):
             flags |= SRCDEP_EAX
-        elif r in ("CL",):
+        elif r in ("CL", "CH", "CX", "eCX"):
             flags |= SRCDEP_ECX
-        elif r in ("DX", "eDX"):
+        elif r in ("DL", "DH", "DX", "eDX"):
             flags |= SRCDEP_EDX
-        elif r in ("eBX",):
+        elif r in ("BL", "BH", "BX", "eBX"):
             flags |= SRCDEP_EBX
+        elif "gpr8" in r and "[reg]" in r:
+            reg_idx = (opcode & 7) & 3
+            flags |= (1 << (SRCDEP_SHIFT + reg_idx))
         elif "gpr" in r and "[reg]" in r:
             reg_idx = opcode & 7
             flags |= (1 << (SRCDEP_SHIFT + reg_idx))
         elif r == "gpr32[edx]":
             flags |= SRCDEP_EDX
         elif r in ("Ib", "Ib_sext"):
-            flags |= HAS_IMM8
+            if opcode not in (0x6B, 0xA8, 0xD4, 0xD5, 0xE4, 0xE5, 0xE6, 0xE7):
+                flags |= HAS_IMM8
         elif r in ("Iv",):
-            flags |= HAS_IMM1632
+            if opcode not in (0x69, 0xA9):
+                flags |= HAS_IMM1632
 
     # Process writes
     for w in writes:
@@ -372,12 +518,17 @@ def derive_dependencies(enc: OpcodeEncoding, opcode: int, is_mod3: bool) -> int:
             flags |= MODRM | DSTDEP_REG
         elif w in ("Pq", "Vps", "Vpd"):
             flags |= MODRM
-        elif w in ("AL", "AX", "eAX"):
+        elif w in ("AL", "AX", "eAX", "AH"):
             flags |= DSTDEP_EAX
-        elif w in ("CL",):
+        elif w in ("CL", "CH", "CX", "eCX"):
             flags |= DSTDEP_ECX
-        elif w in ("DX", "eDX"):
+        elif w in ("DL", "DH", "DX", "eDX"):
             flags |= DSTDEP_EDX
+        elif w in ("BL", "BH", "BX", "eBX"):
+            flags |= DSTDEP_EBX
+        elif "gpr8" in w and "[reg]" in w:
+            reg_idx = (opcode & 7) & 3
+            flags |= (1 << (DSTDEP_SHIFT + reg_idx))
         elif "gpr" in w and "[reg]" in w:
             reg_idx = opcode & 7
             flags |= (1 << (DSTDEP_SHIFT + reg_idx))
@@ -537,7 +688,8 @@ def list_cpus(sort_by_year: bool = True):
     manifest_files = sorted(glob.glob(os.path.join(SCRIPT_DIR, "*/*.yaml")))
     cpus = []
     for f in manifest_files:
-        if os.path.dirname(f) in (ISA_DIR, TIMINGS_DIR):
+        parent = os.path.dirname(f)
+        if parent in (ISA_DIR, TIMINGS_DIR, REGISTERS_DIR, FPUS_DIR) or "fpus" in f:
             continue
         try:
             cpu = CPUManifest(f)
@@ -558,11 +710,98 @@ def list_cpus(sort_by_year: bool = True):
         print(f"{year_str:<6} {vendor:<12} {cpu.name:<34} {cpu.isa_level:<16} {feat_count:<10}")
 
 
-def inspect_cpu(manifest_path: str, isa: ISADatabase):
-    """Analyzes instruction set compatibility and generates #UD table for a CPU."""
+def list_fpus(fpu_db: FPUDatabase):
+    """Lists all discrete and integrated FPUs in a formatted table."""
+    all_fpus = list(fpu_db.by_id.values())
+    all_fpus.sort(key=lambda d: (d.get("fpu", {}).get("release_year") or 9999, d.get("_category", ""), d.get("fpu", {}).get("name", "")))
+
+    print(f"{'Year':<6} {'Category':<12} {'FPU ID':<24} {'Name':<36} {'Interface Protocol':<26}")
+    print("-" * 106)
+    for data in all_fpus:
+        finfo = data.get("fpu", {})
+        inter = data.get("interface", {})
+        year = str(finfo.get("release_year", "N/A"))
+        cat = data.get("_category", "FPU")
+        fid = finfo.get("fpu_id", "")
+        name = finfo.get("name", "")
+        proto = inter.get("protocol", "Standard")
+        print(f"{year:<6} {cat:<12} {fid:<24} {name:<36} {proto:<26}")
+
+
+def inspect_fpu(identifier: str, fpu_db: FPUDatabase):
+    """Inspects detailed specifications for a specific FPU or coprocessor."""
+    data = fpu_db.get_fpu(identifier)
+    if not data:
+        print(f"Error: FPU or coprocessor '{identifier}' not found")
+        return
+
+    finfo = data.get("fpu", {})
+    inter = data.get("interface", {})
+    std = data.get("standard", {})
+    cycles = data.get("typical_cycles", {})
+    pipe = data.get("pipeline", {})
+    regs = data.get("registers", {})
+    arch = data.get("architecture", "").strip()
+
+    print("=" * 72)
+    print(f"FPU / Coprocessor Specification: {finfo.get('name')}")
+    print(f"ID: {finfo.get('fpu_id')} | Vendor: {finfo.get('vendor')} | Year: {finfo.get('release_year', 'N/A')}")
+    pkg_str = ", ".join(finfo.get('package', [])) if isinstance(finfo.get('package'), list) else finfo.get('package', 'N/A')
+    print(f"Category: {data.get('_category')} | Package: {pkg_str}")
+    print("=" * 72)
+
+    print("Hardware Interface:")
+    print(f"  Protocol:         {inter.get('protocol')}")
+    if "bus_width_bits" in inter:
+        print(f"  Bus Width:        {inter.get('bus_width_bits')} bits")
+    if "clock_divider" in inter:
+        print(f"  Clock Multiplier: {inter.get('clock_divider')}x core clock")
+    if "address_space_size" in inter:
+        print(f"  MMIO Window:      {hex(inter.get('address_space_size'))} at {hex(inter.get('default_base_physical', 0))}")
+
+    print("\nMathematical Standard:")
+    print(f"  IEEE 754:         {std.get('ieee_754_version', 'Standard')}")
+    print(f"  Infinity Mode:    {std.get('infinity_mode', 'Affine')}")
+
+    if regs:
+        print("\nRegister Architecture:")
+        if "stack_depth" in regs:
+            print(f"  Stack Depth:      {regs.get('stack_depth')} entries x {regs.get('register_width_bits', 80)}-bit")
+        if "register_banks" in regs:
+            print(f"  Bank Switching:   {regs.get('register_banks')} banks ({regs.get('total_registers')} total registers)")
+        if "single_precision_registers" in regs:
+            sp = regs['single_precision_registers']
+            dp = regs.get('double_precision_registers', {})
+            print(f"  Flat Registers:   {sp.get('count')} single ({sp.get('naming')}) / {dp.get('count')} double")
+
+    if cycles:
+        print("\nTypical Instruction Cycles:")
+        cyc_str = ", ".join(f"{k.upper()}={v}c" for k, v in cycles.items() if v is not None)
+        print(f"  {cyc_str}")
+
+    if pipe:
+        print("\nPipeline Architecture:")
+        for pk, pv in pipe.items():
+            if isinstance(pv, dict):
+                print(f"  {pk}: {list(pv.keys())}")
+            elif isinstance(pv, list):
+                print(f"  {pk}: {len(pv)} stages")
+            else:
+                print(f"  {pk}: {pv}")
+
+    if arch:
+        print(f"\nArchitecture Summary:\n  {arch}")
+    print("=" * 72)
+
+
+def inspect_cpu(manifest_path: str, isa: ISADatabase, reg_db: Optional[RegisterDatabase] = None, fpu_db: Optional[FPUDatabase] = None):
+    """Analyzes instruction set compatibility, architectural registers, FPU capabilities, and generates #UD table for a CPU."""
     if not os.path.isfile(manifest_path):
+        exact = glob.glob(os.path.join(SCRIPT_DIR, f"*/{manifest_path}.yaml"))
         candidates = glob.glob(os.path.join(SCRIPT_DIR, f"*/{manifest_path}*"))
-        if candidates:
+        if exact:
+            manifest_path = exact[0]
+        elif candidates:
             manifest_path = candidates[0]
         else:
             print(f"Error: Manifest '{manifest_path}' not found")
@@ -575,6 +814,49 @@ def inspect_cpu(manifest_path: str, isa: ISADatabase):
     print(f"Vendor: {cpu.vendor}{year_str} | ISA Level: {cpu.isa_level} | Timing: {cpu.timing_profile}")
     print(f"Features: {', '.join(sorted(cpu.features)) or 'None (Base Real Mode)'}")
     print("=" * 72)
+
+    if reg_db:
+        reg_map = reg_db.cpu_registers(cpu)
+        print("Architectural Registers:")
+        for grp, rlist in reg_map.items():
+            if rlist:
+                print(f"  {grp:<20} {', '.join(rlist)}")
+        print("-" * 72)
+
+    if fpu_db:
+        if cpu.fpu_profile:
+            fpu_data = fpu_db.get_fpu(cpu.fpu_profile)
+            if fpu_data:
+                finfo = fpu_data.get("fpu", {})
+                inter = fpu_data.get("interface", {})
+                cycles = fpu_data.get("typical_cycles", {})
+                pipe = fpu_data.get("pipeline", {})
+                print("Integrated Floating-Point Unit:")
+                print(f"  Model:            {finfo.get('name')} ({finfo.get('release_year', 'N/A')})")
+                print(f"  Protocol:         {inter.get('protocol')} | Clock Multiplier: {inter.get('clock_divider', 1.0)}x")
+                if pipe:
+                    ptype = pipe.get("type", "Standard")
+                    stages = pipe.get("stages", "N/A")
+                    print(f"  Pipeline:         {ptype} (Stages: {stages})")
+                fadd_c = cycles.get("fadd", "N/A")
+                fmul_c = cycles.get("fmul", "N/A")
+                fdiv_c = cycles.get("fdiv", "N/A")
+                fxch_c = cycles.get("fxch", "N/A")
+                print(f"  Typical Cycles:   FADD: {fadd_c} | FMUL: {fmul_c} | FDIV: {fdiv_c} | FXCH: {fxch_c}")
+                print("-" * 72)
+        if cpu.supported_coprocessors:
+            print(f"Supported Math Coprocessors ({len(cpu.supported_coprocessors)} compatible):")
+            for coproc_ref in cpu.supported_coprocessors:
+                cdata = fpu_db.get_fpu(coproc_ref)
+                if cdata:
+                    cinfo = cdata.get("fpu", {})
+                    cinter = cdata.get("interface", {})
+                    ccycles = cdata.get("typical_cycles", {})
+                    proto = cinter.get("protocol", "Standard")
+                    fadd_c = ccycles.get("fadd", "N/A")
+                    fmul_c = ccycles.get("fmul", "N/A")
+                    print(f"  * {cinfo.get('name', coproc_ref):<38} [{proto}] (FADD: {fadd_c}c, FMUL: {fmul_c}c)")
+            print("-" * 72)
 
     supported_primary = 0
     ud_primary = []
@@ -633,42 +915,286 @@ def emit_c_deps(output_path: str, isa: ISADatabase):
     print(f"Emitted {output_path}")
 
 
+def emit_jit_ops(output_path: str, isa: ISADatabase):
+    """Synthesizes C Dynamic Recompiler (JIT) instruction handlers from declarative semantics."""
+    lines = []
+    lines.append("/* Auto-generated dynamic recompiler instruction handlers by x86gen.py - Do not edit manually */")
+    lines.append("#include <stdint.h>")
+    lines.append("#include <86box/86box.h>")
+    lines.append('#include "cpu.h"')
+    lines.append('#include <86box/mem.h>')
+    lines.append('#include <86box/plat_unused.h>')
+    lines.append("")
+    lines.append('#include "codegen.h"')
+    lines.append('#include "codegen_ir.h"')
+    lines.append('#include "codegen_ops.h"')
+    lines.append("")
+
+    UOP_MAP = {
+        "ADD": "uop_ADD",
+        "ADC": "uop_ADC",
+        "SUB": "uop_SUB",
+        "SBB": "uop_SBB",
+        "AND": "uop_AND",
+        "OR": "uop_OR",
+        "XOR": "uop_XOR",
+    }
+
+    for fname, fdef in sorted(isa.families.items()):
+        sem = fdef.get("semantics", {})
+        action = sem.get("action")
+        if action == "ALU_BINARY":
+            op_prim = sem.get("op", fname)
+            uop_fn = UOP_MAP.get(op_prim, f"uop_{op_prim}")
+            flg_tag = sem.get("flags", {}).get("tag", f"FLAGS_{op_prim}")
+
+            for suffix, sz_name, ireg_fn, temp0, temp1, flg_const, is_32 in [
+                ("b_rmw", "8-bit RMW", "IREG_8", "IREG_temp0_B", "IREG_temp1_B", f"{flg_tag}8", False),
+                ("w_rmw", "16-bit RMW", "IREG_16", "IREG_temp0_W", "IREG_temp1_W", f"{flg_tag}16", False),
+                ("l_rmw", "32-bit RMW", "IREG_32", "IREG_temp0", "IREG_temp1", f"{flg_tag}32", True),
+            ]:
+                mov_flags = "uop_MOV" if is_32 else "uop_MOVZX"
+                lines.append(f"/* Synthesized JIT Handler: {fname} {sz_name} */")
+                lines.append(f"uint32_t gen_rop{fname}_{suffix}(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)")
+                lines.append("{")
+                lines.append("    int src_reg = (fetchdat >> 3) & 7;")
+                lines.append("    codegen_mark_code_present(block, cs + op_pc, 1);")
+                lines.append("    if ((fetchdat & 0xc0) == 0xc0) {")
+                lines.append("        int dest_reg = fetchdat & 7;")
+                lines.append(f"        {mov_flags}(ir, IREG_flags_op1, {ireg_fn}(dest_reg));")
+                lines.append(f"        {mov_flags}(ir, IREG_flags_op2, {ireg_fn}(src_reg));")
+                lines.append(f"        {uop_fn}(ir, {ireg_fn}(dest_reg), {ireg_fn}(dest_reg), {ireg_fn}(src_reg));")
+                lines.append(f"        {mov_flags}(ir, IREG_flags_res, {ireg_fn}(dest_reg));")
+                lines.append("    } else {")
+                lines.append("        x86seg *target_seg;")
+                lines.append("        uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);")
+                lines.append("        target_seg = codegen_generate_ea(ir, op_ea_seg, fetchdat, op_ssegs, &op_pc, op_32, 0);")
+                lines.append("        codegen_check_seg_write(block, ir, target_seg);")
+                lines.append(f"        uop_MEM_LOAD_REG(ir, {temp0}, ireg_seg_base(target_seg), IREG_eaaddr);")
+                lines.append(f"        {uop_fn}(ir, {temp1}, {temp0}, {ireg_fn}(src_reg));")
+                lines.append(f"        uop_MEM_STORE_REG(ir, ireg_seg_base(target_seg), IREG_eaaddr, {temp1});")
+                lines.append(f"        {mov_flags}(ir, IREG_flags_op1, {temp0});")
+                lines.append(f"        {mov_flags}(ir, IREG_flags_op2, {ireg_fn}(src_reg));")
+                lines.append(f"        {mov_flags}(ir, IREG_flags_res, {temp1});")
+                lines.append("    }")
+                lines.append(f"    uop_MOV_IMM(ir, IREG_flags_op, {flg_const});")
+                lines.append("    codegen_flags_changed = 1;")
+                lines.append("    return op_pc + 1;")
+                lines.append("}")
+                lines.append("")
+
+            for suffix, sz_name, ireg_fn, temp0, flg_const, is_32 in [
+                ("b_rm", "8-bit RM", "IREG_8", "IREG_temp0_B", f"{flg_tag}8", False),
+                ("w_rm", "16-bit RM", "IREG_16", "IREG_temp0_W", f"{flg_tag}16", False),
+                ("l_rm", "32-bit RM", "IREG_32", "IREG_temp0", f"{flg_tag}32", True),
+            ]:
+                mov_flags = "uop_MOV" if is_32 else "uop_MOVZX"
+                lines.append(f"/* Synthesized JIT Handler: {fname} {sz_name} */")
+                lines.append(f"uint32_t gen_rop{fname}_{suffix}(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)")
+                lines.append("{")
+                lines.append("    int dest_reg = (fetchdat >> 3) & 7;")
+                lines.append("    codegen_mark_code_present(block, cs + op_pc, 1);")
+                lines.append("    if ((fetchdat & 0xc0) == 0xc0) {")
+                lines.append("        int src_reg = fetchdat & 7;")
+                lines.append(f"        {mov_flags}(ir, IREG_flags_op1, {ireg_fn}(dest_reg));")
+                lines.append(f"        {mov_flags}(ir, IREG_flags_op2, {ireg_fn}(src_reg));")
+                lines.append(f"        {uop_fn}(ir, {ireg_fn}(dest_reg), {ireg_fn}(dest_reg), {ireg_fn}(src_reg));")
+                lines.append(f"        {mov_flags}(ir, IREG_flags_res, {ireg_fn}(dest_reg));")
+                lines.append("    } else {")
+                lines.append("        x86seg *target_seg;")
+                lines.append("        uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);")
+                lines.append("        target_seg = codegen_generate_ea(ir, op_ea_seg, fetchdat, op_ssegs, &op_pc, op_32, 0);")
+                lines.append("        codegen_check_seg_read(block, ir, target_seg);")
+                lines.append(f"        uop_MEM_LOAD_REG(ir, {temp0}, ireg_seg_base(target_seg), IREG_eaaddr);")
+                lines.append(f"        {mov_flags}(ir, IREG_flags_op1, {ireg_fn}(dest_reg));")
+                lines.append(f"        {mov_flags}(ir, IREG_flags_op2, {temp0});")
+                lines.append(f"        {uop_fn}(ir, {ireg_fn}(dest_reg), {ireg_fn}(dest_reg), {temp0});")
+                lines.append(f"        {mov_flags}(ir, IREG_flags_res, {ireg_fn}(dest_reg));")
+                lines.append("    }")
+                lines.append(f"    uop_MOV_IMM(ir, IREG_flags_op, {flg_const});")
+                lines.append("    codegen_flags_changed = 1;")
+                lines.append("    return op_pc + 1;")
+                lines.append("}")
+                lines.append("")
+
+        elif action == "ALU_COMPARE":
+            op_prim = sem.get("op", "SUB")
+            uop_fn = UOP_MAP.get(op_prim, f"uop_{op_prim}")
+            flg_tag = sem.get("flags", {}).get("tag", "FLAGS_SUB")
+            for suffix, sz_name, ireg_fn, temp0, temp1, flg_const, is_32 in [
+                ("b_rmw", "8-bit Compare", "IREG_8", "IREG_temp0_B", "IREG_temp1_B", f"{flg_tag}8", False),
+                ("w_rmw", "16-bit Compare", "IREG_16", "IREG_temp0_W", "IREG_temp1_W", f"{flg_tag}16", False),
+                ("l_rmw", "32-bit Compare", "IREG_32", "IREG_temp0", "IREG_temp1", f"{flg_tag}32", True),
+            ]:
+                mov_flags = "uop_MOV" if is_32 else "uop_MOVZX"
+                lines.append(f"/* Synthesized JIT Handler: {fname} {sz_name} (read-only compare) */")
+                lines.append(f"uint32_t gen_rop{fname}_{suffix}(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)")
+                lines.append("{")
+                lines.append("    int src_reg = (fetchdat >> 3) & 7;")
+                lines.append("    codegen_mark_code_present(block, cs + op_pc, 1);")
+                lines.append("    if ((fetchdat & 0xc0) == 0xc0) {")
+                lines.append("        int dest_reg = fetchdat & 7;")
+                lines.append(f"        {mov_flags}(ir, IREG_flags_op1, {ireg_fn}(dest_reg));")
+                lines.append(f"        {mov_flags}(ir, IREG_flags_op2, {ireg_fn}(src_reg));")
+                lines.append(f"        {uop_fn}(ir, IREG_temp0, {ireg_fn}(dest_reg), {ireg_fn}(src_reg));")
+                lines.append(f"        {mov_flags}(ir, IREG_flags_res, IREG_temp0);")
+                lines.append("    } else {")
+                lines.append("        x86seg *target_seg;")
+                lines.append("        uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);")
+                lines.append("        target_seg = codegen_generate_ea(ir, op_ea_seg, fetchdat, op_ssegs, &op_pc, op_32, 0);")
+                lines.append("        codegen_check_seg_read(block, ir, target_seg);")
+                lines.append(f"        uop_MEM_LOAD_REG(ir, {temp0}, ireg_seg_base(target_seg), IREG_eaaddr);")
+                lines.append(f"        {mov_flags}(ir, IREG_flags_op1, {temp0});")
+                lines.append(f"        {mov_flags}(ir, IREG_flags_op2, {ireg_fn}(src_reg));")
+                lines.append(f"        {uop_fn}(ir, {temp1}, {temp0}, {ireg_fn}(src_reg));")
+                lines.append(f"        {mov_flags}(ir, IREG_flags_res, {temp1});")
+                lines.append("    }")
+                lines.append(f"    uop_MOV_IMM(ir, IREG_flags_op, {flg_const});")
+                lines.append("    codegen_flags_changed = 1;")
+                lines.append("    return op_pc + 1;")
+                lines.append("}")
+                lines.append("")
+
+    with open(output_path, "w", encoding="utf-8") as fp:
+        fp.write("\n".join(lines))
+    print(f"Emitted JIT instruction handlers to {output_path}")
+
+
+def emit_interpreter_ops(output_path: str, isa: ISADatabase):
+    """Synthesizes C Interpreter instruction handlers from declarative semantics."""
+    lines = []
+    lines.append("/* Auto-generated interpreter instruction handlers by x86gen.py - Do not edit manually */")
+    lines.append("#ifndef _X86_OPS_SYNTHESIZED_H_")
+    lines.append("#define _X86_OPS_SYNTHESIZED_H_")
+    lines.append("")
+
+    C_OP_MAP = {
+        "ADD": "+",
+        "SUB": "-",
+        "AND": "&",
+        "OR": "|",
+        "XOR": "^",
+    }
+
+    for fname, fdef in sorted(isa.families.items()):
+        sem = fdef.get("semantics", {})
+        action = sem.get("action")
+        if action == "ALU_BINARY":
+            c_op = C_OP_MAP.get(sem.get("op", fname), "+")
+            for sz_suf, c_type, getr, setr, getea, setea, flg_fn in [
+                ("b", "uint8_t", "getr8", "setr8", "geteab", "seteab", f"setflags_{fname.lower()}8"),
+                ("w", "uint16_t", "getr16", "setr16", "getear", "setear", f"setflags_{fname.lower()}16"),
+                ("l", "uint32_t", "getr32", "setr32", "geteal", "seteal", f"setflags_{fname.lower()}32"),
+            ]:
+                for addr_suf, fetch_ea in [("a16", "fetch_ea_16"), ("a32", "fetch_ea_32")]:
+                    lines.append(f"static int gen_op{fname}_{sz_suf}_rmw_{addr_suf}(uint32_t fetchdat)")
+                    lines.append("{")
+                    lines.append(f"    {c_type} dst, src;")
+                    lines.append(f"    {fetch_ea}(fetchdat);")
+                    lines.append("    if (cpu_mod == 3) {")
+                    lines.append(f"        dst = {getr}(cpu_rm);")
+                    lines.append(f"        src = {getr}(cpu_reg);")
+                    lines.append(f"        {flg_fn}(dst, src);")
+                    lines.append(f"        {setr}(cpu_rm, dst {c_op} src);")
+                    lines.append("        CLOCK_CYCLES(timing_rr);")
+                    lines.append(f"        PREFETCH_RUN(timing_rr, 2, rmdat, 0, 0, 0, 0, {1 if addr_suf == 'a32' else 0});")
+                    lines.append("    } else {")
+                    lines.append("        SEG_CHECK_WRITE(cpu_state.ea_seg);")
+                    lines.append(f"        dst = {getea}();")
+                    lines.append("        if (cpu_state.abrt) return 1;")
+                    lines.append(f"        src = {getr}(cpu_reg);")
+                    lines.append(f"        {setea}(dst {c_op} src);")
+                    lines.append("        if (cpu_state.abrt) return 1;")
+                    lines.append(f"        {flg_fn}(dst, src);")
+                    lines.append("        CLOCK_CYCLES(timing_mr);")
+                    lines.append(f"        PREFETCH_RUN(timing_mr, 2, rmdat, 1, 0, 1, 0, {1 if addr_suf == 'a32' else 0});")
+                    lines.append("    }")
+                    lines.append("    return 0;")
+                    lines.append("}")
+                    lines.append("")
+
+    lines.append("#endif /* _X86_OPS_SYNTHESIZED_H_ */")
+    with open(output_path, "w", encoding="utf-8") as fp:
+        fp.write("\n".join(lines))
+    print(f"Emitted interpreter instruction handlers to {output_path}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="x86gen Declarative Architecture Compiler")
     parser.add_argument("--list-cpus", action="store_true", help="List all available CPU manifests")
-    parser.add_argument("--cpu", type=str, help="Inspect instruction compatibility and #UD traps for CPU manifest")
+    parser.add_argument("--cpu", type=str, help="Inspect instruction compatibility, registers, and FPU for a CPU manifest")
+    parser.add_argument("--registers", type=str, nargs="?", const="all", help="Display architectural registers for a CPU (or all)")
+    parser.add_argument("--fpus", action="store_true", help="List all available discrete and integrated FPU models")
+    parser.add_argument("--fpu", type=str, help="Inspect detailed specification of an FPU or math coprocessor")
     parser.add_argument("--verify", action="store_true", help="Verify auto-derived tables against 86Box C codebase")
     parser.add_argument("--emit-deps-c", type=str, help="Emit C source containing opcode_deps tables")
-    parser.add_argument("--summary", action="store_true", help="Print ISA specification summary")
+    parser.add_argument("--emit-jit-ops", type=str, help="Emit C source containing JIT instruction handlers")
+    parser.add_argument("--emit-interpreter-ops", type=str, help="Emit C header containing interpreter instruction handlers")
+    parser.add_argument("--summary", action="store_true", help="Print ISA, register, and FPU specification summary")
 
     args = parser.parse_args()
+
+    fpu_db = FPUDatabase()
 
     if args.list_cpus:
         list_cpus()
         return
 
+    if args.fpus:
+        list_fpus(fpu_db)
+        return
+
+    if args.fpu:
+        inspect_fpu(args.fpu, fpu_db)
+        return
+
     isa = ISADatabase()
+    reg_db = RegisterDatabase()
 
     if args.verify:
         verify_against_86box(isa)
         return
 
+    if args.registers:
+        if args.registers == "all":
+            print("Architectural Register Database Loaded:")
+            print(f"  GPR Definitions:      {len(reg_db.gprs.get('registers', {}))} 32-bit registers (with 16/8-bit sub-views)")
+            print(f"  Segment Registers:    {len(reg_db.segments.get('segments', {}))} (ES, CS, SS, DS, FS, GS + descriptor caches)")
+            print(f"  Flags Bitfields:      {len(reg_db.flags.get('bits', {}))} defined bits (CF..ID)")
+            print(f"  Control/Debug:        {len(reg_db.control.get('control_registers', {}))} CRs, {len(reg_db.control.get('debug_registers', {}))} DRs, {len(reg_db.control.get('table_registers', {}))} table regs")
+            print(f"  x87 / MMX:            8x 80-bit FP stack (ST0..ST7), FCW, FSW, FTW, 8x 64-bit MMX")
+            print(f"  Vector SIMD (XMM):    8x 128-bit XMM registers (10 data views), MXCSR")
+            print(f"  MSR Specifications:   {len(reg_db.msr.get('architectural_msrs', {}))} architectural, {len(reg_db.msr.get('amd_msrs', {}))} AMD, {len(reg_db.msr.get('via_msrs', {}))} VIA")
+        else:
+            inspect_cpu(args.registers, isa, reg_db, fpu_db)
+        return
+
     if args.cpu:
-        inspect_cpu(args.cpu, isa)
+        inspect_cpu(args.cpu, isa, reg_db, fpu_db)
         return
 
     if args.emit_deps_c:
         emit_c_deps(args.emit_deps_c, isa)
         return
 
+    if args.emit_jit_ops:
+        emit_jit_ops(args.emit_jit_ops, isa)
+        return
+
+    if args.emit_interpreter_ops:
+        emit_interpreter_ops(args.emit_interpreter_ops, isa)
+        return
+
     if args.summary:
-        print(f"ISA Specifications loaded: {len(isa.families)} instruction families")
+        print(f"ISA Specifications:     {len(isa.families)} instruction families")
         covered_primary = sum(1 for e in isa.primary_opcodes.values() if e)
         covered_0f = sum(1 for e in isa.ext_0f_opcodes.values() if e)
         print(f"Primary table coverage: {covered_primary} / 256 opcodes")
         print(f"0F table coverage:      {covered_0f} / 256 opcodes")
         print(f"VIA PadLock opcodes:    {len(isa.padlock_opcodes)}")
         print(f"AMD 3DNow! opcodes:     {len(isa.dnow_opcodes)}")
+        print(f"Register Groups:        GPR, Segments, Flags, CR0..CR4, DR0..DR7, x87/MMX, XMM0..XMM7, MSRs")
+        print(f"FPU Specifications:     {len(fpu_db.discrete)} discrete coprocessors, {len(fpu_db.integrated)} integrated FPUs ({len(fpu_db.by_id)} total)")
         return
 
     parser.print_help()

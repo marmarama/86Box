@@ -19,6 +19,9 @@ features: []
 # Note: Original Nx586 had NO on-die FPU! Required separate Nx587 coprocessor.
 # Nx586PF integrated the FPU on the package.
 
+supported_coprocessors:
+  - "fpus/discrete/nexgen_nx587.yaml"
+
 timing_profile: "timings/k6.yaml" # NexGen RISC86 microarchitecture directly evolved into AMD K6
 
 cache:

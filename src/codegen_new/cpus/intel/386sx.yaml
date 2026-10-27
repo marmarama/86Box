@@ -14,5 +14,8 @@ model:
 isa_level: CPU_386
 features: []
 
+supported_coprocessors:
+  - "fpus/discrete/intel_80387sx.yaml"
+
 timing_profile: "timings/386.yaml"
 

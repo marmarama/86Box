@@ -37,6 +37,8 @@ features:
   - CPU_FEATURE_FXSR
   - CPU_FEATURE_SSE
 
+fpu_profile: "fpus/integrated/intel_p6.yaml"
+
 timing_profile: "timings/p6.yaml"
 
 cache:

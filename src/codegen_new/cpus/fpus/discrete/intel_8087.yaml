@@ -1,0 +1,51 @@
+# intel_8087.yaml - Intel 8087 Math Coprocessor (NPX)
+
+fpu:
+  fpu_id: FPU_8087
+  name: "Intel 8087 Math Coprocessor"
+  vendor: "Intel"
+  release_year: 1980
+  package: [DIP_40]
+  type: DISCRETE_COPROCESSOR
+  compatible_cpus: [CPU_8088, CPU_8086]
+
+interface:
+  protocol: BUS_SNOOPING_ESC
+  opcode_range: [0xD8, 0xDF]
+  sync_pin: TEST_WAIT # Host CPU executes FWAIT (0x9B) to poll TEST# pin
+  bus_status_tracking: QS0_QS1_QUEUE_STATUS # Coprocessor tracks host prefetch queue
+
+standard:
+  ieee_754_version: DRAFT_1980 # Pre-dated final 1985 IEEE 754 standard
+  infinity_mode: PROJECTIVE   # Projective infinity (+inf == -inf)
+  affine_mode_supported: false
+  denormals: "Requires normalization / unnormal support in operands"
+
+limitations:
+  unsupported_instructions:
+    - FSIN      # Sine instruction (387+)
+    - FCOS      # Cosine instruction (387+)
+    - FSINCOS   # Sine and Cosine instruction (387+)
+    - FPREM1    # IEEE 754 Partial Remainder (387+)
+    - FUCOM     # Unordered Compare (387+)
+    - FUCOMP    # Unordered Compare and Pop (387+)
+    - FUCOMPP   # Unordered Compare and Pop Twice (387+)
+  transcendental_domain: "0 <= |theta| <= pi/4 (Software must reduce angle before FPTAN/FPATAN)"
+
+registers:
+  stack_depth: 8
+  register_width_bits: 80 # 80-bit IEEE Extended Precision (1 sign, 15 exp, 64 mantissa)
+  control_word_bits: 16
+  status_word_bits: 16
+  tag_word_bits: 16
+
+typical_cycles:
+  fadd: 85      # (70-100 cycles)
+  fsub: 85
+  fmul: 135     # (124-144 cycles)
+  fdiv: 198     # (193-203 cycles)
+  fsqrt: 182    # (180-186 cycles)
+  fptan: 450    # (30-540 cycles)
+  fpatan: 580   # (250-900 cycles)
+  f2xm1: 470    # (310-630 cycles)
+

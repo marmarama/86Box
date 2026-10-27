@@ -18,10 +18,10 @@ families:
       "0x6A":       { src: Ib_sext, min_cpu: CPU_186 }
       "0xFF /6":    { src: Ev, min_cpu: CPU_8086 }
     semantics:
-      args: [src]
-      body: |
-        push(src)
-        flags: none
+      action: STACK_OP
+      op: PUSH
+      inputs: [src]
+      flags: none
 
   POP:
     description: "Pop Value from the Stack"
@@ -37,11 +37,10 @@ families:
       "0x0F 0xA9":  { dst: GS, min_cpu: CPU_386 }
       "0x8F /0":    { dst: Ev, min_cpu: CPU_8086 }
     semantics:
-      args: [dst]
-      body: |
-        val = pop()
-        writeback: dst = val
-        flags: none
+      action: STACK_OP
+      op: POP
+      output: dst
+      flags: none
 
   PUSHA_PUSHAD:
     description: "Push All General-Purpose Registers"
@@ -51,18 +50,8 @@ families:
       "0x60": { operand_size_16: { regs: [AX, CX, DX, BX, SP, BP, SI, DI] },
                 operand_size_32: { regs: [EAX, ECX, EDX, EBX, ESP, EBP, ESI, EDI] } }
     semantics:
-      args: []
-      body: |
-        orig_sp = eSP
-        push(eAX)
-        push(eCX)
-        push(eEDX)
-        push(eBX)
-        push(orig_sp)
-        push(eBP)
-        push(eSI)
-        push(eDI)
-        flags: none
+      action: CALL_HELPER
+      helper_fn: op_pusha
 
   POPA_POPAD:
     description: "Pop All General-Purpose Registers"
@@ -72,17 +61,8 @@ families:
       "0x61": { operand_size_16: { regs: [DI, SI, BP, SP_skip, BX, DX, CX, AX] },
                 operand_size_32: { regs: [EDI, ESI, EBP, ESP_skip, EBX, EDX, ECX, EAX] } }
     semantics:
-      args: []
-      body: |
-        eDI = pop()
-        eSI = pop()
-        eBP = pop()
-        pop_discard() # Discard saved SP/ESP
-        eBX = pop()
-        eEDX = pop()
-        eCX = pop()
-        eAX = pop()
-        flags: none
+      action: CALL_HELPER
+      helper_fn: op_popa
 
   PUSHF_PUSHFD:
     description: "Push Flags onto Stack"
@@ -91,11 +71,8 @@ families:
     opcode_map:
       "0x9C": { operand_size_16: { src: FLAGS }, operand_size_32: { src: EFLAGS } }
     semantics:
-      args: []
-      body: |
-        flags_val = read_all_flags()
-        push(flags_val)
-        flags: none
+      action: CALL_HELPER
+      helper_fn: op_pushf
 
   POPF_POPFD:
     description: "Pop Flags from Stack"
@@ -104,10 +81,8 @@ families:
     opcode_map:
       "0x9D": { operand_size_16: { dst: FLAGS }, operand_size_32: { dst: EFLAGS } }
     semantics:
-      args: []
-      body: |
-        val = pop()
-        write_all_flags(val)
+      action: CALL_HELPER
+      helper_fn: op_popf
 
   ENTER:
     description: "Make Stack Frame for Procedure Parameters"
@@ -116,19 +91,8 @@ families:
     opcode_map:
       "0xC8": { alloc_size: Iw, nesting_level: Ib }
     semantics:
-      args: [alloc_size, nesting_level]
-      body: |
-        push(eBP)
-        frame_ptr = eSP
-        level = nesting_level & 0x1F
-        if level > 0:
-          for i in range(1, level):
-            eBP = eBP - sizeof(pointer)
-            push(read_mem(SS, eBP))
-          push(frame_ptr)
-        eBP = frame_ptr
-        eSP = eSP - alloc_size
-        flags: none
+      action: CALL_HELPER
+      helper_fn: op_enter
 
   LEAVE:
     description: "High Level Procedure Exit"
@@ -137,9 +101,5 @@ families:
     opcode_map:
       "0xC9": { none: 0 }
     semantics:
-      args: []
-      body: |
-        eSP = eBP
-        eBP = pop()
-        flags: none
-
+      action: CALL_HELPER
+      helper_fn: op_leave

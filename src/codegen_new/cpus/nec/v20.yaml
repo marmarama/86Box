@@ -13,5 +13,8 @@ model:
 isa_level: CPU_186 # NEC V20/V30 supports 80186 extensions (ENTER, LEAVE, PUSHA, etc.)
 features: []
 
+supported_coprocessors:
+  - "fpus/discrete/intel_8087.yaml"
+
 timing_profile: "timings/8086.yaml" # ~20-30% faster than 8088 due to internal dual-bus architecture
 

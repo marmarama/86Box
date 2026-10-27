@@ -1,0 +1,53 @@
+# pentium3_katmai.yaml - Intel Pentium III (Katmai, SSE Debut)
+
+model:
+  cpu_id: CPU_PENTIUM3_KATMAI
+  name: "Intel Pentium III (Katmai)"
+  vendor: "GenuineIntel"
+  release_year: 1999
+  family: 6
+  model_id: 7 # Model 7 (0.25 um process)
+  stepping: 3
+  package: [SLOT_1]
+  frequency_range_mhz: [450, 600]
+  bus_clock_mhz: [100, 133]
+
+cpuid:
+  signature: 0x00000673
+  brand_string: "Intel(R) Pentium(R) III processor"
+  features_edx: 0x0383F9FF # SSE, FXSR, MMX, CMOV, SEP, etc.
+
+isa_level: CPU_PENTIUM3
+features:
+  - CPU_FEATURE_FPU
+  - CPU_FEATURE_VME
+  - CPU_FEATURE_DE
+  - CPU_FEATURE_TSC
+  - CPU_FEATURE_MSR
+  - CPU_FEATURE_PAE
+  - CPU_FEATURE_MCE
+  - CPU_FEATURE_CX8
+  - CPU_FEATURE_APIC
+  - CPU_FEATURE_SEP
+  - CPU_FEATURE_MTRR
+  - CPU_FEATURE_PGE
+  - CPU_FEATURE_CMOV
+  - CPU_FEATURE_PAT
+  - CPU_FEATURE_PSE36
+  - CPU_FEATURE_MMX
+  - CPU_FEATURE_FXSR
+  - CPU_FEATURE_SSE   # 70 new 128-bit vector SSE instructions debuted here
+
+fpu_profile: "fpus/integrated/intel_p6.yaml"
+
+timing_profile: "timings/p6.yaml"
+
+processor_serial_number:
+  psn_supported: true # 96-bit unique serial number accessible via CPUID leaf 3
+
+cache:
+  l1_instruction_kb: 16
+  l1_data_kb: 16
+  l2_kb: 512
+  l2_speed: half_speed # Off-die SRAMs on SECC2 cartridge at half core clock (64-bit bus)
+

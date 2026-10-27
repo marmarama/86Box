@@ -1,0 +1,89 @@
+# gpr.yaml - General Purpose Registers and Sub-Register Aliasing
+
+registers:
+  EAX:
+    index: 0
+    width: 32
+    min_cpu: CPU_386
+    reset_value: 0x00000000
+    roles: [ACCUMULATOR, STRING_IO, ARITHMETIC_TARGET]
+    sub_registers:
+      AX: { width: 16, offset: 0, min_cpu: CPU_8086 }
+      AL: { width: 8,  offset: 0, min_cpu: CPU_8086 }
+      AH: { width: 8,  offset: 8, min_cpu: CPU_8086 }
+
+  ECX:
+    index: 1
+    width: 32
+    min_cpu: CPU_386
+    reset_value: 0x00000000
+    roles: [COUNTER, LOOP_COUNTER, SHIFT_COUNT_CL, STRING_REPEAT]
+    sub_registers:
+      CX: { width: 16, offset: 0, min_cpu: CPU_8086 }
+      CL: { width: 8,  offset: 0, min_cpu: CPU_8086 }
+      CH: { width: 8,  offset: 8, min_cpu: CPU_8086 }
+
+  EDX:
+    index: 2
+    width: 32
+    min_cpu: CPU_386
+    reset_value: 0x00000000
+    roles: [DATA, IO_PORT_POINTER, MUL_DIV_HIGH]
+    sub_registers:
+      DX: { width: 16, offset: 0, min_cpu: CPU_8086 }
+      DL: { width: 8,  offset: 0, min_cpu: CPU_8086 }
+      DH: { width: 8,  offset: 8, min_cpu: CPU_8086 }
+
+  EBX:
+    index: 3
+    width: 32
+    min_cpu: CPU_386
+    reset_value: 0x00000000
+    roles: [BASE_POINTER, XLAT_BASE, MEMORY_INDEX]
+    sub_registers:
+      BX: { width: 16, offset: 0, min_cpu: CPU_8086 }
+      BL: { width: 8,  offset: 0, min_cpu: CPU_8086 }
+      BH: { width: 8,  offset: 8, min_cpu: CPU_8086 }
+
+  ESP:
+    index: 4
+    width: 32
+    min_cpu: CPU_386
+    reset_value: 0x00000000
+    roles: [STACK_POINTER]
+    sub_registers:
+      SP: { width: 16, offset: 0, min_cpu: CPU_8086 }
+
+  EBP:
+    index: 5
+    width: 32
+    min_cpu: CPU_386
+    reset_value: 0x00000000
+    roles: [FRAME_POINTER, STACK_BASE]
+    sub_registers:
+      BP: { width: 16, offset: 0, min_cpu: CPU_8086 }
+
+  ESI:
+    index: 6
+    width: 32
+    min_cpu: CPU_386
+    reset_value: 0x00000000
+    roles: [SOURCE_INDEX, STRING_SRC_ESI]
+    sub_registers:
+      SI: { width: 16, offset: 0, min_cpu: CPU_8086 }
+
+  EDI:
+    index: 7
+    width: 32
+    min_cpu: CPU_386
+    reset_value: 0x00000000
+    roles: [DESTINATION_INDEX, STRING_DST_EDI]
+    sub_registers:
+      DI: { width: 16, offset: 0, min_cpu: CPU_8086 }
+
+encoding_mapping:
+  reg8_low:  [AL, CL, DL, BL] # Indices 0..3 with w=0
+  reg8_high: [AH, CH, DH, BH] # Indices 4..7 with w=0
+  reg16:     [AX, CX, DX, BX, SP, BP, SI, DI] # Indices 0..7 with w=1, 16-bit
+  reg32:     [EAX, ECX, EDX, EBX, ESP, EBP, ESI, EDI] # Indices 0..7 with w=1, 32-bit
+

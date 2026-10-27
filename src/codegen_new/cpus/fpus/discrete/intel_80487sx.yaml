@@ -1,0 +1,32 @@
+# intel_80487sx.yaml - Intel 80487SX Math Coprocessor / Upgrade Processor
+
+fpu:
+  fpu_id: FPU_487SX
+  name: "Intel 80487SX Upgrade Processor"
+  vendor: "Intel"
+  release_year: 1991
+  package: [PGA_169] # 169-pin PGA socket (one extra key pin compared to standard 486)
+  type: UPGRADE_PROCESSOR_COPROCESSOR
+  compatible_cpus: [CPU_486SX]
+
+architecture: |
+  The 80487SX is not a standalone math coprocessor. It is a complete 80486DX chip
+  with on-die FPU. Pin 169 (KEY pin) signals the motherboard to assert the UP# (Upgrade)
+  pin on the host 80486SX, placing the host CPU into a permanently tri-stated, disabled state.
+  The 80487SX then assumes execution of all CPU and FPU operations for the entire system.
+
+interface:
+  protocol: NATIVE_INTERNAL_FPU
+  bus_width_bits: 32
+  clock_divider: 1.0
+
+standard:
+  ieee_754_version: IEEE_754_1985
+
+typical_cycles:
+  fadd: 10
+  fsub: 10
+  fmul: 16
+  fdiv: 73
+  fsqrt: 83
+

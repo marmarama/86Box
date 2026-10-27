@@ -1,0 +1,68 @@
+# intel_pentium.yaml - Intel Pentium P5 Integrated Pipelined Floating-Point Unit
+
+fpu:
+  fpu_id: FPU_PENTIUM_INTEGRATED
+  name: "Intel Pentium P5 Integrated Pipelined FPU"
+  vendor: "Intel"
+  release_year: 1993
+  type: INTEGRATED_ON_DIE
+  integrated_in_cpus: [CPU_PENTIUM, CPU_PENTIUM_MMX]
+
+interface:
+  protocol: INTERNAL_SUPERPIPELINE
+  bus_width_bits: 64 # Direct 64-bit path to L1 data cache and internal registers
+  clock_divider: 1.0
+
+pipeline:
+  stages: 8
+  pipeline_stages:
+    - PF: Prefetch
+    - D1: Instruction Decode 1
+    - D2: Instruction Decode 2
+    - E:  Address generate / Integer execute
+    - X1: Floating-point Execute Stage 1
+    - X2: Floating-point Execute Stage 2
+    - WF: Floating-point Write Float
+    - ER: Error Reporting
+  throughput_fadd: 1 # 1 instruction per cycle pipelined throughput
+  throughput_fmul: 1 # 1 instruction per cycle pipelined throughput (single/double)
+  latency_fadd: 3
+  latency_fmul: 3
+  fxch_pairing:
+    u_pipe_operations: [FADD, FSUB, FMUL, FLD]
+    v_pipe_pairing: true
+    fxch_effective_latency: 0 # FXCH executes in V-pipe concurrently with U-pipe FP instruction
+
+architecture: |
+  Radical architectural leap over 486: fully pipelined 8-stage floating-point core.
+  Includes a dedicated hardware multiplier and adder capable of accepting a new
+  single/double precision operation every clock cycle (1-cycle throughput, 3-cycle latency).
+  Pioneered FXCH pairing in the superscalar V-pipe, allowing register stack shuffling
+  at zero effective cycle cost.
+
+standard:
+  ieee_754_version: IEEE_754_1985
+  infinity_mode: AFFINE
+  affine_mode_supported: true
+
+registers:
+  stack_depth: 8
+  register_width_bits: 80
+
+capabilities:
+  same_as: FPU_387DX
+  historical_note: |
+    Early Pentium steppings (pre-1994 B5 stepping) contained the famous Pentium FDIV bug,
+    caused by 5 missing entries in a hardware Radix-4 SRT division lookup table.
+
+typical_cycles:
+  fadd: 3       # 3-cycle latency, 1-cycle throughput
+  fsub: 3       # 3-cycle latency, 1-cycle throughput
+  fmul: 3       # 3-cycle latency for single/double, 4 for extended
+  fdiv: 39      # 39 cycles (SRT division algorithm)
+  fsqrt: 70     # 70 cycles
+  fsin: 65-110
+  fcos: 65-110
+  fsincos: 80-120
+  fxch: 0       # 0 cycles when paired in V-pipe, 1 cycle unpaired
+

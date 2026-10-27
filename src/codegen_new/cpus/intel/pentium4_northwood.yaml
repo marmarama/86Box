@@ -40,7 +40,7 @@ features:
   - CPU_FEATURE_SSE
   - CPU_FEATURE_SSE2
 
-timing_profile: "timings/p6.yaml" # Or netburst.yaml
+timing_profile: "timings/pentium4.yaml"
 
 cache:
   trace_cache_kuops: 12

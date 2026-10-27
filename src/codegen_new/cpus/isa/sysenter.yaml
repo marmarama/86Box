@@ -13,17 +13,9 @@ families:
     opcode_map:
       "0x0F 0x34": { none: 0 }
     semantics:
-      args: []
-      body: |
-        # Privilege transition to ring 0 without stack frame push
-        CPL = 0
-        CS = MSR_SYSENTER_CS & 0xFFFC
-        SS = (MSR_SYSENTER_CS + 8) & 0xFFFC
-        eSP = MSR_SYSENTER_ESP
-        eIP = MSR_SYSENTER_EIP
-        write_flag(VM, 0)
-        write_flag(IF, 0)
-        branch_target: eIP
+      action: CALL_HELPER
+      helper_fn: op_sysenter
+      terminates_block: true
 
   SYSEXIT:
     description: "Fast Return from Fast System Call Handler to User Mode (Ring 3)"
@@ -37,15 +29,9 @@ families:
     opcode_map:
       "0x0F 0x35": { none: 0 }
     semantics:
-      args: []
-      body: |
-        CPL = 3
-        CS = (MSR_SYSENTER_CS + 16) | 3
-        SS = (MSR_SYSENTER_CS + 24) | 3
-        eSP = eCX
-        eIP = eDX
-        write_flag(VM, 0)
-        branch_target: eIP
+      action: CALL_HELPER
+      helper_fn: op_sysexit
+      terminates_block: true
 
   FXSAVE:
     description: "Fast Save x87 FPU, MMX, and SSE State (512 bytes)"
@@ -61,10 +47,8 @@ families:
     opcode_map:
       "0x0F 0xAE /0": { dst: M512 }
     semantics:
-      args: [dst]
-      body: |
-        write_mem512(dst, fpu_mmx_xmm_state_512())
-        flags: none
+      action: CALL_HELPER
+      helper_fn: op_fxsave
 
   FXRSTOR:
     description: "Fast Restore x87 FPU, MMX, and SSE State (512 bytes)"
@@ -80,8 +64,31 @@ families:
     opcode_map:
       "0x0F 0xAE /1": { src: M512 }
     semantics:
-      args: [src]
-      body: |
-        load_fpu_mmx_xmm_state_512(read_mem512(src))
-        flags: none
+      action: CALL_HELPER
+      helper_fn: op_fxrstor
 
+  SYSCALL:
+    description: "AMD Fast System Call (Ring 0 transition saving Return IP in ECX)"
+    availability:
+      min_cpu: CPU_PENTIUM
+      feature: CPU_FEATURE_SYSCALL
+    class: sys_interrupt
+    opcode_map:
+      "0x0F 0x05": { none: 0 }
+    semantics:
+      action: CALL_HELPER
+      helper_fn: op_syscall
+      terminates_block: true
+
+  SYSRET:
+    description: "AMD Fast Return from System Call (Return to Ring 3 using IP from ECX)"
+    availability:
+      min_cpu: CPU_PENTIUM
+      feature: CPU_FEATURE_SYSCALL
+    class: sys_interrupt
+    opcode_map:
+      "0x0F 0x07": { none: 0 }
+    semantics:
+      action: CALL_HELPER
+      helper_fn: op_sysret
+      terminates_block: true

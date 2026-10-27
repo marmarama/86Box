@@ -1,0 +1,89 @@
+# pentium4.yaml - Intel Pentium 4 (NetBurst / Northwood / Prescott) Microarchitecture Timing Profile
+
+model:
+  cpu_level: CPU_PENTIUM4
+  name: "Intel Pentium 4 (NetBurst Microarchitecture)"
+  pipeline_type: out_of_order_trace_cache
+  pipeline_stages: 20         # 20 stages on Willamette/Northwood (31 stages on Prescott)
+  rob_entries: 128            # 128-entry Reorder Buffer (vs 40 on P6)
+  rs_entries: 60              # Unified Reservation Station
+  branch_mispredict_penalty: 20 # Severe pipeline flush penalty (20 cycles min, up to 30 on Prescott)
+
+frontend:
+  execution_trace_cache:
+    capacity_uops: 12000      # 12,000 decoded micro-ops stored in execution trace cache
+    delivery_bandwidth: 3     # Delivers 3 micro-ops per core clock cycle to out-of-order core
+    hit_bypass_decode: true   # Trace cache hits bypass raw x86 instruction decoders entirely
+  legacy_decoder:
+    bandwidth: 1              # Only active on Trace Cache miss; decodes ~1 instruction/cycle
+
+rapid_execution_engine:
+  double_pumped_frequency: 2.0 # Fast ALUs run at 2x core clock (e.g. 6.0 GHz on a 3.0 GHz CPU)
+  fast_alu_latency_cycles: 0.5 # 0.5 core cycles (1 sub-cycle) for basic ALU operations
+  fast_alu_throughput: 0.25    # Up to 4 basic ALU ops executed per core clock cycle
+
+execution_ports:
+  port0:
+    - FAST_ALU_0              # Double-pumped integer ALU (low latency ADD, SUB, MOV, CMP, TEST)
+    - SLOW_ALU                # Shift/rotate, bit-tests, LEA with scale+disp
+    - FP_MOVE_STORE           # Floating-point/SSE move and store data
+  port1:
+    - FAST_ALU_1              # Double-pumped integer ALU
+    - INT_MUL                 # Integer multiplication (14-18 cycle latency)
+    - FP_ADD                  # x87 FPU and SSE/SSE2 floating-point addition
+    - FP_MUL                  # x87 FPU and SSE/SSE2 floating-point multiplication
+  port2:
+    - LOAD_UNIT               # 64-bit / 128-bit memory load address generation & read
+  port3:
+    - STORE_ADDR              # Memory store address calculation (AGU)
+  port4:
+    - STORE_DATA              # Memory store data buffer
+
+dispatch:
+  # Rapid Execution Basic Integer ALU (Double-pumped fast ALUs: 0.5 cycle latency!)
+  alu_reg:          { uops: 1, ports: [port0, port1], latency: 0.5, throughput: 0.25 }
+  alu_rm:           { uops: 2, ports: [port2, port0], latency: 2.5, throughput: 1.0 }
+  alu_rmw:          { uops: 4, ports: [port2, port0, port3, port4], latency: 4.5, throughput: 2.0 }
+  alu_carry_reg:    { uops: 2, ports: [port0, port1], latency: 1.5, throughput: 1.0 }
+  alu_carry_rm:     { uops: 3, ports: [port2, port0], latency: 3.5, throughput: 1.5 }
+  alu_carry_rmw:    { uops: 5, ports: [port2, port0, port3, port4], latency: 5.5, throughput: 2.5 }
+
+  # Shifts & Rotates (Notorious NetBurst weakness: NO single-cycle barrel shifter on fast ALUs)
+  shift_reg_1:      { uops: 1, ports: [port0], latency: 4.0, throughput: 1.0 }
+  shift_reg_imm:    { uops: 1, ports: [port0], latency: 4.0, throughput: 1.0 }
+  shift_reg_cl:     { uops: 4, ports: [port0], latency: 14.0, throughput: 4.0 } # Microcoded shift by CL
+  shift_mem_1:      { uops: 4, ports: [port2, port0, port3, port4], latency: 7.0, throughput: 2.0 }
+  shift_mem_imm:    { uops: 4, ports: [port2, port0, port3, port4], latency: 7.0, throughput: 2.0 }
+  shift_mem_cl:     { uops: 8, ports: [port2, port0, port3, port4], latency: 17.0, throughput: 5.0 }
+  double_shift:     { uops: 5, ports: [port0], latency: 8.0, throughput: 3.0 }
+
+  # Multiplication and Division (Slow integer multiply on P4)
+  mul_reg:          { uops: 4, ports: [port1], latency: 15.0, throughput: 2.0 } # 14-18 cycles (vs 4 on P6)
+  div_reg:          { uops: 40, ports: [port0], latency: 68.0, throughput: 60.0 }
+
+  # Data Movement & Stack
+  mov_reg_reg:      { uops: 1, ports: [port0, port1], latency: 0.5, throughput: 0.25 }
+  mov_reg_mem:      { uops: 1, ports: [port2], latency: 2.0, throughput: 1.0 }
+  mov_mem_reg:      { uops: 2, ports: [port3, port4], latency: 2.0, throughput: 1.0 }
+  mov_extend:       { uops: 1, ports: [port0, port1], latency: 0.5, throughput: 0.25 }
+  xchg_reg_reg:     { uops: 3, ports: [port0, port1], latency: 1.5, throughput: 1.0 }
+  xchg_reg_mem:     { uops: 6, ports: [port2, port0, port3, port4], latency: 18.0, throughput: 16.0 }
+
+  stack_push:       { uops: 2, ports: [port3, port4], latency: 2.0, throughput: 1.0 }
+  stack_pop:        { uops: 2, ports: [port2, port0], latency: 2.0, throughput: 1.0 }
+
+  # Branching and Control Flow
+  branch_cond:
+    trace_cache_hit_taken: 0      # 0 cycles: seamlessly spliced into trace stream
+    trace_cache_hit_untaken: 0
+    mispredict_penalty_min: 20    # 20 cycle pipeline flush penalty
+    mispredict_penalty_max: 30
+
+  branch_uncond_near:
+    latency: 0                    # Spliced out in Trace Cache
+
+  # SSE and SSE2 Vector Operations
+  simd_mov:         { uops: 1, ports: [port0, port2], latency: 6.0, throughput: 1.0 }
+  simd_alu:         { uops: 2, ports: [port1], latency: 4.0, throughput: 2.0 } # ADDPD / ADDPS
+  simd_mul:         { uops: 2, ports: [port1], latency: 6.0, throughput: 2.0 } # MULPD / MULPS
+

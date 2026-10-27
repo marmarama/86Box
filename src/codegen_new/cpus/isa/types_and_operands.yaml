@@ -118,3 +118,44 @@ conditions:
   13: { name: NL, inv: L,   expr: "!flags_less()" }
   14: { name: LE, inv: NLE, expr: "flags_less_equal()" }
   15: { name: NLE, inv: LE, expr: "!flags_less_equal()" }
+
+# Formal Micro-Semantics Specification for Code Generation
+micro_semantics:
+  actions:
+    ALU_BINARY:         { desc: "Binary ALU computation with writeback and lazy flag update" }
+    ALU_UNARY:          { desc: "Unary ALU computation with writeback and lazy flag update" }
+    ALU_COMPARE:        { desc: "Binary ALU comparison without writeback (CMP/TEST)" }
+    DATA_TRANSFER:      { desc: "Register/memory move, zero/sign extend, or swap without flag update" }
+    SHIFT_ROTATE:       { desc: "Bitwise shift or rotate with count" }
+    DOUBLE_SHIFT:       { desc: "Double-precision shift (SHLD/SHRD)" }
+    CONDITIONAL_BRANCH: { desc: "Relative branch predicated on condition code (Jcc)" }
+    CONDITIONAL_SET:    { desc: "Set byte to 0/1 on condition code (SETcc)" }
+    CONDITIONAL_MOVE:   { desc: "Move predicated on condition code (CMOVcc)" }
+    BRANCH_NEAR:        { desc: "Near unconditional branch or procedure call (JMP/CALL)" }
+    PROC_RETURN:        { desc: "Procedure return from stack (RET_NEAR/RET_FAR)" }
+    STACK_OP:           { desc: "Push or pop stack operation" }
+    ATOMIC_CMPXCHG:     { desc: "Atomic compare-and-exchange operation" }
+    CALL_HELPER:        { desc: "Invoke verified C runtime helper function" }
+
+  primitive_ops:
+    ADD:     { uop: "uop_ADD",     c_op: "+" }
+    ADC:     { uop: "uop_ADC",     c_op: "+ cf +" }
+    SUB:     { uop: "uop_SUB",     c_op: "-" }
+    SBB:     { uop: "uop_SBB",     c_op: "- cf -" }
+    AND:     { uop: "uop_AND",     c_op: "&" }
+    OR:      { uop: "uop_OR",      c_op: "|" }
+    XOR:     { uop: "uop_XOR",     c_op: "^" }
+    NOT:     { uop: "uop_NOT",     c_op: "~" }
+    NEG:     { uop: "uop_NEG",     c_op: "0 -" }
+    MOV:     { uop: "uop_MOV",     c_op: "=" }
+    MOVZX:   { uop: "uop_MOVZX",   c_op: "(uint32_t)" }
+    MOVSX:   { uop: "uop_MOVSX",   c_op: "(int32_t)" }
+    SHL:     { uop: "uop_SHL",     c_op: "<<" }
+    SHR:     { uop: "uop_SHR",     c_op: ">>" }
+    SAR:     { uop: "uop_SAR",     c_op: ">> (signed)" }
+    BSWAP:   { uop: "uop_BSWAP",   c_op: "bswap32" }
+
+  fault_policies:
+    FAULT_ATOMIC: { desc: "5-phase staging: validate seg -> read -> compute -> store -> commit" }
+    READ_ONLY:    { desc: "Segment read-check only" }
+    NONE:         { desc: "Pure register or non-faulting operation" }

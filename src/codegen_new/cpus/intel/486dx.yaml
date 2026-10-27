@@ -14,6 +14,10 @@ isa_level: CPU_486
 features:
   - CPU_FEATURE_FPU
 
+fpu_profile: "fpus/integrated/intel_486dx.yaml"
+supported_coprocessors:
+  - "fpus/discrete/weitek_4167.yaml"
+
 timing_profile: "timings/486.yaml"
 
 cache:

@@ -10,15 +10,8 @@ families:
       "0xA4": { size: 1 } # MOVSB
       "0xA5": { size: operand_size } # MOVSW (16-bit) or MOVSD (32-bit)
     semantics:
-      args: [size]
-      rep_behavior: { loop_cond: "eCX != 0", step: "eCX = eCX - 1" }
-      body: |
-        step = read_flag(DF) ? -size : size
-        val = read_mem(DS, eSI, size)
-        write_mem(ES, eDI, val, size)
-        eSI = eSI + step
-        eDI = eDI + step
-        flags: none
+      action: CALL_HELPER
+      helper_fn: op_movs
 
   CMPS:
     description: "Compare String Operands (DS:ESI - ES:EDI)"
@@ -29,18 +22,8 @@ families:
       "0xA6": { size: 1 } # CMPSB
       "0xA7": { size: operand_size } # CMPSW (16-bit) or CMPSD (32-bit)
     semantics:
-      args: [size]
-      rep_behavior:
-        repe:  { loop_cond: "eCX != 0 && flags_zero()",     step: "eCX = eCX - 1" }
-        repne: { loop_cond: "eCX != 0 && !flags_zero()",    step: "eCX = eCX - 1" }
-      body: |
-        step = read_flag(DF) ? -size : size
-        val1 = read_mem(DS, eSI, size)
-        val2 = read_mem(ES, eDI, size)
-        res = val1 - val2
-        eSI = eSI + step
-        eDI = eDI + step
-        flags: { tag: FLAGS_SUB, op1: val1, op2: val2, res: res }
+      action: CALL_HELPER
+      helper_fn: op_cmps
 
   STOS:
     description: "Store String (AL/AX/EAX -> ES:EDI)"
@@ -51,13 +34,8 @@ families:
       "0xAA": { src: AL, size: 1 } # STOSB
       "0xAB": { src: eAX, size: operand_size } # STOSW / STOSD
     semantics:
-      args: [src, size]
-      rep_behavior: { loop_cond: "eCX != 0", step: "eCX = eCX - 1" }
-      body: |
-        step = read_flag(DF) ? -size : size
-        write_mem(ES, eDI, src, size)
-        eDI = eDI + step
-        flags: none
+      action: CALL_HELPER
+      helper_fn: op_stos
 
   LODS:
     description: "Load String (DS:ESI -> AL/AX/EAX)"
@@ -68,14 +46,8 @@ families:
       "0xAC": { dst: AL, size: 1 } # LODSB
       "0xAD": { dst: eAX, size: operand_size } # LODSW / LODSD
     semantics:
-      args: [dst, size]
-      rep_behavior: { loop_cond: "eCX != 0", step: "eCX = eCX - 1" }
-      body: |
-        step = read_flag(DF) ? -size : size
-        val = read_mem(DS, eSI, size)
-        eSI = eSI + step
-        writeback: dst = val
-        flags: none
+      action: CALL_HELPER
+      helper_fn: op_lods
 
   SCAS:
     description: "Scan String (AL/AX/EAX - ES:EDI)"
@@ -86,16 +58,8 @@ families:
       "0xAE": { src: AL, size: 1 } # SCASB
       "0xAF": { src: eAX, size: operand_size } # SCASW / SCASD
     semantics:
-      args: [src, size]
-      rep_behavior:
-        repe:  { loop_cond: "eCX != 0 && flags_zero()",     step: "eCX = eCX - 1" }
-        repne: { loop_cond: "eCX != 0 && !flags_zero()",    step: "eCX = eCX - 1" }
-      body: |
-        step = read_flag(DF) ? -size : size
-        val = read_mem(ES, eDI, size)
-        res = src - val
-        eDI = eDI + step
-        flags: { tag: FLAGS_SUB, op1: src, op2: val, res: res }
+      action: CALL_HELPER
+      helper_fn: op_scas
 
   IN:
     description: "Input from Port"
@@ -107,11 +71,8 @@ families:
       "0xEC": { dst: AL,  port: DX }
       "0xED": { dst: eAX, port: DX }
     semantics:
-      args: [dst, port]
-      body: |
-        val = io_read(port, sizeof(dst))
-        writeback: dst = val
-        flags: none
+      action: CALL_HELPER
+      helper_fn: op_in
 
   OUT:
     description: "Output to Port"
@@ -123,10 +84,8 @@ families:
       "0xEE": { port: DX, src: AL }
       "0xEF": { port: DX, src: eAX }
     semantics:
-      args: [port, src]
-      body: |
-        io_write(port, src, sizeof(src))
-        flags: none
+      action: CALL_HELPER
+      helper_fn: op_out
 
   INS:
     description: "Input String from Port (DX -> ES:EDI)"
@@ -137,14 +96,8 @@ families:
       "0x6C": { size: 1 } # INSB
       "0x6D": { size: operand_size } # INSW / INSD
     semantics:
-      args: [size]
-      rep_behavior: { loop_cond: "eCX != 0", step: "eCX = eCX - 1" }
-      body: |
-        step = read_flag(DF) ? -size : size
-        val = io_read(DX, size)
-        write_mem(ES, eDI, val, size)
-        eDI = eDI + step
-        flags: none
+      action: CALL_HELPER
+      helper_fn: op_ins
 
   OUTS:
     description: "Output String to Port (DS:ESI -> DX)"
@@ -155,12 +108,5 @@ families:
       "0x6E": { size: 1 } # OUTSB
       "0x6F": { size: operand_size } # OUTSW / OUTSD
     semantics:
-      args: [size]
-      rep_behavior: { loop_cond: "eCX != 0", step: "eCX = eCX - 1" }
-      body: |
-        step = read_flag(DF) ? -size : size
-        val = read_mem(DS, eSI, size)
-        io_write(DX, val, size)
-        eSI = eSI + step
-        flags: none
-
+      action: CALL_HELPER
+      helper_fn: op_outs

@@ -2,8 +2,15 @@
 
 common_anchors:
   availability: &3dnow_avail
-    min_cpu: CPU_K7
+    min_cpu: CPU_PENTIUM
     feature: CPU_FEATURE_3DNOW
+    exceptions:
+      - cond: "(CR0 & (CR0_EM | CR0_TS)) != 0"
+        fault: NM_FAULT
+
+  availability_enhanced: &3dnow_enhanced_avail
+    min_cpu: CPU_PENTIUM
+    feature: CPU_FEATURE_3DNOWE
     exceptions:
       - cond: "(CR0 & (CR0_EM | CR0_TS)) != 0"
         fault: NM_FAULT
@@ -92,10 +99,8 @@ families:
         flags: none
 
   PSWAPD:
-    description: "Swap Packed Doubleword Data"
-    availability:
-      min_cpu: CPU_K7
-      feature: CPU_FEATURE_3DNOWE
+    description: "Swap Packed Doubleword Data (Enhanced 3DNow! DSP)"
+    availability: *3dnow_enhanced_avail
     class: simd_alu
     opcode_map:
       "0x0F 0x0F /BB": { dst: Pq, src: Qq }
@@ -107,11 +112,65 @@ families:
         writeback: dst = res
         flags: none
 
+  PF2IW:
+    description: "Packed Floating-Point to Integer Word with Sign Extension"
+    availability: *3dnow_enhanced_avail
+    class: simd_alu
+    opcode_map:
+      "0x0F 0x0F /1C": { dst: Pq, src: Qq }
+    semantics:
+      args: [dst, src]
+      body: |
+        res.s32[0] = (int16_t)dst.f32[0]
+        res.s32[1] = (int16_t)dst.f32[1]
+        writeback: dst = res
+        flags: none
+
+  PI2FW:
+    description: "Packed Integer Word to Floating-Point"
+    availability: *3dnow_enhanced_avail
+    class: simd_alu
+    opcode_map:
+      "0x0F 0x0F /0C": { dst: Pq, src: Qq }
+    semantics:
+      args: [dst, src]
+      body: |
+        res.f32[0] = (float)(int16_t)src.u32[0]
+        res.f32[1] = (float)(int16_t)src.u32[1]
+        writeback: dst = res
+        flags: none
+
+  PFNACC:
+    description: "Packed Floating-Point Negative Accumulate"
+    availability: *3dnow_enhanced_avail
+    class: simd_alu
+    opcode_map:
+      "0x0F 0x0F /8A": { dst: Pq, src: Qq }
+    semantics:
+      args: [dst, src]
+      body: |
+        res.f32[0] = dst.f32[0] - dst.f32[1]
+        res.f32[1] = src.f32[0] - src.f32[1]
+        writeback: dst = res
+        flags: none
+
+  PFPNACC:
+    description: "Packed Floating-Point Positive-Negative Accumulate"
+    availability: *3dnow_enhanced_avail
+    class: simd_alu
+    opcode_map:
+      "0x0F 0x0F /8E": { dst: Pq, src: Qq }
+    semantics:
+      args: [dst, src]
+      body: |
+        res.f32[0] = dst.f32[0] - dst.f32[1]
+        res.f32[1] = src.f32[0] + src.f32[1]
+        writeback: dst = res
+        flags: none
+
   PREFETCHW:
     description: "Prefetch Data into Cache with Intent to Write"
-    availability:
-      min_cpu: CPU_K7
-      feature: CPU_FEATURE_3DNOW
+    availability: *3dnow_avail
     class: alu_reg
     opcode_map:
       "0x0F 0x0D /1": { addr: M8 }
@@ -120,4 +179,3 @@ families:
       body: |
         cache_prefetch_for_write(addr)
         flags: none
-

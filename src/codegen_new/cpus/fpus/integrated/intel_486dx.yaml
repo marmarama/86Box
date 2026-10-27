@@ -1,0 +1,49 @@
+# intel_486dx.yaml - Intel 80486DX On-Die Integrated Floating-Point Unit
+
+fpu:
+  fpu_id: FPU_486DX_INTEGRATED
+  name: "Intel 486DX Integrated FPU"
+  vendor: "Intel"
+  release_year: 1989
+  type: INTEGRATED_ON_DIE
+  integrated_in_cpus: [CPU_486DX, CPU_486DX2, CPU_486DX4]
+
+interface:
+  protocol: INTERNAL_DIE_BUS
+  bus_width_bits: 64 # High-speed internal data path to L1 cache & integer core
+  clock_divider: 1.0 # Synchronous 1:1 with core clock
+  numeric_error_reporting:
+    cr0_ne_bit: "CR0.NE controls exception delivery (1 = native int 16 #MF, 0 = legacy FERR#/IGNNE# DOS compatibility)"
+
+architecture: |
+  First x86 CPU with an integrated floating-point execution unit on the same silicon die.
+  Eliminated the 16/32-bit external coprocessor bus and associated multi-cycle handshakes.
+  Operands are supplied directly from the unified 8 KB L1 cache and internal registers
+  in a single internal clock cycle. Executes basic arithmetic 3x to 4x faster than the 80387DX.
+
+standard:
+  ieee_754_version: IEEE_754_1985
+  infinity_mode: AFFINE
+  affine_mode_supported: true
+
+registers:
+  stack_depth: 8
+  register_width_bits: 80
+  control_registers: [FCW, FSW, FTW, FIP, FDP]
+
+capabilities:
+  same_as: FPU_387DX
+  optimizations:
+    - "Direct 32-bit and 64-bit operand load from L1 data cache without bus wait states"
+    - "Fast integer/float conversions"
+
+typical_cycles:
+  fadd: 10      # (8-20 cycles)
+  fsub: 10
+  fmul: 16      # Single/Double precision: 16 cycles; Extended: ~30 cycles
+  fdiv: 73      # (73 cycles)
+  fsqrt: 83     # (83 cycles)
+  fsin: 257     # (200-300 cycles)
+  fcos: 257
+  fsincos: 290
+
