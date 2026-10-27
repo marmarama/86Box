@@ -1,0 +1,18 @@
+# 80286.yaml - Intel 80286 (IBM PC/AT)
+
+model:
+  cpu_id: CPU_286
+  name: "Intel 80286"
+  vendor: "Intel"
+  release_year: 1982
+  family: 2
+  package: [PGA_68, PLCC_68]
+  frequency_range_mhz: [6, 25]
+  bus_width_bits: 16
+  address_bits: 24 # 16 MB physical address space
+
+isa_level: CPU_286
+features: []
+
+timing_profile: "timings/286.yaml"
+

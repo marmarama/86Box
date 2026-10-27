@@ -1,0 +1,39 @@
+# c3_nehemiah.yaml - VIA C3 (Nehemiah)
+
+model:
+  cpu_id: CPU_VIA_C3_NEHEMIAH
+  name: "VIA C3 (Nehemiah)"
+  vendor: "CentaurHauls"
+  release_year: 2003
+  family: 6
+  model_id: 9
+  stepping: 8
+  package: [SOCKET_370]
+  frequency_range_mhz: [800, 1400]
+
+cpuid:
+  signature: 0x00000698
+  brand_string: "VIA Nehemiah"
+  features_edx: 0x0381B9FF # Includes MMX, SSE, CMOV, SEP, etc.
+
+isa_level: CPU_PENTIUM3
+features:
+  - CPU_FEATURE_FPU
+  - CPU_FEATURE_TSC
+  - CPU_FEATURE_MSR
+  - CPU_FEATURE_CX8
+  - CPU_FEATURE_SEP
+  - CPU_FEATURE_MTRR
+  - CPU_FEATURE_PGE
+  - CPU_FEATURE_CMOV
+  - CPU_FEATURE_MMX
+  - CPU_FEATURE_FXSR
+  - CPU_FEATURE_SSE
+
+timing_profile: "timings/pentium.yaml"
+
+cache:
+  l1_instruction_kb: 64
+  l1_data_kb: 64
+  l2_kb: 64
+

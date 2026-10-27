@@ -1,0 +1,73 @@
+# k6.yaml - AMD K6 / K6-2 / K6-III (RISC86) Microarchitecture Profile
+
+model:
+  cpu_level: CPU_K6
+  name: "AMD K6 / K6-2 / K6-III (RISC86)"
+  pipeline_type: out_of_order
+  branch_mispredict_penalty: 4 # Short 6-stage pipeline keeps mispredict penalty low
+
+decoders:
+  template: "dual_decode"
+  short_decode_max_uops: 2
+  long_decode_max_uops: 4
+  vector_decode: "microcode"
+
+execution_units:
+  alu_x: [UOP_ALU, UOP_ALUX, UOP_BRANCH]
+  alu_y: [UOP_ALU]
+  load:  [UOP_LOAD, UOP_MLOAD, UOP_FLOAD]
+  store: [UOP_STORE, UOP_MSTORE, UOP_FSTORE]
+  meu:   [UOP_MEU, UOP_MEU_SHIFT, UOP_MEU_MUL, UOP_MEU_3DN]
+
+dispatch:
+  # Arithmetic & Logic
+  alu_reg:          { uops: 1, units: [alu_x, alu_y], latency: 1, throughput: 0.5 }
+  alu_rm:           { uops: 2, units: [load, alu_x],  latency: 2, throughput: 1.0 }
+  alu_rmw:          { uops: 3, units: [load, alu_x, store], latency: 3, throughput: 1.5 }
+  alu_carry_reg:    { uops: 1, units: [alu_x],        latency: 1, throughput: 1.0 }
+  alu_carry_rm:     { uops: 2, units: [load, alu_x],  latency: 2, throughput: 1.0 }
+  alu_carry_rmw:    { uops: 3, units: [load, alu_x, store], latency: 3, throughput: 1.5 }
+
+  # Shifts & Rotates
+  shift_reg_1:      { uops: 1, units: [alu_x], latency: 1, throughput: 1.0 }
+  shift_reg_imm:    { uops: 1, units: [alu_x], latency: 1, throughput: 1.0 }
+  shift_reg_cl:     { uops: 2, units: [alu_x], latency: 2, throughput: 1.0 }
+  shift_mem_1:      { uops: 3, units: [load, alu_x, store], latency: 3, throughput: 1.5 }
+  shift_mem_imm:    { uops: 3, units: [load, alu_x, store], latency: 3, throughput: 1.5 }
+  shift_mem_cl:     { uops: 4, units: [load, alu_x, store], latency: 4, throughput: 2.0 }
+  double_shift:     { uops: 2, units: [alu_x], latency: 2, throughput: 1.0 }
+
+  # Multiplication and Division
+  mul_reg:          { uops: 2, units: [meu], latency: 2, throughput: 1.0 } # Fast hardware multiplier!
+  div_reg:          { uops: 16, units: [alu_x], latency: 16, throughput: 16.0 }
+
+  # Data Movement
+  mov_reg_reg:      { uops: 1, units: [alu_x, alu_y], latency: 1, throughput: 0.5 }
+  mov_reg_mem:      { uops: 1, units: [load],         latency: 1, throughput: 1.0 }
+  mov_mem_reg:      { uops: 1, units: [store],        latency: 1, throughput: 1.0 }
+  mov_extend:       { uops: 1, units: [alu_x, alu_y], latency: 1, throughput: 0.5 }
+  xchg_reg_reg:     { uops: 2, units: [alu_x, alu_y], latency: 2, throughput: 1.0 }
+  xchg_reg_mem:     { uops: 3, units: [load, alu_x, store], latency: 5, throughput: 5.0 }
+
+  # Control Flow & Branching
+  branch_cond:
+    uops: 1
+    units: [alu_x]
+    latency: 1
+    predicted_cycles: 0
+    mispredict_penalty: 4
+  branch_uncond_near: { uops: 1, units: [alu_x], latency: 1 }
+  branch_far:         { uops: 5, latency: 11 }
+  call_near:          { uops: 1, units: [alu_x], latency: 1 }
+  ret_near:           { uops: 2, units: [load, alu_x], latency: 2 }
+
+  # Stack
+  stack_push:       { uops: 1, units: [store], latency: 1, throughput: 1.0 }
+  stack_pop:        { uops: 1, units: [load],  latency: 1, throughput: 1.0 }
+
+  # SIMD (MMX & AMD 3DNow!)
+  simd_alu:         { uops: 1, units: [meu], latency: 1, throughput: 0.5 }
+  simd_shift:       { uops: 1, units: [meu], latency: 1, throughput: 1.0 }
+  simd_mul:         { uops: 1, units: [meu], latency: 2, throughput: 1.0 }
+  simd_mov:         { uops: 1, units: [load], latency: 1, throughput: 1.0 }
+

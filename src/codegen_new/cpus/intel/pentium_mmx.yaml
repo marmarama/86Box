@@ -1,0 +1,35 @@
+# pentium_mmx.yaml - Intel Pentium MMX (P55C)
+
+model:
+  cpu_id: CPU_PENTIUMMMX
+  name: "Intel Pentium MMX (P55C)"
+  vendor: "GenuineIntel"
+  release_year: 1997
+  family: 5
+  model_id: 4
+  stepping: 3
+  package: [SOCKET_7]
+  frequency_range_mhz: [166, 233]
+
+cpuid:
+  signature: 0x00000543
+  features_edx: 0x008001BF # FPU, VME, DE, TSC, MSR, CX8, MMX
+
+isa_level: CPU_PENTIUM
+features:
+  - CPU_FEATURE_FPU
+  - CPU_FEATURE_VME
+  - CPU_FEATURE_DE
+  - CPU_FEATURE_TSC
+  - CPU_FEATURE_MSR
+  - CPU_FEATURE_CX8
+  - CPU_FEATURE_MMX
+
+timing_profile: "timings/pentium.yaml"
+
+cache:
+  l1_instruction_kb: 16
+  l1_data_kb: 16
+  l1_line_size: 32
+  prefix_cache: true
+

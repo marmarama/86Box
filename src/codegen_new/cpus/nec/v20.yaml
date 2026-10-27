@@ -1,0 +1,17 @@
+# v20.yaml - NEC V20 (uPD70108)
+
+model:
+  cpu_id: CPU_V20
+  name: "NEC V20"
+  vendor: "NEC"
+  release_year: 1984
+  family: 0
+  package: [DIP_40]
+  frequency_range_mhz: [8, 16]
+  bus_width_bits: 8 # 8-bit bus, drop-in replacement for 8088
+
+isa_level: CPU_186 # NEC V20/V30 supports 80186 extensions (ENTER, LEAVE, PUSHA, etc.)
+features: []
+
+timing_profile: "timings/8086.yaml" # ~20-30% faster than 8088 due to internal dual-bus architecture
+

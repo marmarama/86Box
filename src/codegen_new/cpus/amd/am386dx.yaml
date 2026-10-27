@@ -1,0 +1,17 @@
+# am386dx.yaml - AMD Am386DX
+
+model:
+  cpu_id: CPU_386DX
+  name: "AMD Am386DX-40"
+  vendor: "AMD"
+  release_year: 1991
+  family: 3
+  package: [PGA_132]
+  frequency_range_mhz: [25, 40]
+  bus_width_bits: 32
+
+isa_level: CPU_386
+features: []
+
+timing_profile: "timings/386.yaml"
+

@@ -1,0 +1,37 @@
+# geode_lx800.yaml - AMD Geode LX 800 (OLPC XO-1)
+
+model:
+  cpu_id: CPU_GEODE_LX
+  name: "AMD Geode LX 800"
+  vendor: "AuthenticAMD"
+  release_year: 2005
+  family: 5
+  model_id: 10
+  stepping: 1
+  frequency_mhz: 500
+  power_tdp_watts: 3.3
+
+cpuid:
+  signature: 0x000005A1
+  brand_string: "AMD Geode(tm) Processor by NSC"
+  features_edx: 0x0080A13F # FPU, TSC, MSR, CX8, CMOV, MMX
+  extended_features_edx: 0xC0400000 # 3DNow!, Enhanced 3DNow!
+
+isa_level: CPU_PENTIUM
+features:
+  - CPU_FEATURE_FPU
+  - CPU_FEATURE_TSC
+  - CPU_FEATURE_MSR
+  - CPU_FEATURE_CX8
+  - CPU_FEATURE_CMOV
+  - CPU_FEATURE_MMX
+  - CPU_FEATURE_3DNOW
+  - CPU_FEATURE_3DNOWE
+
+timing_profile: "timings/k6.yaml"
+
+cache:
+  l1_instruction_kb: 64
+  l1_data_kb: 64
+  l2_kb: 128
+

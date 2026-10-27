@@ -10,6 +10,7 @@
 #include "x86_flags.h"
 #include "386_common.h"
 #include "codegen.h"
+#include "codegen_accumulate.h"
 #include "codegen_ir.h"
 #include "codegen_ops.h"
 #include "codegen_ops_helpers.h"
@@ -421,6 +422,54 @@ ropPUSHFD(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNU
     uop_MEM_STORE_REG(ir, IREG_SS_base, sp_reg, IREG_flags);
     uop_MEM_STORE_REG_OFFSET(ir, IREG_SS_base, sp_reg, 2, IREG_temp0_W);
     SUB_SP(ir, 4);
+
+    return op_pc;
+}
+
+uint32_t
+ropPOPF(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), uint32_t op_pc)
+{
+    if ((cpu_state.eflags & VM_FLAG) && (IOPL < 3))
+        return 0;
+
+    uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
+
+    if (stack32)
+        uop_MEM_LOAD_REG(ir, IREG_temp0_W, IREG_SS_base, IREG_ESP);
+    else {
+        uop_MOVZX(ir, IREG_eaaddr, IREG_SP);
+        uop_MEM_LOAD_REG(ir, IREG_temp0_W, IREG_SS_base, IREG_eaaddr);
+    }
+    ADD_SP(ir, 2);
+
+    codegen_accumulate_flush(ir);
+    uop_LOAD_FUNC_ARG_REG(ir, 0, IREG_temp0_W);
+    uop_CALL_FUNC(ir, jit_popf);
+    codegen_flags_changed = 0;
+
+    return op_pc;
+}
+
+uint32_t
+ropPOPFD(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), uint32_t op_pc)
+{
+    if ((cpu_state.eflags & VM_FLAG) && (IOPL < 3))
+        return 0;
+
+    uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
+
+    if (stack32)
+        uop_MEM_LOAD_REG(ir, IREG_temp0, IREG_SS_base, IREG_ESP);
+    else {
+        uop_MOVZX(ir, IREG_eaaddr, IREG_SP);
+        uop_MEM_LOAD_REG(ir, IREG_temp0, IREG_SS_base, IREG_eaaddr);
+    }
+    ADD_SP(ir, 4);
+
+    codegen_accumulate_flush(ir);
+    uop_LOAD_FUNC_ARG_REG(ir, 0, IREG_temp0);
+    uop_CALL_FUNC(ir, jit_popfd);
+    codegen_flags_changed = 0;
 
     return op_pc;
 }

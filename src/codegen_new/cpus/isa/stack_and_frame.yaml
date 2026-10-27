@@ -1,0 +1,145 @@
+# stack_and_frame.yaml - Stack Operations and Stack Frame Management
+
+families:
+  PUSH:
+    description: "Push Value onto the Stack"
+    availability:
+      min_cpu: CPU_8086 # Reg/Seg on 8086; Imm on 186; FS/GS on 386
+    class: stack_push
+    opcode_map:
+      "0x50..0x57": { src: "gprv[reg]", min_cpu: CPU_8086 }
+      "0x06":       { src: ES, min_cpu: CPU_8086 }
+      "0x0E":       { src: CS, min_cpu: CPU_8086 }
+      "0x16":       { src: SS, min_cpu: CPU_8086 }
+      "0x1E":       { src: DS, min_cpu: CPU_8086 }
+      "0x0F 0xA0":  { src: FS, min_cpu: CPU_386 }
+      "0x0F 0xA8":  { src: GS, min_cpu: CPU_386 }
+      "0x68":       { src: Iv, min_cpu: CPU_186 }
+      "0x6A":       { src: Ib_sext, min_cpu: CPU_186 }
+      "0xFF /6":    { src: Ev, min_cpu: CPU_8086 }
+    semantics:
+      args: [src]
+      body: |
+        push(src)
+        flags: none
+
+  POP:
+    description: "Pop Value from the Stack"
+    availability:
+      min_cpu: CPU_8086 # Reg/Seg on 8086; FS/GS on 386
+    class: stack_pop
+    opcode_map:
+      "0x58..0x5F": { dst: "gprv[reg]", min_cpu: CPU_8086 }
+      "0x07":       { dst: ES, min_cpu: CPU_8086 }
+      "0x17":       { dst: SS, min_cpu: CPU_8086 }
+      "0x1F":       { dst: DS, min_cpu: CPU_8086 }
+      "0x0F 0xA1":  { dst: FS, min_cpu: CPU_386 }
+      "0x0F 0xA9":  { dst: GS, min_cpu: CPU_386 }
+      "0x8F /0":    { dst: Ev, min_cpu: CPU_8086 }
+    semantics:
+      args: [dst]
+      body: |
+        val = pop()
+        writeback: dst = val
+        flags: none
+
+  PUSHA_PUSHAD:
+    description: "Push All General-Purpose Registers"
+    availability: { min_cpu: CPU_186 }
+    class: stack_push
+    opcode_map:
+      "0x60": { operand_size_16: { regs: [AX, CX, DX, BX, SP, BP, SI, DI] },
+                operand_size_32: { regs: [EAX, ECX, EDX, EBX, ESP, EBP, ESI, EDI] } }
+    semantics:
+      args: []
+      body: |
+        orig_sp = eSP
+        push(eAX)
+        push(eCX)
+        push(eEDX)
+        push(eBX)
+        push(orig_sp)
+        push(eBP)
+        push(eSI)
+        push(eDI)
+        flags: none
+
+  POPA_POPAD:
+    description: "Pop All General-Purpose Registers"
+    availability: { min_cpu: CPU_186 }
+    class: stack_pop
+    opcode_map:
+      "0x61": { operand_size_16: { regs: [DI, SI, BP, SP_skip, BX, DX, CX, AX] },
+                operand_size_32: { regs: [EDI, ESI, EBP, ESP_skip, EBX, EDX, ECX, EAX] } }
+    semantics:
+      args: []
+      body: |
+        eDI = pop()
+        eSI = pop()
+        eBP = pop()
+        pop_discard() # Discard saved SP/ESP
+        eBX = pop()
+        eEDX = pop()
+        eCX = pop()
+        eAX = pop()
+        flags: none
+
+  PUSHF_PUSHFD:
+    description: "Push Flags onto Stack"
+    availability: { min_cpu: CPU_8086 }
+    class: stack_push
+    opcode_map:
+      "0x9C": { operand_size_16: { src: FLAGS }, operand_size_32: { src: EFLAGS } }
+    semantics:
+      args: []
+      body: |
+        flags_val = read_all_flags()
+        push(flags_val)
+        flags: none
+
+  POPF_POPFD:
+    description: "Pop Flags from Stack"
+    availability: { min_cpu: CPU_8086 }
+    class: stack_pop
+    opcode_map:
+      "0x9D": { operand_size_16: { dst: FLAGS }, operand_size_32: { dst: EFLAGS } }
+    semantics:
+      args: []
+      body: |
+        val = pop()
+        write_all_flags(val)
+
+  ENTER:
+    description: "Make Stack Frame for Procedure Parameters"
+    availability: { min_cpu: CPU_186 }
+    class: stack_push
+    opcode_map:
+      "0xC8": { alloc_size: Iw, nesting_level: Ib }
+    semantics:
+      args: [alloc_size, nesting_level]
+      body: |
+        push(eBP)
+        frame_ptr = eSP
+        level = nesting_level & 0x1F
+        if level > 0:
+          for i in range(1, level):
+            eBP = eBP - sizeof(pointer)
+            push(read_mem(SS, eBP))
+          push(frame_ptr)
+        eBP = frame_ptr
+        eSP = eSP - alloc_size
+        flags: none
+
+  LEAVE:
+    description: "High Level Procedure Exit"
+    availability: { min_cpu: CPU_186 }
+    class: stack_pop
+    opcode_map:
+      "0xC9": { none: 0 }
+    semantics:
+      args: []
+      body: |
+        eSP = eBP
+        eBP = pop()
+        flags: none
+

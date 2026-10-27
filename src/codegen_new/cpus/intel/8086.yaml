@@ -1,0 +1,17 @@
+# 8086.yaml - Intel 8086
+
+model:
+  cpu_id: CPU_8086
+  name: "Intel 8086"
+  vendor: "Intel"
+  release_year: 1978
+  family: 0
+  package: [DIP_40]
+  frequency_range_mhz: [4.77, 10]
+  bus_width_bits: 16
+
+isa_level: CPU_8086
+features: []
+
+timing_profile: "timings/8086.yaml"
+

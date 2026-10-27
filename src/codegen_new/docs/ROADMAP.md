@@ -406,6 +406,8 @@ However, the x86-64 backend in `codegen_new` was ported without general REX pref
 
 ## Phase 8: Structural Architecture Overhaul (Eliminating the Per-Block C-Function Boundary) [PLANNED]
 
+> **Detailed Design Reference**: See **[`CODEGEN_FUTURE.md` (Proposals 2, 3, and 4)](file:///home/marm/src/86Box/src/codegen_new/docs/CODEGEN_FUTURE.md)** for the full architectural specifications, empirical telemetry from [`PROFILE-WIN98-v3.md`](file:///home/marm/src/86Box/src/codegen_new/docs/PROFILE-WIN98-v3.md), and middle-end/selector-caching designs.
+
 **Goal**: Re-architect `codegen_new` from a collection of isolated C-callable basic blocks (`void (*fn)(void)`) into a persistent JIT execution region with pinned guest registers, an in-JIT native assembly dispatch stub, and event-driven cycle accounting.
 
 ### Diagnosis: Why the Current Block-Boundary Model Is Structurally Inefficient
@@ -458,29 +460,41 @@ flowchart LR
 
 #### 8.3 Event-Driven Cycle Accounting, Slow-Path `cycles` Sync & Cycle-Counter Stealing
 - **Design**:
-  1. **Bounded Event Slices (`cycles_to_next_event`)**:
-     - Enter `codegen_enter_jit` with `cycles = min(slice_remaining, cycles_until_timer_target)` and record `cpu_state.cycles_start = cycles`.
-     - `tsc` is now derived on demand as `tsc + (cpu_state.cycles_start - cycles)`, removing per-block `cycdiff` / `cycles_main` bookkeeping.
+  1. **Bounded Event Slices (`min(timer_target, next_pacing_tsc) - tsc`)**:
+     - Eliminate the fixed 5 µs `cyc_period` slicing (`cycs / 200`) and `cycles_main` accounting.
+     - Enter `codegen_enter_jit` with `reg_cycles = min(timer_target, next_pacing_tsc) - tsc` and record `cpu_state.tsc_sync_base = tsc + reg_cycles`.
+     - `tsc` is now derived on demand as `cpu_state.tsc_sync_base - reg_cycles` (enabling 2-instruction inline guest `RDTSC` in JIT blocks), removing per-block `cycdiff` / `cycles_main` bookkeeping.
   2. **Pinned `cycles` Register Synchronized in Cold Slow-Path Thunks**:
      - Fast-path RAM loads/stores (`readlookup2` / `writelookup2` hit) never modify `cycles`.
      - Out-of-line slow-path memory/IO thunks spill the pinned `cycles` register to `cpu_state._cycles` *before* calling the C handler (`svga_writel_linear`, port I/O, etc.) and reload the pinned `cycles` register from `cpu_state._cycles` *after* the C handler returns.
      - Guarantees 100% accurate video/MMIO/bus wait-state timing (fixing C-3) with zero fast-path overhead.
   3. **Cycle-Counter Stealing (Single-Branch Block Exits)**:
-     - When `cpu_update_exit_request()` sets a pending exit (IRQ, NMI, SMI, `abrt`, `flush_mmucache`, SMC write), steal the remaining cycle budget (`cpu_state.cycles_saved += cpu_state._cycles; cpu_state._cycles = 0;`) and, if inside a slow-path helper, reload `cycles = 0`.
+     - When `cpu_update_exit_request()` sets a pending exit (IRQ, NMI, SMI, `abrt`, `flush_mmucache`, SMC write), steal the remaining cycle budget (`cpu_state.tsc_sync_base -= cpu_state._cycles; cpu_state._cycles = 0;`) and, if inside a slow-path helper, reload `cycles = 0`.
      - Every block boundary then requires only a **single** flag-setting instruction and branch:
        ```assembly
        sub ebx, #block_cycles   ; RBX = pinned cycles
-       jle codegen_exit_or_event_stub
+       jle codegen_event_stub
        ```
        replacing the current dual memory loads and branches for `exit_request` and `cpu_state._cycles`.
 
-#### 8.4 Dual Block Entry Points (Unchecked Same-Page Chained Entry vs. Checked Entry)
+#### 8.4 Continuous In-JIT Event Loop, Interrupt Injection & Real-Time Host Pacing (`codegen_event_stub`)
+- **Design**:
+  - Instead of exiting the JIT 200,000 times/sec (`cyc_period` in `exec386_dynarec`) and 1,000 times/sec (`pc_run` / `main_thread_fn`), handle timer expiration, interrupt injection, and 1 kHz real-time host pacing directly inside `codegen_event_stub`:
+  1. **Callee-Saved ABI Preservation**: Because guest GPRs are pinned in host callee-saved registers, `codegen_event_stub` can call `timer_process()`, `codegen_inject_interrupt()`, and the 1 kHz pacing helper without leaving `codegen_enter_jit` or spilling/reloading guest GPRs.
+  2. **In-JIT Real-Time Pacing**: At every `next_pacing_tsc` deadline (1 ms of guest cycles), compare the host hardware clock (`rdtsc` on x86-64, `cntvct_el0` on ARM64) against `host_target_ticks`:
+     - If on-time or catching up (`host_now >= host_target_ticks`), clamp debt, run 1 kHz housekeeping (`rivatimer_update_all`, `mouse_process`, `joystick_process`), reload `reg_cycles`, and resume JIT execution with zero sleep.
+     - If within the sub-millisecond spin window (`< 100 µs`), spin in-stub with `pause` / `yield` until `host_target_ticks` to avoid OS scheduler sleep overshoot.
+     - If ahead of real-time (`>= 100 µs`), sleep via the C pacing helper while staying inside the `codegen_enter_jit` frame.
+  3. **Contention-Gated `blitmx` Handoff**: Hold `blitmx` continuously inside `codegen_enter_jit` and only pulse `endblit(); startblit();` on the 1 ms pacing tick when `ATOMIC_LOAD(blitmx_contention) > 0` or `do_pause_ack != 0`.
+  4. **Fused Idle (`HLT` / ACPI `P_LVL2`/`P_LVL3`) + Pacing**: Fast-forward `tsc` to `min(timer_target, next_pacing_tsc)` and branch to `codegen_event_stub`, turning guest idle directly into host thread sleep without leaving the JIT.
+
+#### 8.5 Dual Block Entry Points (Unchecked Same-Page Chained Entry vs. Checked Entry)
 - **Design**:
   - Provide two entry offsets per `codeblock_t`:
     - `entry_checked`: Verifies `status` / page state (used by `codegen_dispatch_stub` and cross-page jumps).
     - `entry_chained_same_page`: Used by intra-page linked branches where `cs`, `status`, and physical page validity are already invariant, immediately executing `sub cycles, #block_cycles; jle exit_stub` and the block body.
 
-#### 8.5 Cold Exception Materialization for `pc`/`oldpc` & Backward IR Flag Liveness Pass
+#### 8.6 Cold Exception Materialization for `pc`/`oldpc` & Backward IR Flag Liveness Pass
 - **Design**:
   1. **Eliminate Fast-Path `IREG_pc` / `IREG_oldpc` Stores**:
      - Currently, `codegen.c` emits `uop_MOV_IMM(ir, IREG_pc, new_pc)` after every guest instruction and `uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc)` before every memory access, and `UOP_TYPE_ORDER_BARRIER` forces all of them to be written to `cpu_state` memory on the fast path.
@@ -489,7 +503,7 @@ flowchart LR
      - Today, `UOP_TYPE_ORDER_BARRIER` on memory loads/stores sets `dirty_ir_regs[0] = ~0ULL`, forcing every preceding ALU instruction to materialize and flush `IREG_flags_op`, `IREG_flags_res`, `IREG_flags_op1`, and `IREG_flags_op2` even when the next instruction after a non-faulting register op (or after a fast-path access) unconditionally overwrites all flags.
      - Add an $O(N)$ backward liveness pass over `ir->uops` before register allocation to prune dead writes to `IREG_flags_*` whenever they are killed before any flag consumer (`Jcc`, `SETcc`, `CMOVcc`, `ADC`, `SBB`, `PUSHF`, or potentially faulting memory access).
 
-#### 8.6 FPU `CODEBLOCK_STATIC_TOP` Entry/Exit `TOP` Matching for Chained FPU Loops
+#### 8.7 FPU `CODEBLOCK_STATIC_TOP` Entry/Exit `TOP` Matching for Chained FPU Loops
 - **Design**:
   - Currently, `can_enter_block_linked` and `codegen_link_allowed` refuse to link into any block with `CODEBLOCK_STATIC_TOP`, forcing all FPU-heavy loops (e.g., Quake's perspective texture mapping and geometry loops) to return to C after every basic block.
   - Record `block->entry_top` (`block->TOP` at block entry) and `block->exit_top` (`(block->TOP + net_top_delta) & 7` at block exit).

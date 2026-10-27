@@ -1,0 +1,123 @@
+# amd_3dnow.yaml - AMD 3DNow! and Enhanced 3DNow! Vector Instructions
+
+common_anchors:
+  availability: &3dnow_avail
+    min_cpu: CPU_K7
+    feature: CPU_FEATURE_3DNOW
+    exceptions:
+      - cond: "(CR0 & (CR0_EM | CR0_TS)) != 0"
+        fault: NM_FAULT
+
+families:
+  FEMMS:
+    description: "Fast Empty MMX State (Clears FPU tags without saving state)"
+    availability: *3dnow_avail
+    class: sys_control
+    opcode_map:
+      "0x0F 0x0E": { none: 0 }
+    semantics:
+      args: []
+      body: |
+        fpu_tag_word = 0xFFFF
+        flags: none
+
+  PFADD:
+    description: "Packed Floating-Point Addition (2x f32 in MMX register)"
+    availability: *3dnow_avail
+    class: simd_alu
+    opcode_map:
+      "0x0F 0x0F /9E": { dst: Pq, src: Qq }
+    semantics:
+      args: [dst, src]
+      body: |
+        res.f32[0] = dst.f32[0] + src.f32[0]
+        res.f32[1] = dst.f32[1] + src.f32[1]
+        writeback: dst = res
+        flags: none
+
+  PFSUB:
+    description: "Packed Floating-Point Subtraction (2x f32 in MMX register)"
+    availability: *3dnow_avail
+    class: simd_alu
+    opcode_map:
+      "0x0F 0x0F /9A": { dst: Pq, src: Qq }
+    semantics:
+      args: [dst, src]
+      body: |
+        res.f32[0] = dst.f32[0] - src.f32[0]
+        res.f32[1] = dst.f32[1] - src.f32[1]
+        writeback: dst = res
+        flags: none
+
+  PFMUL:
+    description: "Packed Floating-Point Multiplication (2x f32 in MMX register)"
+    availability: *3dnow_avail
+    class: simd_mul
+    opcode_map:
+      "0x0F 0x0F /B4": { dst: Pq, src: Qq }
+    semantics:
+      args: [dst, src]
+      body: |
+        res.f32[0] = dst.f32[0] * src.f32[0]
+        res.f32[1] = dst.f32[1] * src.f32[1]
+        writeback: dst = res
+        flags: none
+
+  PFMAX:
+    description: "Packed Floating-Point Maximum"
+    availability: *3dnow_avail
+    class: simd_alu
+    opcode_map:
+      "0x0F 0x0F /A4": { dst: Pq, src: Qq }
+    semantics:
+      args: [dst, src]
+      body: |
+        res.f32[0] = (dst.f32[0] > src.f32[0]) ? dst.f32[0] : src.f32[0]
+        res.f32[1] = (dst.f32[1] > src.f32[1]) ? dst.f32[1] : src.f32[1]
+        writeback: dst = res
+        flags: none
+
+  PFMIN:
+    description: "Packed Floating-Point Minimum"
+    availability: *3dnow_avail
+    class: simd_alu
+    opcode_map:
+      "0x0F 0x0F /94": { dst: Pq, src: Qq }
+    semantics:
+      args: [dst, src]
+      body: |
+        res.f32[0] = (dst.f32[0] < src.f32[0]) ? dst.f32[0] : src.f32[0]
+        res.f32[1] = (dst.f32[1] < src.f32[1]) ? dst.f32[1] : src.f32[1]
+        writeback: dst = res
+        flags: none
+
+  PSWAPD:
+    description: "Swap Packed Doubleword Data"
+    availability:
+      min_cpu: CPU_K7
+      feature: CPU_FEATURE_3DNOWE
+    class: simd_alu
+    opcode_map:
+      "0x0F 0x0F /BB": { dst: Pq, src: Qq }
+    semantics:
+      args: [dst, src]
+      body: |
+        res.u32[0] = src.u32[1]
+        res.u32[1] = src.u32[0]
+        writeback: dst = res
+        flags: none
+
+  PREFETCHW:
+    description: "Prefetch Data into Cache with Intent to Write"
+    availability:
+      min_cpu: CPU_K7
+      feature: CPU_FEATURE_3DNOW
+    class: alu_reg
+    opcode_map:
+      "0x0F 0x0D /1": { addr: M8 }
+    semantics:
+      args: [addr]
+      body: |
+        cache_prefetch_for_write(addr)
+        flags: none
+

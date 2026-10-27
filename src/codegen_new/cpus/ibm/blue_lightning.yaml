@@ -1,0 +1,22 @@
+# blue_lightning.yaml - IBM 486BL "Blue Lightning"
+
+model:
+  cpu_id: CPU_IBM486BL
+  name: "IBM 486BL Blue Lightning"
+  vendor: "IBM"
+  release_year: 1993
+  family: 4
+  package: [PGA_132, QFP_144]
+  frequency_range_mhz: [75, 100]
+  bus_multiplier: 3 # Clock-tripled 25/75 or 33/100 MHz
+  bus_width_bits: 32 # 386DX bus interface
+
+isa_level: CPU_486
+features: []
+
+timing_profile: "timings/486.yaml"
+
+cache:
+  l1_unified_kb: 16 # Huge 16KB L1 cache
+  write_back: true
+

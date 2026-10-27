@@ -1,0 +1,17 @@
+# v30.yaml - NEC V30 (uPD70116)
+
+model:
+  cpu_id: CPU_V30
+  name: "NEC V30"
+  vendor: "NEC"
+  release_year: 1984
+  family: 0
+  package: [DIP_40, PLCC_52]
+  frequency_range_mhz: [8, 16]
+  bus_width_bits: 16 # Full 16-bit data bus (pin-compatible drop-in replacement for Intel 8086)
+
+isa_level: CPU_186 # NEC V30 supports 8086 base + full 80186 extensions (ENTER, LEAVE, PUSHA, etc.)
+features: []
+
+timing_profile: "timings/8086.yaml" # ~20-30% faster than Intel 8086 due to dual internal 16-bit buses
+

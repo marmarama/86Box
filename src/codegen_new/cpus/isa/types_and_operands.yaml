@@ -1,0 +1,120 @@
+# types_and_operands.yaml - Primitive Types, Registers & Flag Tags
+
+types:
+  u8:   { width: 8,   signed: false, c_type: "uint8_t" }
+  u16:  { width: 16,  signed: false, c_type: "uint16_t" }
+  u32:  { width: 32,  signed: false, c_type: "uint32_t" }
+  u64:  { width: 64,  signed: false, c_type: "uint64_t" }
+  u128: { width: 128, signed: false, c_type: "uint128_t" }
+  s8:   { width: 8,   signed: true,  c_type: "int8_t" }
+  s16:  { width: 16,  signed: true,  c_type: "int16_t" }
+  s32:  { width: 32,  signed: true,  c_type: "int32_t" }
+  s64:  { width: 64,  signed: true,  c_type: "int64_t" }
+  f32:  { width: 32,  signed: true,  c_type: "float" }
+  f64:  { width: 64,  signed: true,  c_type: "double" }
+
+# Architectural CPU generation levels (monotonic hierarchy)
+cpu_levels:
+  CPU_8086:       { order: 0, desc: "8086 / 8088 base ISA" }
+  CPU_186:        { order: 1, desc: "80186 / 80188 instruction extensions" }
+  CPU_286:        { order: 2, desc: "80286 real + protected mode" }
+  CPU_386:        { order: 3, desc: "80386 32-bit architecture & paging" }
+  CPU_486:        { order: 4, desc: "80486 pipelining & instructions (BSWAP, CMPXCHG)" }
+  CPU_PENTIUM:    { order: 5, desc: "Pentium P5 dual-issue, CPUID, RDTSC" }
+  CPU_PENTIUMPRO: { order: 6, desc: "Pentium Pro / P6 out-of-order, CMOVcc" }
+  CPU_PENTIUM2:   { order: 7, desc: "Pentium II Klamath/Deschutes, SYSENTER/SYSEXIT, FXSAVE" }
+  CPU_PENTIUM3:   { order: 8, desc: "Pentium III Katmai/Coppermine, SSE SIMD, XMM0..XMM7" }
+  CPU_PENTIUM4:   { order: 9, desc: "Pentium 4 Willamette/Northwood, SSE2 64-bit float/int SIMD" }
+  CPU_PENTIUMM:   { order: 10, desc: "Pentium M / Core Duo (Yonah), micro-op fusion, SSE3" }
+  CPU_K7:         { order: 11, desc: "AMD K7 Athlon / Athlon XP, 3DNow!, Enhanced 3DNow!" }
+
+# CPU feature flags (matching 86Box cpu_has_feature() bitmask)
+cpu_features:
+  CPU_FEATURE_FPU:     { bit: 0,  desc: "On-chip x87 FPU" }
+  CPU_FEATURE_VME:     { bit: 1,  desc: "Virtual 8086 Mode Extensions" }
+  CPU_FEATURE_DE:      { bit: 2,  desc: "Debugging Extensions (CR4.DE)" }
+  CPU_FEATURE_PSE:     { bit: 3,  desc: "Page Size Extensions (4MB pages)" }
+  CPU_FEATURE_TSC:     { bit: 4,  desc: "Time-Stamp Counter (RDTSC)" }
+  CPU_FEATURE_MSR:     { bit: 5,  desc: "Model-Specific Registers (RDMSR/WRMSR)" }
+  CPU_FEATURE_PAE:     { bit: 6,  desc: "Physical Address Extension (36-bit)" }
+  CPU_FEATURE_MCE:     { bit: 7,  desc: "Machine Check Exception" }
+  CPU_FEATURE_CX8:     { bit: 8,  desc: "CMPXCHG8B 8-byte atomic compare-exchange" }
+  CPU_FEATURE_APIC:    { bit: 9,  desc: "On-chip Advanced Programmable Interrupt Controller" }
+  CPU_FEATURE_SEP:     { bit: 11, desc: "Fast System Call (SYSENTER / SYSEXIT)" }
+  CPU_FEATURE_MTRR:    { bit: 12, desc: "Memory Type Range Registers" }
+  CPU_FEATURE_PGE:     { bit: 13, desc: "Page Global Enable (CR4.PGE)" }
+  CPU_FEATURE_CMOV:    { bit: 15, desc: "Conditional Move (CMOVcc / FCMOVcc)" }
+  CPU_FEATURE_PAT:     { bit: 16, desc: "Page Attribute Table" }
+  CPU_FEATURE_PSE36:   { bit: 17, desc: "36-bit Page Size Extension" }
+  CPU_FEATURE_MMX:     { bit: 23, desc: "MultiMedia eXtensions SIMD" }
+  CPU_FEATURE_FXSR:    { bit: 24, desc: "FXSAVE and FXRSTOR instructions" }
+  CPU_FEATURE_SSE:     { bit: 25, desc: "Streaming SIMD Extensions (Single-Precision Float)" }
+  CPU_FEATURE_SSE2:    { bit: 26, desc: "Streaming SIMD Extensions 2 (Double-Precision Float & 128-bit Int)" }
+  CPU_FEATURE_SSE3:    { bit: 27, desc: "Streaming SIMD Extensions 3 (Prescott New Instructions)" }
+  CPU_FEATURE_3DNOW:   { bit: 31, desc: "AMD 3DNow! SIMD instructions" }
+  CPU_FEATURE_3DNOWE:  { bit: 30, desc: "AMD Enhanced 3DNow!" }
+  CPU_FEATURE_SYSCALL: { bit: 29, desc: "AMD SYSCALL / SYSRET" }
+  CPU_FEATURE_CLFLUSH: { bit: 19, desc: "Cache Line Flush (CLFLUSH)" }
+
+# Architectural exception vectors
+exceptions:
+  DE_FAULT: { vector: 0,  name: "#DE", desc: "Divide Error" }
+  DB_FAULT: { vector: 1,  name: "#DB", desc: "Debug Exception" }
+  BP_FAULT: { vector: 3,  name: "#BP", desc: "Breakpoint (INT 3)" }
+  OF_FAULT: { vector: 4,  name: "#OF", desc: "Overflow (INTO)" }
+  BR_FAULT: { vector: 5,  name: "#BR", desc: "BOUND Range Exceeded" }
+  UD_FAULT: { vector: 6,  name: "#UD", desc: "Invalid Opcode (Undefined Opcode)" }
+  NM_FAULT: { vector: 7,  name: "#NM", desc: "Device Not Available (No Math Coprocessor / CR0.TS / CR0.EM)" }
+  DF_FAULT: { vector: 8,  name: "#DF", desc: "Double Fault" }
+  TS_FAULT: { vector: 10, name: "#TS", desc: "Invalid TSS" }
+  NP_FAULT: { vector: 11, name: "#NP", desc: "Segment Not Present" }
+  SS_FAULT: { vector: 12, name: "#SS", desc: "Stack Segment Fault" }
+  GP_FAULT: { vector: 13, name: "#GP", desc: "General Protection Fault" }
+  PF_FAULT: { vector: 14, name: "#PF", desc: "Page Fault" }
+  MF_FAULT: { vector: 16, name: "#MF", desc: "x87 FPU Floating-Point Error" }
+  AC_FAULT: { vector: 17, name: "#AC", desc: "Alignment Check" }
+  MC_FAULT: { vector: 18, name: "#MC", desc: "Machine Check" }
+  XF_FAULT: { vector: 19, name: "#XF", desc: "SIMD Floating-Point Exception (#XM / MXCSR)" }
+
+registers:
+  gpr32: [EAX, ECX, EDX, EBX, ESP, EBP, ESI, EDI]
+  gpr16: [AX, CX, DX, BX, SP, BP, SI, DI]
+  gpr8_low:  [AL, CL, DL, BL]
+  gpr8_high: [AH, CH, DH, BH]
+  seg:   [ES, CS, SS, DS, FS, GS]
+  fpu:   [ST0, ST1, ST2, ST3, ST4, ST5, ST6, ST7]
+  mmx:   [MM0, MM1, MM2, MM3, MM4, MM5, MM6, MM7]
+  xmm:   [XMM0, XMM1, XMM2, XMM3, XMM4, XMM5, XMM6, XMM7]
+  control: [CR0, CR2, CR3, CR4, MXCSR]
+
+flags:
+  architectural: [CF, PF, AF, ZF, SF, TF, IF, DF, OF, NT, RF, VM, AC, VIF, VIP, ID]
+  lazy_tags:
+    FLAGS_ADD:   { op1: "dst", op2: "src", res: "res", bits: [CF, PF, AF, ZF, SF, OF] }
+    FLAGS_ADC:   { op1: "dst", op2: "src", res: "res", bits: [CF, PF, AF, ZF, SF, OF] }
+    FLAGS_SUB:   { op1: "dst", op2: "src", res: "res", bits: [CF, PF, AF, ZF, SF, OF] }
+    FLAGS_SBB:   { op1: "dst", op2: "src", res: "res", bits: [CF, PF, AF, ZF, SF, OF] }
+    FLAGS_INC:   { op1: "dst", op2: 1,     res: "res", bits: [PF, AF, ZF, SF, OF], preserve: [CF] }
+    FLAGS_DEC:   { op1: "dst", op2: 1,     res: "res", bits: [PF, AF, ZF, SF, OF], preserve: [CF] }
+    FLAGS_LOGIC: { op1: "res", op2: 0,     res: "res", bits: [PF, ZF, SF], forced_clear: [CF, OF], undefined: [AF] }
+    FLAGS_SHL:   { op1: "dst", op2: "cnt", res: "res", bits: [CF, PF, ZF, SF, OF] }
+    FLAGS_SHR:   { op1: "dst", op2: "cnt", res: "res", bits: [CF, PF, ZF, SF, OF] }
+    FLAGS_SAR:   { op1: "dst", op2: "cnt", res: "res", bits: [CF, PF, ZF, SF, OF] }
+
+conditions:
+  0: { name: O,   inv: NO,  expr: "flags_overflow()" }
+  1: { name: NO,  inv: O,   expr: "!flags_overflow()" }
+  2: { name: B,   inv: NB,  expr: "flags_carry()" }
+  3: { name: NB,  inv: B,   expr: "!flags_carry()" }
+  4: { name: E,   inv: NE,  expr: "flags_zero()" }
+  5: { name: NE,  inv: E,   expr: "!flags_zero()" }
+  6: { name: BE,  inv: NBE, expr: "flags_carry() || flags_zero()" }
+  7: { name: NBE, inv: BE,  expr: "!flags_carry() && !flags_zero()" }
+  8: { name: S,   inv: NS,  expr: "flags_sign()" }
+  9: { name: NS,  inv: S,   expr: "!flags_sign()" }
+  10: { name: P,  inv: NP,  expr: "flags_parity()" }
+  11: { name: NP, inv: P,   expr: "!flags_parity()" }
+  12: { name: L,  inv: NL,  expr: "flags_less()" }
+  13: { name: NL, inv: L,   expr: "!flags_less()" }
+  14: { name: LE, inv: NLE, expr: "flags_less_equal()" }
+  15: { name: NLE, inv: LE, expr: "!flags_less_equal()" }

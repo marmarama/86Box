@@ -1,0 +1,51 @@
+# k7_barton.yaml - AMD Athlon XP (Barton core, Socket A)
+
+model:
+  cpu_id: CPU_ATHLON_XP_BARTON
+  name: "AMD Athlon XP (Barton)"
+  vendor: "AuthenticAMD"
+  release_year: 2003
+  family: 6
+  model_id: 10
+  stepping: 0
+  package: [SOCKET_A]
+  pr_rating: "2500+ to 3200+"
+  frequency_range_mhz: [1833, 2200]
+  bus_clock_mhz: [166, 200] # DDR EV6 FSB: 333 / 400 MT/s
+
+cpuid:
+  signature: 0x000006A0
+  brand_string: "AMD Athlon(tm) XP 3200+"
+  features_edx: 0x0383FBFF # FPU, VME, DE, PSE, TSC, MSR, PAE, MCE, CX8, APIC, SEP, MTRR, PGE, MCA, CMOV, PAT, PSE36, MMX, FXSR, SSE
+  extended_features_edx: 0xC1C3FBFF # 3DNow!, Enhanced 3DNow!, MMX Extensions
+
+isa_level: CPU_PENTIUM_3
+features:
+  - CPU_FEATURE_FPU
+  - CPU_FEATURE_VME
+  - CPU_FEATURE_TSC
+  - CPU_FEATURE_MSR
+  - CPU_FEATURE_CX8
+  - CPU_FEATURE_SEP
+  - CPU_FEATURE_CMOV
+  - CPU_FEATURE_MMX
+  - CPU_FEATURE_FXSAVE
+  - CPU_FEATURE_SSE
+  - CPU_FEATURE_3DNOW
+  - CPU_FEATURE_3DNOWE
+
+timing_profile: "timings/k6.yaml"
+
+cache:
+  l1_instruction_kb: 64
+  l1_data_kb: 64
+  l2_kb: 512 # Exclusive 512KB on-die cache (Total 640KB effective)
+
+microarchitecture:
+  decoder_width: 3 # DirectPath (single macro-op) / VectorPath (microcode)
+  execution_pipes:
+    integer_alus: 3
+    address_generators: 3
+    floating_point: 3 # FADD, FMUL, FSTORE
+  reorder_buffer_entries: 72
+

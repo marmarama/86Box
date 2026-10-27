@@ -1,0 +1,17 @@
+# 80186.yaml - Intel 80186
+
+model:
+  cpu_id: CPU_186
+  name: "Intel 80186"
+  vendor: "Intel"
+  release_year: 1982
+  family: 1
+  package: [PLCC_68, PGA_68]
+  frequency_range_mhz: [8, 16]
+  bus_width_bits: 16
+
+isa_level: CPU_186
+features: []
+
+timing_profile: "timings/186.yaml"
+

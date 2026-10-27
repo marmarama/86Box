@@ -1,0 +1,49 @@
+# pentium_m_dothan.yaml - Intel Pentium M (Dothan, 90nm)
+
+model:
+  cpu_id: CPU_PENTIUM_M_DOTHAN
+  name: "Intel Pentium M (Dothan)"
+  vendor: "GenuineIntel"
+  release_year: 2004
+  family: 6
+  model_id: 13
+  stepping: 8
+  package: [SOCKET_479, H_PBGA479]
+  frequency_range_mhz: [1000, 2266]
+  bus_clock_mhz: [100, 133] # Quad-pumped 400/533 MT/s FSB
+  power_tdp_watts: 21
+
+cpuid:
+  signature: 0x000006D8
+  brand_string: "Intel(R) Pentium(R) M processor 2.00GHz"
+  features_edx: 0xAFE9FBFF # FPU, VME, DE, PSE, TSC, MSR, MCE, CX8, APIC, SEP, MTRR, PGE, MCA, CMOV, PAT, CLFSH, DTS, ACPI, MMX, FXSR, SSE, SSE2, TM, PBE
+  features_ecx: 0x00000180 # EST (SpeedStep), TM2
+
+isa_level: CPU_PENTIUM_4
+features:
+  - CPU_FEATURE_FPU
+  - CPU_FEATURE_VME
+  - CPU_FEATURE_TSC
+  - CPU_FEATURE_MSR
+  - CPU_FEATURE_CX8
+  - CPU_FEATURE_SEP # SYSENTER/SYSEXIT
+  - CPU_FEATURE_CMOV
+  - CPU_FEATURE_CLFLUSH
+  - CPU_FEATURE_MMX
+  - CPU_FEATURE_FXSAVE
+  - CPU_FEATURE_SSE
+  - CPU_FEATURE_SSE2
+
+timing_profile: "timings/p6.yaml" # Enhanced P6 microarchitecture with micro-op fusion
+
+cache:
+  l1_instruction_kb: 32
+  l1_data_kb: 32
+  l2_kb: 2048 # 2MB full-speed on-die L2 cache
+
+microarchitecture:
+  pipeline_depth: 12
+  uop_fusion: true # Micro-op fusion (combines load+ALU or store address+store data)
+  dedicated_stack_manager: true # Hardware stack pointer tracking (zero-latency PUSH/POP/CALL/RET adjustments)
+  advanced_branch_prediction: true # Indirect branch predictor + loop detector
+

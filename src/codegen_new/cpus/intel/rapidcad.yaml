@@ -1,0 +1,21 @@
+# rapidcad.yaml - Intel RapidCAD Engineering Coprocessor (486DX in 386 Socket)
+
+model:
+  cpu_id: CPU_RAPIDCAD
+  name: "Intel RapidCAD"
+  vendor: "Intel"
+  release_year: 1992
+  family: 4 # 486 core packaged in 132-pin 386 socket
+  package: [PGA_132]
+  frequency_range_mhz: [25, 33]
+  bus_width_bits: 32
+
+isa_level: CPU_486
+features:
+  - CPU_FEATURE_FPU # Integrated on-die 487 math coprocessor
+
+timing_profile: "timings/486.yaml"
+
+cache:
+  l1_unified_kb: 0 # Internal 486 8KB cache removed for compatibility with 386 boards
+

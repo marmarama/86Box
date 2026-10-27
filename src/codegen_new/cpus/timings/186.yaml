@@ -1,0 +1,58 @@
+# 186.yaml - Intel 80186 / 80188 Microarchitecture Timing Profile
+
+model:
+  cpu_level: CPU_186
+  name: "Intel 80186 / 80188"
+  pipeline_type: unpipelined_microcode
+  bus_width: 16 # 8 on 80188, 16 on 80186
+  prefetch_queue_bytes: 6
+
+# The 186 added parallel address calculation hardware (1-2 cycles vs 5-12 on 8086)
+effective_address_cycles:
+  parallel_hardware_calculated: 2
+
+timings:
+  # Arithmetic & Logic (Accelerated microcode)
+  alu_reg:          { cycles: 3 }
+  alu_rm:           { cycles: 7 }
+  alu_rmw:          { cycles: 11 }
+  alu_carry_reg:    { cycles: 3 }
+  alu_carry_rm:     { cycles: 7 }
+  alu_carry_rmw:    { cycles: 11 }
+
+  # Shifts & Rotates (Hardware shift acceleration)
+  shift_reg_1:      { cycles: 2 }
+  shift_reg_imm:    { cycles: 5 }
+  shift_reg_cl:     { base: 5, per_bit: 1 }
+  shift_mem_1:      { cycles: 7 }
+  shift_mem_imm:    { cycles: 9 }
+  shift_mem_cl:     { base: 9, per_bit: 1 }
+
+  # Multiplication and Division (Hardware acceleration)
+  mul_reg:          { min_cycles: 26, max_cycles: 37 }
+  div_reg:          { min_cycles: 29, max_cycles: 38 }
+
+  # Data Movement
+  mov_reg_reg:      { cycles: 2 }
+  mov_reg_mem:      { cycles: 4 }
+  mov_mem_reg:      { cycles: 4 }
+  xchg_reg_reg:     { cycles: 3 }
+  xchg_reg_mem:     { cycles: 10 }
+
+  # Control Flow & Branching
+  branch_cond:
+    taken: 13
+    not_taken: 4
+  branch_uncond_near: { cycles: 12 }
+  branch_far:         { cycles: 14 }
+  call_near:          { cycles: 14 }
+  ret_near:           { cycles: 12 }
+
+  # Stack & 186 Extensions
+  stack_push:       { reg: 3, mem: 5, imm: 3 }
+  stack_pop:        { reg: 5, mem: 5 }
+  pusha:            { cycles: 17 }
+  popa:             { cycles: 19 }
+  enter:            { level0: 11, levelN: 15 }
+  leave:            { cycles: 8 }
+

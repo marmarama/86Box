@@ -1,0 +1,238 @@
+# simd_sse.yaml - Streaming SIMD Extensions (SSE Single-Precision Float & Extensions)
+
+common_anchors:
+  availability: &sse_avail
+    min_cpu: CPU_PENTIUM3
+    feature: CPU_FEATURE_SSE
+    exceptions:
+      - cond: "(CR0 & (CR0_EM | CR0_TS)) != 0"
+        fault: NM_FAULT
+      - cond: "!(CR4 & CR4_OSFXSR)"
+        fault: UD_FAULT # OS must enable SSE support via CR4.OSFXSR
+
+families:
+  MOVAPS:
+    description: "Move Aligned Packed Single-Precision Floating-Point (128-bit)"
+    availability: *sse_avail
+    class: simd_mov
+    opcode_map:
+      "0x0F 0x28": { dst: Vps, src: Wps }
+      "0x0F 0x29": { dst: Wps, src: Vps }
+    semantics:
+      args: [dst, src]
+      body: |
+        # Memory access requires 16-byte alignment or #GP fault
+        if is_mem(src) && (src.address & 15) != 0:
+          raise GP_FAULT
+        if is_mem(dst) && (dst.address & 15) != 0:
+          raise GP_FAULT
+        writeback: dst = src
+        flags: none
+
+  MOVUPS:
+    description: "Move Unaligned Packed Single-Precision Floating-Point (128-bit)"
+    availability: *sse_avail
+    class: simd_mov
+    opcode_map:
+      "0x0F 0x10": { dst: Vps, src: Wps }
+      "0x0F 0x11": { dst: Wps, src: Vps }
+    semantics:
+      args: [dst, src]
+      body: |
+        writeback: dst = src
+        flags: none
+
+  ADDPS:
+    description: "Add Packed Single-Precision Floating-Point Values (4x f32)"
+    availability: *sse_avail
+    class: simd_alu
+    opcode_map:
+      "0x0F 0x58": { dst: Vps, src: Wps }
+    semantics:
+      args: [dst, src]
+      body: |
+        for i in range(4):
+          res.f32[i] = dst.f32[i] + src.f32[i]
+        writeback: dst = res
+        flags: none
+
+  SUBPS:
+    description: "Subtract Packed Single-Precision Floating-Point Values (4x f32)"
+    availability: *sse_avail
+    class: simd_alu
+    opcode_map:
+      "0x0F 0x5C": { dst: Vps, src: Wps }
+    semantics:
+      args: [dst, src]
+      body: |
+        for i in range(4):
+          res.f32[i] = dst.f32[i] - src.f32[i]
+        writeback: dst = res
+        flags: none
+
+  MULPS:
+    description: "Multiply Packed Single-Precision Floating-Point Values (4x f32)"
+    availability: *sse_avail
+    class: simd_mul
+    opcode_map:
+      "0x0F 0x59": { dst: Vps, src: Wps }
+    semantics:
+      args: [dst, src]
+      body: |
+        for i in range(4):
+          res.f32[i] = dst.f32[i] * src.f32[i]
+        writeback: dst = res
+        flags: none
+
+  DIVPS:
+    description: "Divide Packed Single-Precision Floating-Point Values (4x f32)"
+    availability: *sse_avail
+    class: simd_alu
+    opcode_map:
+      "0x0F 0x5E": { dst: Vps, src: Wps }
+    semantics:
+      args: [dst, src]
+      body: |
+        for i in range(4):
+          res.f32[i] = dst.f32[i] / src.f32[i]
+        writeback: dst = res
+        flags: none
+
+  SQRTPS:
+    description: "Square Root of Packed Single-Precision Floating-Point Values"
+    availability: *sse_avail
+    class: simd_alu
+    opcode_map:
+      "0x0F 0x51": { dst: Vps, src: Wps }
+    semantics:
+      args: [dst, src]
+      body: |
+        for i in range(4):
+          res.f32[i] = sqrt(src.f32[i])
+        writeback: dst = res
+        flags: none
+
+  MAXPS:
+    description: "Maximum of Packed Single-Precision Floating-Point Values"
+    availability: *sse_avail
+    class: simd_alu
+    opcode_map:
+      "0x0F 0x5F": { dst: Vps, src: Wps }
+    semantics:
+      args: [dst, src]
+      body: |
+        for i in range(4):
+          res.f32[i] = (dst.f32[i] > src.f32[i]) ? dst.f32[i] : src.f32[i]
+        writeback: dst = res
+        flags: none
+
+  MINPS:
+    description: "Minimum of Packed Single-Precision Floating-Point Values"
+    availability: *sse_avail
+    class: simd_alu
+    opcode_map:
+      "0x0F 0x5D": { dst: Vps, src: Wps }
+    semantics:
+      args: [dst, src]
+      body: |
+        for i in range(4):
+          res.f32[i] = (dst.f32[i] < src.f32[i]) ? dst.f32[i] : src.f32[i]
+        writeback: dst = res
+        flags: none
+
+  PREFETCH:
+    description: "Prefetch Data into Cache Hierarchy"
+    availability:
+      min_cpu: CPU_PENTIUM3
+      feature: CPU_FEATURE_SSE
+    class: alu_reg
+    opcode_map:
+      "0x0F 0x18 /0": { addr: M8, hint: NTA }
+      "0x0F 0x18 /1": { addr: M8, hint: T0 }
+      "0x0F 0x18 /2": { addr: M8, hint: T1 }
+      "0x0F 0x18 /3": { addr: M8, hint: T2 }
+    semantics:
+      args: [addr, hint]
+      body: |
+        cache_prefetch(addr, hint)
+        flags: none
+
+  SFENCE:
+    description: "Store Fence (Orders preceding store instructions)"
+    availability:
+      min_cpu: CPU_PENTIUM3
+      feature: CPU_FEATURE_SSE
+    class: sys_control
+    opcode_map:
+      "0x0F 0xAE /7": { none: 0 }
+    semantics:
+      args: []
+      body: |
+        memory_store_barrier()
+        flags: none
+
+  PMINUB:
+    description: "Minimum of Packed Unsigned Bytes"
+    availability:
+      min_cpu: CPU_PENTIUM3
+      feature: CPU_FEATURE_SSE
+    class: simd_alu
+    opcode_map:
+      "0x0F 0xDA": { dst: Pq, src: Qq }
+    semantics:
+      args: [dst, src]
+      body: |
+        for i in range(8):
+          res.u8[i] = (dst.u8[i] < src.u8[i]) ? dst.u8[i] : src.u8[i]
+        writeback: dst = res
+        flags: none
+
+  PMAXUB:
+    description: "Maximum of Packed Unsigned Bytes"
+    availability:
+      min_cpu: CPU_PENTIUM3
+      feature: CPU_FEATURE_SSE
+    class: simd_alu
+    opcode_map:
+      "0x0F 0xDE": { dst: Pq, src: Qq }
+    semantics:
+      args: [dst, src]
+      body: |
+        for i in range(8):
+          res.u8[i] = (dst.u8[i] > src.u8[i]) ? dst.u8[i] : src.u8[i]
+        writeback: dst = res
+        flags: none
+
+  PAVGB:
+    description: "Average of Packed Unsigned Bytes"
+    availability:
+      min_cpu: CPU_PENTIUM3
+      feature: CPU_FEATURE_SSE
+    class: simd_alu
+    opcode_map:
+      "0x0F 0xE0": { dst: Pq, src: Qq }
+    semantics:
+      args: [dst, src]
+      body: |
+        for i in range(8):
+          res.u8[i] = (dst.u8[i] + src.u8[i] + 1) >> 1
+        writeback: dst = res
+        flags: none
+
+  PMOVMSKB:
+    description: "Move Byte Mask (Most significant bit of each byte) to GPR"
+    availability:
+      min_cpu: CPU_PENTIUM3
+      feature: CPU_FEATURE_SSE
+    class: simd_alu
+    opcode_map:
+      "0x0F 0xD7": { dst: Gd, src: Pq }
+    semantics:
+      args: [dst, src]
+      body: |
+        mask = 0
+        for i in range(8):
+          mask |= ((src.u8[i] >> 7) & 1) << i
+        writeback: dst = mask
+        flags: none
+

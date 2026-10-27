@@ -1,0 +1,45 @@
+# efficeon_tm8600.yaml - Transmeta Efficeon TM8600 (256-bit VLIW Engine)
+
+model:
+  cpu_id: CPU_TRANSMETA_EFFICEON
+  name: "Transmeta Efficeon TM8600"
+  vendor: "GenuineTMx86"
+  release_year: 2004
+  family: 15
+  model_id: 3
+  stepping: 3
+  package: [OBGA_783]
+  frequency_range_mhz: [1000, 1200]
+  power_tdp_watts: 7.0
+
+cpuid:
+  signature: 0x00000F33
+  brand_string: "Transmeta Efficeon(tm) Processor TM8600"
+  features_edx: 0x008A393F # FPU, DE, TSC, MSR, CX8, CMOV, MMX, FXSR, SSE, SSE2
+  transmeta_features_eax: 0x00000004 # CMS version 3.0
+
+isa_level: CPU_PENTIUM_4
+features:
+  - CPU_FEATURE_FPU
+  - CPU_FEATURE_TSC
+  - CPU_FEATURE_MSR
+  - CPU_FEATURE_CX8
+  - CPU_FEATURE_CMOV
+  - CPU_FEATURE_MMX
+  - CPU_FEATURE_FXSAVE
+  - CPU_FEATURE_SSE
+  - CPU_FEATURE_SSE2
+
+timing_profile: "timings/p6.yaml" # JIT translated to 256-bit VLIW molecules (8 32-bit atoms/cycle)
+
+cache:
+  l1_instruction_kb: 128
+  l1_data_kb: 64
+  l2_kb: 1024 # 1MB L2 cache on-die
+
+code_morphing_software:
+  cms_version: "3.0.0"
+  cms_reserved_memory_mb: 64
+  vliw_bundle_bits: 256
+  atoms_per_molecule: 8
+

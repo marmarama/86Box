@@ -1,0 +1,33 @@
+# vortex86dx.yaml - DM&P Vortex86DX (Embedded System-on-Chip)
+
+model:
+  cpu_id: CPU_DMP_VORTEX86DX
+  name: "DM&P Vortex86DX"
+  vendor: "Vortex86 SoC"
+  release_year: 2007
+  family: 5
+  model_id: 2
+  package: [BGA_581]
+  frequency_range_mhz: [600, 1000]
+
+cpuid:
+  signature: 0x00000521
+  brand_string: "Vortex86DX"
+  features_edx: 0x008081BF # FPU, TSC, MSR, CX8, CMOV, MMX
+
+isa_level: CPU_PENTIUM
+features:
+  - CPU_FEATURE_FPU
+  - CPU_FEATURE_TSC
+  - CPU_FEATURE_MSR
+  - CPU_FEATURE_CX8
+  - CPU_FEATURE_CMOV
+  - CPU_FEATURE_MMX
+
+timing_profile: "timings/486.yaml" # Low-latency 486/586 pipeline
+
+cache:
+  l1_instruction_kb: 16
+  l1_data_kb: 16
+  l2_kb: 256
+

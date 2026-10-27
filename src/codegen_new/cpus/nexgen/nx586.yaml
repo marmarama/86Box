@@ -1,0 +1,28 @@
+# nx586.yaml - NexGen Nx586 (First x86-to-RISC86 Architecture)
+
+model:
+  cpu_id: CPU_NEXGEN_NX586
+  name: "NexGen Nx586"
+  vendor: "NexGenDriven"
+  release_year: 1994
+  family: 5
+  model_id: 0
+  package: [PGA_463] # Proprietary NexBus socket
+  frequency_range_mhz: [70, 111] # P75, P80, P90, P100, P120
+
+cpuid:
+  signature: 0x00000500 # Supported on late steppings
+  brand_string: "NexGenDriven"
+
+isa_level: CPU_PENTIUM
+features: []
+# Note: Original Nx586 had NO on-die FPU! Required separate Nx587 coprocessor.
+# Nx586PF integrated the FPU on the package.
+
+timing_profile: "timings/k6.yaml" # NexGen RISC86 microarchitecture directly evolved into AMD K6
+
+cache:
+  l1_instruction_kb: 16
+  l1_data_kb: 16
+  l2_controller_on_chip: true
+

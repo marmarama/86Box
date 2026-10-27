@@ -1,0 +1,28 @@
+# 5x86.yaml - Cyrix 5x86 (M1sc)
+
+model:
+  cpu_id: CPU_Cx5x86
+  name: "Cyrix 5x86 (M1sc)"
+  vendor: "CyrixInstead"
+  release_year: 1995
+  family: 4 # 6x86 core fitted to Socket 3
+  model_id: 9
+  package: [PGA_168, SOCKET_3]
+  frequency_range_mhz: [100, 133]
+  bus_multiplier: 3 # or 4 (133 MHz)
+
+cpuid:
+  signature: 0x00000490
+  features_edx: 0x00000000 # Pre-CPUID or minimal CPUID without TSC
+
+isa_level: CPU_486
+features:
+  - CPU_FEATURE_FPU
+
+timing_profile: "timings/486.yaml" # 686-style branch prediction on 486 bus
+
+cache:
+  l1_unified_kb: 16
+  write_back: true
+  branch_target_buffer: true # 512-entry BTB!
+

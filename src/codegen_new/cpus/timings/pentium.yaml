@@ -1,0 +1,67 @@
+# pentium.yaml - Intel Pentium (P54C / P55C) Microarchitecture Timing Profile
+
+model:
+  cpu_level: CPU_PENTIUM
+  name: "Intel Pentium (P5 / P54C / P55C)"
+  pipeline_type: superscalar_dual_issue
+  pipes: [U, V]
+  agi_stall_penalty: 1
+
+prefixes:
+  decode_delay_cycles: 1
+  forces_u_pipe: true # Prefixed instructions cannot pair in V pipe (unless PMMX prefix cache hit)
+
+pairing_rules:
+  # Arithmetic & Logic
+  # ADD/SUB/CMP/AND/OR/XOR can issue in either U or V pipe
+  alu_reg:          { pair: PAIR_UV, cycles: 1 }
+  alu_rm:           { pair: PAIR_UV, cycles: 2, agi_check: true }
+  alu_rmw:          { pair: PAIR_U,  cycles: 3, agi_check: true } # RMW cannot pair in V pipe
+
+  # ADC/SBB read the Carry Flag, which forces U-pipe execution to avoid flag hazard
+  alu_carry_reg:    { pair: PAIR_U,  cycles: 1 }
+  alu_carry_rm:     { pair: PAIR_U,  cycles: 2, agi_check: true }
+  alu_carry_rmw:    { pair: PAIR_U,  cycles: 3, agi_check: true }
+
+  # Shifts & Rotates (only 1 barrel shifter on Pentium, located in U pipe)
+  shift_reg_1:      { pair: PAIR_U,  cycles: 1 }
+  shift_reg_imm:    { pair: PAIR_U,  cycles: 1 }
+  shift_reg_cl:     { pair: PAIR_NP, cycles: 4 } # Shift by CL is not pairable
+  shift_mem_1:      { pair: PAIR_U,  cycles: 3, agi_check: true }
+  shift_mem_imm:    { pair: PAIR_U,  cycles: 3, agi_check: true }
+  shift_mem_cl:     { pair: PAIR_NP, cycles: 4, agi_check: true }
+  double_shift:     { pair: PAIR_NP, cycles: 4 }
+
+  # Multiplication and Division (monopolizes pipeline)
+  mul_reg:          { pair: PAIR_NP, min_cycles: 10, max_cycles: 11 }
+  div_reg:          { pair: PAIR_NP, min_cycles: 39, max_cycles: 46 }
+
+  # Data Movement
+  mov_reg_reg:      { pair: PAIR_UV, cycles: 1 }
+  mov_reg_mem:      { pair: PAIR_UV, cycles: 1, agi_check: true }
+  mov_mem_reg:      { pair: PAIR_UV, cycles: 1, agi_check: true }
+  mov_extend:       { pair: PAIR_NP, cycles: 3, agi_check: true } # MOVZX/MOVSX not pairable on P5
+  xchg_reg_reg:     { pair: PAIR_NP, cycles: 3 }
+  xchg_reg_mem:     { pair: PAIR_NP, cycles: 5, agi_check: true } # Implicit locked bus cycle
+
+  # Control Flow & Branch Target Buffer (BTB)
+  branch_cond:
+    pair: PAIR_V    # Conditional branch can pair as the second instruction in V pipe
+    taken_btb_hit: 1
+    not_taken: 1
+    mispredict_penalty: 3
+  branch_uncond_near: { pair: PAIR_V,  cycles: 1 }
+  branch_far:         { pair: PAIR_NP, cycles: 18 }
+  call_near:          { pair: PAIR_V,  cycles: 2 }
+  ret_near:           { pair: PAIR_NP, cycles: 2 }
+
+  # Stack
+  stack_push:       { pair: PAIR_UV, cycles: 1 }
+  stack_pop:        { pair: PAIR_UV, cycles: 1 }
+
+  # SIMD (MMX - Pentium MMX / P55C)
+  simd_alu:         { pair: PAIR_UV, cycles: 1 }
+  simd_shift:       { pair: PAIR_U,  cycles: 1 } # Single MMX shifter in U pipe
+  simd_mul:         { pair: PAIR_U,  latency: 3, throughput: 1 } # Pipelined multiplier
+  simd_mov:         { pair: PAIR_UV, cycles: 1, agi_check: true }
+

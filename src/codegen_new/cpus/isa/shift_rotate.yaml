@@ -1,0 +1,225 @@
+# shift_rotate.yaml - Bit Shift and Rotate Families
+
+families:
+  SHL_SAL:
+    description: "Shift Logical / Arithmetic Left"
+    availability:
+      min_cpu: CPU_8086 # 0xD0..0xD3 on 8086; 0xC0..0xC1 (imm count) requires CPU_186
+    class: shift
+    opcode_map:
+      "0xD0 /4": { dst: Eb, cnt: 1 }
+      "0xD1 /4": { dst: Ev, cnt: 1 }
+      "0xD2 /4": { dst: Eb, cnt: CL }
+      "0xD3 /4": { dst: Ev, cnt: CL }
+      "0xC0 /4": { dst: Eb, cnt: Ib, min_cpu: CPU_186 }
+      "0xC1 /4": { dst: Ev, cnt: Ib, min_cpu: CPU_186 }
+    semantics:
+      args: [dst, cnt]
+      body: |
+        effective_cnt = cnt & 0x1F
+        if effective_cnt > 0:
+          res = dst << effective_cnt
+          flags: { tag: FLAGS_SHL, op1: dst, op2: effective_cnt, res: res }
+          writeback: dst = res
+        else:
+          flags: preserve_all
+
+  SHR:
+    description: "Shift Logical Right"
+    availability:
+      min_cpu: CPU_8086 # 0xD0..0xD3 on 8086; 0xC0..0xC1 (imm count) requires CPU_186
+    class: shift
+    opcode_map:
+      "0xD0 /5": { dst: Eb, cnt: 1 }
+      "0xD1 /5": { dst: Ev, cnt: 1 }
+      "0xD2 /5": { dst: Eb, cnt: CL }
+      "0xD3 /5": { dst: Ev, cnt: CL }
+      "0xC0 /5": { dst: Eb, cnt: Ib, min_cpu: CPU_186 }
+      "0xC1 /5": { dst: Ev, cnt: Ib, min_cpu: CPU_186 }
+    semantics:
+      args: [dst, cnt]
+      body: |
+        effective_cnt = cnt & 0x1F
+        if effective_cnt > 0:
+          res = dst >> effective_cnt
+          flags: { tag: FLAGS_SHR, op1: dst, op2: effective_cnt, res: res }
+          writeback: dst = res
+        else:
+          flags: preserve_all
+
+  SAR:
+    description: "Shift Arithmetic Right (Signed)"
+    availability:
+      min_cpu: CPU_8086 # 0xD0..0xD3 on 8086; 0xC0..0xC1 (imm count) requires CPU_186
+    class: shift
+    opcode_map:
+      "0xD0 /7": { dst: Eb, cnt: 1 }
+      "0xD1 /7": { dst: Ev, cnt: 1 }
+      "0xD2 /7": { dst: Eb, cnt: CL }
+      "0xD3 /7": { dst: Ev, cnt: CL }
+      "0xC0 /7": { dst: Eb, cnt: Ib, min_cpu: CPU_186 }
+      "0xC1 /7": { dst: Ev, cnt: Ib, min_cpu: CPU_186 }
+    semantics:
+      args: [dst, cnt]
+      body: |
+        effective_cnt = cnt & 0x1F
+        if effective_cnt > 0:
+          s_dst = as_signed(dst)
+          res = as_unsigned(s_dst >> effective_cnt)
+          flags: { tag: FLAGS_SAR, op1: dst, op2: effective_cnt, res: res }
+          writeback: dst = res
+        else:
+          flags: preserve_all
+
+  ROL:
+    description: "Rotate Left"
+    availability:
+      min_cpu: CPU_8086 # 0xD0..0xD3 on 8086; 0xC0..0xC1 (imm count) requires CPU_186
+    class: shift
+    opcode_map:
+      "0xD0 /0": { dst: Eb, cnt: 1 }
+      "0xD1 /0": { dst: Ev, cnt: 1 }
+      "0xD2 /0": { dst: Eb, cnt: CL }
+      "0xD3 /0": { dst: Ev, cnt: CL }
+      "0xC0 /0": { dst: Eb, cnt: Ib, min_cpu: CPU_186 }
+      "0xC1 /0": { dst: Ev, cnt: Ib, min_cpu: CPU_186 }
+    semantics:
+      args: [dst, cnt]
+      body: |
+        width = sizeof_bits(dst)
+        effective_cnt = cnt & 0x1F
+        masked_cnt = effective_cnt % width
+        if effective_cnt > 0:
+          res = (dst << masked_cnt) | (dst >> (width - masked_cnt))
+          cf = res & 1
+          of = (cnt == 1) ? ((res >> (width - 1)) ^ cf) : undefined
+          flags: { write: [CF: cf, OF: of], preserve: [PF, AF, ZF, SF] }
+          writeback: dst = res
+        else:
+          flags: preserve_all
+
+  ROR:
+    description: "Rotate Right"
+    availability:
+      min_cpu: CPU_8086 # 0xD0..0xD3 on 8086; 0xC0..0xC1 (imm count) requires CPU_186
+    class: shift
+    opcode_map:
+      "0xD0 /1": { dst: Eb, cnt: 1 }
+      "0xD1 /1": { dst: Ev, cnt: 1 }
+      "0xD2 /1": { dst: Eb, cnt: CL }
+      "0xD3 /1": { dst: Ev, cnt: CL }
+      "0xC0 /1": { dst: Eb, cnt: Ib, min_cpu: CPU_186 }
+      "0xC1 /1": { dst: Ev, cnt: Ib, min_cpu: CPU_186 }
+    semantics:
+      args: [dst, cnt]
+      body: |
+        width = sizeof_bits(dst)
+        effective_cnt = cnt & 0x1F
+        masked_cnt = effective_cnt % width
+        if effective_cnt > 0:
+          res = (dst >> masked_cnt) | (dst << (width - masked_cnt))
+          cf = (res >> (width - 1)) & 1
+          of = (cnt == 1) ? (((res >> (width - 1)) ^ (res >> (width - 2))) & 1) : undefined
+          flags: { write: [CF: cf, OF: of], preserve: [PF, AF, ZF, SF] }
+          writeback: dst = res
+        else:
+          flags: preserve_all
+
+  RCL:
+    description: "Rotate Left through Carry"
+    availability:
+      min_cpu: CPU_8086 # 0xD0..0xD3 on 8086; 0xC0..0xC1 (imm count) requires CPU_186
+    class: shift
+    opcode_map:
+      "0xD0 /2": { dst: Eb, cnt: 1 }
+      "0xD1 /2": { dst: Ev, cnt: 1 }
+      "0xD2 /2": { dst: Eb, cnt: CL }
+      "0xD3 /2": { dst: Ev, cnt: CL }
+      "0xC0 /2": { dst: Eb, cnt: Ib, min_cpu: CPU_186 }
+      "0xC1 /2": { dst: Ev, cnt: Ib, min_cpu: CPU_186 }
+    semantics:
+      args: [dst, cnt]
+      body: |
+        width = sizeof_bits(dst)
+        effective_cnt = (cnt & 0x1F) % (width + 1)
+        if effective_cnt > 0:
+          old_cf = read_flag(CF)
+          val = dst | (old_cf << width)
+          rot = (val << effective_cnt) | (val >> (width + 1 - effective_cnt))
+          res = rot & ((1 << width) - 1)
+          cf = (rot >> width) & 1
+          of = (cnt == 1) ? ((res >> (width - 1)) ^ cf) : undefined
+          flags: { write: [CF: cf, OF: of], preserve: [PF, AF, ZF, SF] }
+          writeback: dst = res
+        else:
+          flags: preserve_all
+
+  RCR:
+    description: "Rotate Right through Carry"
+    availability:
+      min_cpu: CPU_8086 # 0xD0..0xD3 on 8086; 0xC0..0xC1 (imm count) requires CPU_186
+    class: shift
+    opcode_map:
+      "0xD0 /3": { dst: Eb, cnt: 1 }
+      "0xD1 /3": { dst: Ev, cnt: 1 }
+      "0xD2 /3": { dst: Eb, cnt: CL }
+      "0xD3 /3": { dst: Ev, cnt: CL }
+      "0xC0 /3": { dst: Eb, cnt: Ib, min_cpu: CPU_186 }
+      "0xC1 /3": { dst: Ev, cnt: Ib, min_cpu: CPU_186 }
+    semantics:
+      args: [dst, cnt]
+      body: |
+        width = sizeof_bits(dst)
+        effective_cnt = (cnt & 0x1F) % (width + 1)
+        if effective_cnt > 0:
+          old_cf = read_flag(CF)
+          val = (dst << 1) | old_cf
+          rot = (val >> effective_cnt) | (val << (width + 1 - effective_cnt))
+          res = (rot >> 1) & ((1 << width) - 1)
+          cf = rot & 1
+          of = (cnt == 1) ? (((res >> (width - 1)) ^ (res >> (width - 2))) & 1) : undefined
+          flags: { write: [CF: cf, OF: of], preserve: [PF, AF, ZF, SF] }
+          writeback: dst = res
+        else:
+          flags: preserve_all
+
+  SHLD:
+    description: "Double Precision Shift Left"
+    availability: { min_cpu: CPU_386 }
+    class: double_shift
+    opcode_map:
+      "0x0F 0xA4": { dst: Ev, src: Gv, cnt: Ib }
+      "0x0F 0xA5": { dst: Ev, src: Gv, cnt: CL }
+    semantics:
+      args: [dst, src, cnt]
+      body: |
+        width = sizeof_bits(dst)
+        effective_cnt = cnt & 0x1F
+        if effective_cnt > 0:
+          res = (dst << effective_cnt) | (src >> (width - effective_cnt))
+          cf = (dst >> (width - effective_cnt)) & 1
+          flags: { write: [CF: cf], lazy: [PF, ZF, SF from res], undefined: [AF, OF] }
+          writeback: dst = res
+        else:
+          flags: preserve_all
+
+  SHRD:
+    description: "Double Precision Shift Right"
+    availability: { min_cpu: CPU_386 }
+    class: double_shift
+    opcode_map:
+      "0x0F 0xAC": { dst: Ev, src: Gv, cnt: Ib }
+      "0x0F 0xAD": { dst: Ev, src: Gv, cnt: CL }
+    semantics:
+      args: [dst, src, cnt]
+      body: |
+        width = sizeof_bits(dst)
+        effective_cnt = cnt & 0x1F
+        if effective_cnt > 0:
+          res = (dst >> effective_cnt) | (src << (width - effective_cnt))
+          cf = (dst >> (effective_cnt - 1)) & 1
+          flags: { write: [CF: cf], lazy: [PF, ZF, SF from res], undefined: [AF, OF] }
+          writeback: dst = res
+        else:
+          flags: preserve_all
+

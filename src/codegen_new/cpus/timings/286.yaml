@@ -1,0 +1,59 @@
+# 286.yaml - Intel 80286 Microarchitecture Timing Profile
+
+model:
+  cpu_level: CPU_286
+  name: "Intel 80286"
+  pipeline_type: pipelined_bus_microcode
+  bus_width: 16
+  address_bus_bits: 24
+  prefetch_queue_bytes: 6
+
+# The 286 introduced dedicated hardware address calculation (Zero EA penalty cycles!)
+effective_address_cycles:
+  parallel_hardware_calculated: 0
+
+timings:
+  # Arithmetic & Logic
+  alu_reg:          { cycles: 2 }
+  alu_rm:           { cycles: 7 }
+  alu_rmw:          { cycles: 7 }
+  alu_carry_reg:    { cycles: 2 }
+  alu_carry_rm:     { cycles: 7 }
+  alu_carry_rmw:    { cycles: 7 }
+
+  # Shifts & Rotates (Hardwired barrel shifter additions)
+  shift_reg_1:      { cycles: 2 }
+  shift_reg_imm:    { cycles: 5 }
+  shift_reg_cl:     { cycles: 5, per_bit: 1 }
+  shift_mem_1:      { cycles: 7 }
+  shift_mem_imm:    { cycles: 8 }
+  shift_mem_cl:     { cycles: 8, per_bit: 1 }
+
+  # Multiplication and Division (Dedicated hardware multiplier)
+  mul_reg:          { cycles: 21 }
+  div_reg:          { cycles: 22 }
+
+  # Data Movement
+  mov_reg_reg:      { cycles: 2 }
+  mov_reg_mem:      { cycles: 5 }
+  mov_mem_reg:      { cycles: 3 }
+  xchg_reg_reg:     { cycles: 3 }
+  xchg_reg_mem:     { cycles: 5 }
+
+  # Control Flow & Branching
+  branch_cond:
+    taken: 7
+    not_taken: 3
+  branch_uncond_near: { cycles: 7 }
+  branch_far:         { real_mode: 11, protected_mode: 26 }
+  call_near:          { cycles: 7 }
+  ret_near:           { cycles: 11 }
+
+  # Stack
+  stack_push:       { reg: 3, mem: 5, imm: 3 }
+  stack_pop:        { reg: 5, mem: 5 }
+  pusha:            { cycles: 17 }
+  popa:             { cycles: 19 }
+  enter:            { level0: 11, levelN: 15 }
+  leave:            { cycles: 5 }
+

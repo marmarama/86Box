@@ -1,0 +1,18 @@
+# 386dx.yaml - Intel 80386DX
+
+model:
+  cpu_id: CPU_386DX
+  name: "Intel 80386DX"
+  vendor: "Intel"
+  release_year: 1985
+  family: 3
+  package: [PGA_132]
+  frequency_range_mhz: [16, 33]
+  bus_width_bits: 32
+  address_bits: 32
+
+isa_level: CPU_386
+features: []
+
+timing_profile: "timings/386.yaml"
+

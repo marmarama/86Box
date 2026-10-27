@@ -1,0 +1,17 @@
+# 80188.yaml - Intel 80188
+
+model:
+  cpu_id: CPU_188
+  name: "Intel 80188"
+  vendor: "Intel"
+  release_year: 1982
+  family: 1
+  package: [PLCC_68, PGA_68]
+  frequency_range_mhz: [8, 16]
+  bus_width_bits: 8 # 8-bit external bus
+
+isa_level: CPU_186
+features: []
+
+timing_profile: "timings/186.yaml"
+

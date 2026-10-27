@@ -1,0 +1,35 @@
+# mp6.yaml - Rise Technology mP6
+
+model:
+  cpu_id: CPU_RISE_MP6
+  name: "Rise mP6"
+  vendor: "RiseRiseRise"
+  release_year: 1998
+  family: 5
+  model_id: 0
+  package: [BGA_387, SOCKET_7]
+  frequency_range_mhz: [166, 266] # PR266, PR333, PR366
+
+cpuid:
+  signature: 0x00000500
+  brand_string: "Rise mP6"
+  features_edx: 0x008001BF # FPU, TSC, MSR, CX8, MMX
+
+isa_level: CPU_PENTIUM
+features:
+  - CPU_FEATURE_FPU
+  - CPU_FEATURE_TSC
+  - CPU_FEATURE_MSR
+  - CPU_FEATURE_CX8
+  - CPU_FEATURE_MMX
+
+timing_profile: "timings/pentium.yaml"
+
+pipeline:
+  superpipelined: true
+  issue_width: 3 # Can issue up to 3 instructions per clock!
+
+cache:
+  l1_instruction_kb: 8
+  l1_data_kb: 8
+

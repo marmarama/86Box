@@ -1,0 +1,18 @@
+# 386sx.yaml - Intel 80386SX
+
+model:
+  cpu_id: CPU_386SX
+  name: "Intel 80386SX"
+  vendor: "Intel"
+  release_year: 1988
+  family: 3
+  package: [QFP_100]
+  frequency_range_mhz: [16, 25]
+  bus_width_bits: 16
+  address_bits: 24
+
+isa_level: CPU_386
+features: []
+
+timing_profile: "timings/386.yaml"
+

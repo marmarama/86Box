@@ -1,0 +1,52 @@
+# k7_thunderbird.yaml - AMD Athlon (Thunderbird)
+
+model:
+  cpu_id: CPU_ATHLON_THUNDERBIRD
+  name: "AMD Athlon (Thunderbird)"
+  vendor: "AuthenticAMD"
+  release_year: 2000
+  family: 6
+  model_id: 4
+  stepping: 2
+  package: [SOCKET_A, SLOT_A]
+  frequency_range_mhz: [650, 1400]
+
+cpuid:
+  signature: 0x00000642
+  brand_string: "AMD Athlon(tm) Processor"
+  features_edx: 0x0183F9FF
+  extended_features_edx: 0xC0400000 # 3DNow!, Enhanced 3DNow!
+
+isa_level: CPU_K7
+features:
+  - CPU_FEATURE_FPU
+  - CPU_FEATURE_VME
+  - CPU_FEATURE_DE
+  - CPU_FEATURE_PSE
+  - CPU_FEATURE_TSC
+  - CPU_FEATURE_MSR
+  - CPU_FEATURE_PAE
+  - CPU_FEATURE_MCE
+  - CPU_FEATURE_CX8
+  - CPU_FEATURE_APIC
+  - CPU_FEATURE_SEP
+  - CPU_FEATURE_MTRR
+  - CPU_FEATURE_PGE
+  - CPU_FEATURE_CMOV
+  - CPU_FEATURE_PAT
+  - CPU_FEATURE_PSE36
+  - CPU_FEATURE_MMX
+  - CPU_FEATURE_FXSR
+  - CPU_FEATURE_3DNOW
+  - CPU_FEATURE_3DNOWE
+  - CPU_FEATURE_SYSCALL
+
+timing_profile: "timings/k6.yaml" # Or k7.yaml
+
+cache:
+  l1_instruction_kb: 64
+  l1_data_kb: 64
+  l2_kb: 256
+  l2_speed: full_speed
+  l2_exclusive: true # Exclusive cache architecture
+

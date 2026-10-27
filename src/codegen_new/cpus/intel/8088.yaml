@@ -1,0 +1,17 @@
+# 8088.yaml - Intel 8088 (Original IBM PC / PC-XT)
+
+model:
+  cpu_id: CPU_8088
+  name: "Intel 8088"
+  vendor: "Intel"
+  release_year: 1979
+  family: 0 # Pre-CPUID
+  package: [DIP_40]
+  frequency_range_mhz: [4.77, 10]
+  bus_width_bits: 8
+
+isa_level: CPU_8086
+features: []
+
+timing_profile: "timings/8086.yaml"
+

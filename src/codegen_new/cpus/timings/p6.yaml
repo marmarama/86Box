@@ -1,0 +1,75 @@
+# p6.yaml - Intel P6 (Pentium Pro / Pentium II / Pentium III) Microarchitecture Profile
+
+model:
+  cpu_level: CPU_PENTIUMPRO
+  name: "Intel P6 (Pentium Pro / PII / PIII / Celeron)"
+  pipeline_type: out_of_order
+  rob_entries: 40       # Reorder Buffer size
+  rs_entries: 20        # Reservation Station size
+  branch_mispredict_penalty: 11 # Pipeline flush penalty
+
+decoders:
+  template: "4-1-1"     # Dec0 can decode up to 4 uOps, Dec1/Dec2 decode 1 uOp each
+  dec0: "complex_or_macro"
+  dec1: "simple_single_uop"
+  dec2: "simple_single_uop"
+
+execution_ports:
+  port0: [UOP_ALU, UOP_ALUP0, UOP_FLOAT, UOP_MMX, UOP_MMX_MUL]
+  port1: [UOP_ALU, UOP_MMX, UOP_MMX_SHIFT, UOP_BRANCH]
+  port2: [UOP_LOAD, UOP_FLOAD, UOP_MLOAD]
+  port3: [UOP_STOREA, UOP_FSTOREA, UOP_MSTOREA]
+  port4: [UOP_STORED, UOP_FSTORED, UOP_MSTORED]
+
+dispatch:
+  # Arithmetic & Logic
+  alu_reg:          { uops: 1, ports: [port0, port1], latency: 1, throughput: 0.5 }
+  alu_rm:           { uops: 2, ports: [port2, port0], latency: 2, throughput: 1.0 }
+  alu_rmw:          { uops: 4, ports: [port2, port0, port3, port4], latency: 3, throughput: 2.0 }
+  alu_carry_reg:    { uops: 1, ports: [port0, port1], latency: 1, throughput: 0.5 }
+  alu_carry_rm:     { uops: 2, ports: [port2, port0], latency: 2, throughput: 1.0 }
+  alu_carry_rmw:    { uops: 4, ports: [port2, port0, port3, port4], latency: 3, throughput: 2.0 }
+
+  # Shifts & Rotates
+  shift_reg_1:      { uops: 1, ports: [port0], latency: 1, throughput: 1.0 }
+  shift_reg_imm:    { uops: 1, ports: [port0], latency: 1, throughput: 1.0 }
+  shift_reg_cl:     { uops: 3, ports: [port0], latency: 3, throughput: 2.0 }
+  shift_mem_1:      { uops: 4, ports: [port2, port0, port3, port4], latency: 4, throughput: 2.0 }
+  shift_mem_imm:    { uops: 4, ports: [port2, port0, port3, port4], latency: 4, throughput: 2.0 }
+  shift_mem_cl:     { uops: 6, ports: [port2, port0, port3, port4], latency: 5, throughput: 3.0 }
+  double_shift:     { uops: 3, ports: [port0], latency: 3, throughput: 2.0 }
+
+  # Multiplication and Division
+  mul_reg:          { uops: 4, ports: [port0], latency: 4, throughput: 1.0 }
+  div_reg:          { uops: 17, ports: [port0], latency: 39, throughput: 39.0 }
+
+  # Data Movement
+  mov_reg_reg:      { uops: 1, ports: [port0, port1], latency: 1, throughput: 0.5 }
+  mov_reg_mem:      { uops: 1, ports: [port2], latency: 1, throughput: 1.0 }
+  mov_mem_reg:      { uops: 2, ports: [port3, port4], latency: 1, throughput: 1.0 }
+  mov_extend:       { uops: 1, ports: [port0, port1], latency: 1, throughput: 0.5 }
+  xchg_reg_reg:     { uops: 3, ports: [port0, port1], latency: 2, throughput: 1.5 }
+  xchg_reg_mem:     { uops: 5, ports: [port2, port0, port3, port4], latency: 9, throughput: 8.0 }
+
+  # Control Flow & Branching
+  branch_cond:
+    uops: 1
+    ports: [port1]
+    latency: 1
+    predicted_cycles: 0 # Out-of-order execution absorbs predicted branches
+    mispredict_penalty: 11
+  branch_uncond_near: { uops: 1, ports: [port1], latency: 1 }
+  branch_far:         { uops: 7, latency: 15 }
+  call_near:          { uops: 1, ports: [port1], latency: 1 }
+  ret_near:           { uops: 2, ports: [port1, port2], latency: 2 }
+
+  # Stack
+  stack_push:       { uops: 2, ports: [port3, port4], latency: 1, throughput: 1.0 }
+  stack_pop:        { uops: 2, ports: [port2, port0], latency: 1, throughput: 1.0 }
+
+  # SIMD (MMX)
+  simd_alu:         { uops: 1, ports: [port0, port1], latency: 1, throughput: 0.5 }
+  simd_shift:       { uops: 1, ports: [port1], latency: 1, throughput: 1.0 }
+  simd_mul:         { uops: 1, ports: [port0], latency: 3, throughput: 1.0 }
+  simd_mov:         { uops: 1, ports: [port2], latency: 1, throughput: 1.0 }
+

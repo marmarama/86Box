@@ -1,0 +1,249 @@
+# system_and_misc.yaml - System, Processor Control, and Miscellaneous Families
+
+families:
+  NOP:
+    description: "No Operation"
+    availability: { min_cpu: CPU_8086 }
+    class: alu_reg
+    opcode_map:
+      "0x90": { none: 0 }
+    semantics:
+      args: []
+      body: |
+        flags: none
+
+  HLT:
+    description: "Halt Processor until Interrupt"
+    availability:
+      min_cpu: CPU_8086
+      exceptions:
+        - cond: "CPL > 0"
+          fault: GP_FAULT
+    class: sys_control
+    opcode_map:
+      "0xF4": { none: 0 }
+    semantics:
+      args: []
+      body: |
+        cpu_halted = true
+        # Yield / sleep optimization hook:
+        host_yield_or_sleep_until_next_event()
+        flags: none
+
+  CLI:
+    description: "Clear Interrupt Flag"
+    availability:
+      min_cpu: CPU_8086
+      exceptions:
+        - cond: "CPL > IOPL"
+          fault: GP_FAULT
+    class: sys_control
+    opcode_map:
+      "0xFA": { none: 0 }
+    semantics:
+      args: []
+      body: |
+        write_flag(IF, 0)
+
+  STI:
+    description: "Set Interrupt Flag"
+    availability:
+      min_cpu: CPU_8086
+      exceptions:
+        - cond: "CPL > IOPL"
+          fault: GP_FAULT
+    class: sys_control
+    opcode_map:
+      "0xFB": { none: 0 }
+    semantics:
+      args: []
+      body: |
+        write_flag(IF, 1)
+
+  CLD:
+    description: "Clear Direction Flag"
+    availability: { min_cpu: CPU_8086 }
+    class: sys_control
+    opcode_map:
+      "0xFC": { none: 0 }
+    semantics:
+      args: []
+      body: |
+        write_flag(DF, 0)
+
+  STD:
+    description: "Set Direction Flag"
+    availability: { min_cpu: CPU_8086 }
+    class: sys_control
+    opcode_map:
+      "0xFD": { none: 0 }
+    semantics:
+      args: []
+      body: |
+        write_flag(DF, 1)
+
+  CLC:
+    description: "Clear Carry Flag"
+    availability: { min_cpu: CPU_8086 }
+    class: sys_control
+    opcode_map:
+      "0xF8": { none: 0 }
+    semantics:
+      args: []
+      body: |
+        write_flag(CF, 0)
+
+  STC:
+    description: "Set Carry Flag"
+    availability: { min_cpu: CPU_8086 }
+    class: sys_control
+    opcode_map:
+      "0xF9": { none: 0 }
+    semantics:
+      args: []
+      body: |
+        write_flag(CF, 1)
+
+  CMC:
+    description: "Complement Carry Flag"
+    availability: { min_cpu: CPU_8086 }
+    class: sys_control
+    opcode_map:
+      "0xF5": { none: 0 }
+    semantics:
+      args: []
+      body: |
+        cf = read_flag(CF)
+        write_flag(CF, cf ^ 1)
+
+  CPUID:
+    description: "CPU Identification"
+    availability:
+      min_cpu: CPU_486
+    class: sys_control
+    opcode_map:
+      "0x0F 0xA2": { leaf: EAX, sub_leaf: ECX }
+    semantics:
+      args: [leaf, sub_leaf]
+      body: |
+        query_cpuid(leaf, sub_leaf, out EAX, out EBX, out ECX, out EDX)
+        flags: none
+
+  RDTSC:
+    description: "Read Time-Stamp Counter"
+    availability:
+      min_cpu: CPU_PENTIUM
+      feature: CPU_FEATURE_RDTSC
+      exceptions:
+        - cond: "(CR4 & CR4_TSD) && (CPL != 0)"
+          fault: GP_FAULT
+    class: sys_control
+    opcode_map:
+      "0x0F 0x31": { none: 0 }
+    semantics:
+      args: []
+      body: |
+        tsc = read_tsc_cycles()
+        EDX = (tsc >> 32) & 0xFFFFFFFF
+        EAX = tsc & 0xFFFFFFFF
+        flags: none
+
+  INT:
+    description: "Software Interrupt / Call to Interrupt Handler"
+    availability: { min_cpu: CPU_8086 }
+    class: sys_interrupt
+    opcode_map:
+      "0xCD": { vector: Ib }
+      "0xCC": { vector: 3 } # INT 3 (Breakpoint)
+    semantics:
+      args: [vector]
+      body: |
+        trigger_software_interrupt(vector)
+        flags: none
+
+  INTO:
+    description: "Interrupt on Overflow (INT 4 if OF == 1)"
+    availability: { min_cpu: CPU_8086 }
+    class: sys_interrupt
+    opcode_map:
+      "0xCE": { none: 0 }
+    semantics:
+      args: []
+      body: |
+        if read_flag(OF) == 1:
+          trigger_software_interrupt(4)
+        flags: none
+
+  IRET_IRETD:
+    description: "Interrupt Return"
+    availability: { min_cpu: CPU_8086 }
+    class: sys_interrupt
+    opcode_map:
+      "0xCF": { operand_size_16: { is_32: false }, operand_size_32: { is_32: true } }
+    semantics:
+      args: [is_32]
+      body: |
+        new_ip = pop()
+        new_cs = pop()
+        new_flags = pop()
+        load_cs(new_cs)
+        eIP = new_ip
+        write_all_flags(new_flags)
+        branch_target: eIP
+
+  BOUND:
+    description: "Check Array Index Against Bounds"
+    availability: { min_cpu: CPU_186 }
+    class: sys_control
+    opcode_map:
+      "0x62": { src: Gv, bounds: Ma }
+    semantics:
+      args: [src, bounds]
+      body: |
+        check_array_bounds(src, bounds)
+
+  ARPL:
+    description: "Adjust RPL Field of Segment Selector"
+    availability: { min_cpu: CPU_286 }
+    class: sys_control
+    opcode_map:
+      "0x63": { dst: Ew, src: Gw }
+    semantics:
+      args: [dst, src]
+      body: |
+        arpl_step(dst, src)
+
+  SAHF:
+    description: "Store AH into Flags (SF, ZF, AF, PF, CF)"
+    availability: { min_cpu: CPU_8086 }
+    class: sys_control
+    opcode_map:
+      "0x9E": { src: AH }
+    semantics:
+      args: [src]
+      body: |
+        flags_store_ah(AH)
+
+  LAHF:
+    description: "Load Status Flags into AH"
+    availability: { min_cpu: CPU_8086 }
+    class: sys_control
+    opcode_map:
+      "0x9F": { dst: AH }
+    semantics:
+      args: [dst]
+      body: |
+        AH = flags_load_ah()
+
+  WAIT:
+    description: "Wait / Check Pending Unmasked Coprocessor Floating-Point Exceptions"
+    availability: { min_cpu: CPU_8086 }
+    class: sys_control
+    opcode_map:
+      "0x9B": { none: 0 }
+    semantics:
+      args: []
+      body: |
+        fpu_check_pending_exceptions()
+
+

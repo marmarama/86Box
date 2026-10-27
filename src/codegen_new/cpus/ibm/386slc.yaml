@@ -1,0 +1,21 @@
+# 386slc.yaml - IBM 386SLC
+
+model:
+  cpu_id: CPU_IBM386SLC
+  name: "IBM 386SLC"
+  vendor: "IBM"
+  release_year: 1991
+  family: 3
+  package: [PLCC_100, QFP_100]
+  frequency_range_mhz: [16, 25]
+  bus_width_bits: 16
+  address_bits: 24
+
+isa_level: CPU_386
+features: []
+
+timing_profile: "timings/386.yaml"
+
+cache:
+  l1_unified_kb: 8 # Unusual for 386: 8KB internal L1 cache!
+

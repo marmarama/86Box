@@ -1,0 +1,29 @@
+# mediagx.yaml - Cyrix MediaGX
+
+model:
+  cpu_id: CPU_CxGX1
+  name: "Cyrix MediaGX"
+  vendor: "CyrixInstead"
+  release_year: 1997
+  family: 4 # 5x86 core with VSA
+  model_id: 4
+  package: [BGA_352]
+  frequency_range_mhz: [120, 200]
+
+cpuid:
+  signature: 0x00000440
+
+isa_level: CPU_486
+features:
+  - CPU_FEATURE_FPU
+
+timing_profile: "timings/486.yaml"
+
+virtual_system_architecture:
+  vsa_enabled: true
+  xpress_graphics: true
+  xpress_audio: true
+
+cache:
+  l1_unified_kb: 16
+

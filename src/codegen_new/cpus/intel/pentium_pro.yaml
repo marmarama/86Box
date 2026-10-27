@@ -1,0 +1,42 @@
+# pentium_pro.yaml - Intel Pentium Pro (P6)
+
+model:
+  cpu_id: CPU_PENTIUMPRO
+  name: "Intel Pentium Pro (P6)"
+  vendor: "GenuineIntel"
+  release_year: 1995
+  family: 6
+  model_id: 1
+  stepping: 9
+  package: [SOCKET_8]
+  frequency_range_mhz: [150, 200]
+
+cpuid:
+  signature: 0x00000619
+  features_edx: 0x0000FBFF # FPU, VME, DE, PSE, TSC, MSR, PAE, MCE, CX8, APIC, MTRR, PGE, MCA, CMOV (NO MMX!)
+
+isa_level: CPU_PENTIUMPRO
+features:
+  - CPU_FEATURE_FPU
+  - CPU_FEATURE_VME
+  - CPU_FEATURE_DE
+  - CPU_FEATURE_PSE
+  - CPU_FEATURE_TSC
+  - CPU_FEATURE_MSR
+  - CPU_FEATURE_PAE
+  - CPU_FEATURE_MCE
+  - CPU_FEATURE_CX8
+  - CPU_FEATURE_APIC
+  - CPU_FEATURE_MTRR
+  - CPU_FEATURE_PGE
+  - CPU_FEATURE_CMOV
+  # Note: Pentium Pro does NOT have MMX! MMX opcodes automatically raise #UD.
+
+timing_profile: "timings/p6.yaml"
+
+cache:
+  l1_instruction_kb: 8
+  l1_data_kb: 8
+  l2_kb: 256 # 256KB, 512KB, or 1MB on-package Dual-Cavity MCM
+  l2_speed: full_speed # Runs at full CPU core clock speed
+

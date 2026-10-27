@@ -1,0 +1,21 @@
+# 486dx.yaml - Intel 80486DX
+
+model:
+  cpu_id: CPU_i486DX
+  name: "Intel 80486DX"
+  vendor: "Intel"
+  release_year: 1989
+  family: 4
+  model_id: 1
+  package: [PGA_168]
+  frequency_range_mhz: [25, 50]
+
+isa_level: CPU_486
+features:
+  - CPU_FEATURE_FPU
+
+timing_profile: "timings/486.yaml"
+
+cache:
+  l1_unified_kb: 8
+

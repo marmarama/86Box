@@ -1,0 +1,22 @@
+# 486dx2.yaml - Intel 80486DX2 (Clock Doubled)
+
+model:
+  cpu_id: CPU_i486DX
+  name: "Intel 80486DX2"
+  vendor: "Intel"
+  release_year: 1992
+  family: 4
+  model_id: 3
+  package: [PGA_168, SOCKET_1, SOCKET_2, SOCKET_3]
+  frequency_range_mhz: [50, 66]
+  bus_multiplier: 2
+
+isa_level: CPU_486
+features:
+  - CPU_FEATURE_FPU
+
+timing_profile: "timings/486.yaml"
+
+cache:
+  l1_unified_kb: 8
+

@@ -1,0 +1,89 @@
+# via_padlock.yaml - VIA PadLock Security Engine Extensions (Centaur Nehemiah / Esther)
+
+families:
+  XSTORE:
+    description: "Store random bytes from hardware RNG into memory"
+    availability:
+      min_cpu: CPU_C3
+      feature: CPU_FEATURE_PADLOCK_RNG
+      exceptions:
+        - fault: UD_FAULT
+    class: padlock
+    category: SECURITY
+    opcode_map:
+      "0x0F 0xA7 0xC0": { dst: "mem[edi]", src: "gpr32[edx]" }
+    semantics:
+      args: [dst, src]
+      body: |
+        edi += via_padlock_rng_step(edx, es, edi)
+
+  XCRYPT_ECB:
+    description: "Hardware AES electronic codebook encryption/decryption"
+    availability:
+      min_cpu: CPU_C3
+      feature: CPU_FEATURE_PADLOCK_ACE
+    class: padlock
+    category: SECURITY
+    opcode_map:
+      "0x0F 0xA7 0xC8": { dst: "mem[edi]", src: "mem[esi]" }
+    semantics:
+      args: [dst, src]
+      body: |
+        via_padlock_aes_ecb(esi, edi, ecx, edx)
+
+  XCRYPT_CBC:
+    description: "Hardware AES cipher block chaining encryption/decryption"
+    availability:
+      min_cpu: CPU_C3
+      feature: CPU_FEATURE_PADLOCK_ACE
+    class: padlock
+    category: SECURITY
+    opcode_map:
+      "0x0F 0xA7 0xD0": { dst: "mem[edi]", src: "mem[esi]" }
+    semantics:
+      args: [dst, src]
+      body: |
+        via_padlock_aes_cbc(esi, edi, ecx, edx, eax)
+
+  XSHA1:
+    description: "Hardware SHA-1 hashing step"
+    availability:
+      min_cpu: CPU_C3
+      feature: CPU_FEATURE_PADLOCK_PHE
+    class: padlock
+    category: SECURITY
+    opcode_map:
+      "0x0F 0xA6 0xC8": { dst: "mem[edi]", src: "mem[esi]" }
+    semantics:
+      args: [dst, src]
+      body: |
+        via_padlock_sha1(esi, edi, ecx)
+
+  XSHA256:
+    description: "Hardware SHA-256 hashing step"
+    availability:
+      min_cpu: CPU_C3
+      feature: CPU_FEATURE_PADLOCK_PHE
+    class: padlock
+    category: SECURITY
+    opcode_map:
+      "0x0F 0xA6 0xD0": { dst: "mem[edi]", src: "mem[esi]" }
+    semantics:
+      args: [dst, src]
+      body: |
+        via_padlock_sha256(esi, edi, ecx)
+
+  MONTMUL:
+    description: "Hardware Montgomery Multiplier for RSA / BigNum acceleration"
+    availability:
+      min_cpu: CPU_C3
+      feature: CPU_FEATURE_PADLOCK_PMM
+    class: padlock
+    category: SECURITY
+    opcode_map:
+      "0x0F 0xA6 0xC0": { dst: "mem[edi]", src: "mem[esi]" }
+    semantics:
+      args: [dst, src]
+      body: |
+        via_padlock_montmul(esi, edi, ecx, edx)
+

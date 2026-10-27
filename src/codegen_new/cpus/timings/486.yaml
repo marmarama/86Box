@@ -1,0 +1,52 @@
+# 486.yaml - Intel 80486 Microarchitecture Timing Profile
+
+model:
+  cpu_level: CPU_486
+  name: "Intel 80486"
+  pipeline_type: scalar_in_order
+  stages: 5 # Fetch, D1, D2, Ex, WB
+  agi_stall_penalty: 1 # Address Generation Interlock penalty
+
+timings:
+  # Arithmetic & Logic
+  alu_reg:          { cycles: 1 }
+  alu_rm:           { cycles: 2, agi_check: true }
+  alu_rmw:          { cycles: 3, agi_check: true }
+  alu_carry_reg:    { cycles: 1 }
+  alu_carry_rm:     { cycles: 2, agi_check: true }
+  alu_carry_rmw:    { cycles: 3, agi_check: true }
+
+  # Shifts & Rotates
+  shift_reg_1:      { cycles: 2 }
+  shift_reg_imm:    { cycles: 4 }
+  shift_reg_cl:     { cycles: 4 }
+  shift_mem_1:      { cycles: 4, agi_check: true }
+  shift_mem_imm:    { cycles: 5, agi_check: true }
+  shift_mem_cl:     { cycles: 5, agi_check: true }
+  double_shift:     { cycles: 6 }
+
+  # Multiplication and Division
+  mul_reg:          { min_cycles: 13, max_cycles: 42 }
+  div_reg:          { min_cycles: 38, max_cycles: 44 }
+
+  # Data Movement
+  mov_reg_reg:      { cycles: 1 }
+  mov_reg_mem:      { cycles: 1, agi_check: true }
+  mov_mem_reg:      { cycles: 1, agi_check: true }
+  mov_extend:       { cycles: 3, agi_check: true }
+  xchg_reg_reg:     { cycles: 3 }
+  xchg_reg_mem:     { cycles: 5, agi_check: true }
+
+  # Control Flow
+  branch_cond:
+    taken: 3
+    not_taken: 1
+  branch_uncond_near: { cycles: 3 }
+  branch_far:         { cycles: 17 }
+  call_near:          { cycles: 3 }
+  ret_near:           { cycles: 5 }
+
+  # Stack
+  stack_push:       { cycles: 1 }
+  stack_pop:        { cycles: 4 }
+

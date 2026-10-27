@@ -358,12 +358,12 @@ ropFF_16(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fet
     int     src_reg;
     int     sp_reg;
 
-    if ((fetchdat & 0x38) != 0x00 && (fetchdat & 0x38) != 0x08 && (fetchdat & 0x38) != 0x10 && (fetchdat & 0x38) != 0x20 && (fetchdat & 0x38) != 0x28 && (fetchdat & 0x38) != 0x30)
+    if ((fetchdat & 0x38) != 0x00 && (fetchdat & 0x38) != 0x08 && (fetchdat & 0x38) != 0x10 && (fetchdat & 0x38) != 0x18 && (fetchdat & 0x38) != 0x20 && (fetchdat & 0x38) != 0x28 && (fetchdat & 0x38) != 0x30)
         return 0;
 
     codegen_mark_code_present(block, cs + op_pc, 1);
     if ((fetchdat & 0xc0) == 0xc0) {
-        if ((fetchdat & 0x38) == 0x28)
+        if ((fetchdat & 0x38) == 0x28 || (fetchdat & 0x38) == 0x18)
             return 0;
         src_reg = IREG_16(fetchdat & 7);
     } else {
@@ -427,6 +427,14 @@ ropFF_16(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fet
             uop_MOVZX(ir, IREG_pc, src_reg);
             return -1;
 
+        case 0x18: /*CALL far*/
+            uop_MEM_LOAD_REG_OFFSET(ir, IREG_temp1_W, ireg_seg_base(target_seg), IREG_eaaddr, 2);
+            uop_LOAD_FUNC_ARG_REG(ir, 0, IREG_temp1_W);
+            uop_LOAD_FUNC_ARG_REG(ir, 1, src_reg);
+            uop_LOAD_FUNC_ARG_IMM(ir, 2, op_pc + 1);
+            uop_CALL_FUNC(ir, call_far_16);
+            return -1;
+
         case 0x20: /*JMP*/
             uop_MOVZX(ir, IREG_pc, src_reg);
             return -1;
@@ -460,12 +468,12 @@ ropFF_32(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fet
     int     src_reg;
     int     sp_reg;
 
-    if ((fetchdat & 0x38) != 0x00 && (fetchdat & 0x38) != 0x08 && (fetchdat & 0x38) != 0x10 && (fetchdat & 0x38) != 0x20 && (fetchdat & 0x38) != 0x28 && (fetchdat & 0x38) != 0x30)
+    if ((fetchdat & 0x38) != 0x00 && (fetchdat & 0x38) != 0x08 && (fetchdat & 0x38) != 0x10 && (fetchdat & 0x38) != 0x18 && (fetchdat & 0x38) != 0x20 && (fetchdat & 0x38) != 0x28 && (fetchdat & 0x38) != 0x30)
         return 0;
 
     codegen_mark_code_present(block, cs + op_pc, 1);
     if ((fetchdat & 0xc0) == 0xc0) {
-        if ((fetchdat & 0x38) == 0x28)
+        if ((fetchdat & 0x38) == 0x28 || (fetchdat & 0x38) == 0x18)
             return 0;
         src_reg = IREG_32(fetchdat & 7);
     } else {
@@ -527,6 +535,14 @@ ropFF_32(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fet
             uop_MEM_STORE_IMM_32(ir, IREG_SS_base, sp_reg, op_pc + 1);
             SUB_SP(ir, 4);
             uop_MOV(ir, IREG_pc, src_reg);
+            return -1;
+
+        case 0x18: /*CALL far*/
+            uop_MEM_LOAD_REG_OFFSET(ir, IREG_temp1_W, ireg_seg_base(target_seg), IREG_eaaddr, 4);
+            uop_LOAD_FUNC_ARG_REG(ir, 0, IREG_temp1_W);
+            uop_LOAD_FUNC_ARG_REG(ir, 1, src_reg);
+            uop_LOAD_FUNC_ARG_IMM(ir, 2, op_pc + 1);
+            uop_CALL_FUNC(ir, call_far_32);
             return -1;
 
         case 0x20: /*JMP*/
@@ -1342,5 +1358,64 @@ uint32_t
 ropXADD_32(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
 {
     return ropXADD_common(block, ir, opcode, fetchdat, op_32, op_pc, 2);
+}
+
+uint32_t
+rop0F00(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
+{
+    /* Group 6: SLDT (/0), STR (/1), LLDT (/2), LTR (/3), VERR (/4), VERW (/5) */
+    int sub_op = (fetchdat >> 3) & 7;
+    if (sub_op != 4 && sub_op != 5)
+        return 0; /* Fall back to interpreter for SLDT, STR, LLDT, LTR */
+
+    int src_reg;
+    codegen_mark_code_present(block, cs + op_pc, 1);
+
+    if ((fetchdat & 0xc0) == 0xc0) {
+        src_reg = IREG_16(fetchdat & 7);
+    } else {
+        x86seg *target_seg = codegen_generate_ea(ir, op_ea_seg, fetchdat, op_ssegs, &op_pc, op_32, 0);
+        codegen_check_seg_read(block, ir, target_seg);
+        CHECK_SEG_LIMITS(block, ir, target_seg, IREG_eaaddr, 1);
+        src_reg = IREG_temp0_W;
+        uop_MEM_LOAD_REG(ir, src_reg, ireg_seg_base(target_seg), IREG_eaaddr);
+    }
+
+    codegen_accumulate_flush(ir);
+    uop_LOAD_FUNC_ARG_REG(ir, 0, src_reg);
+    uop_CALL_FUNC(ir, (sub_op == 5) ? jit_verw : jit_verr);
+    codegen_flags_changed = 0;
+
+    return op_pc + 1;
+}
+
+uint32_t
+rop0F01(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
+{
+    /* Group 7: SGDT (/0), SIDT (/1), LGDT (/2), LIDT (/3), SMSW (/4), LMSW (/6), INVLPG (/7) */
+    int sub_op = (fetchdat >> 3) & 7;
+    if (sub_op != 4)
+        return 0; /* Fall back to interpreter for non-SMSW instructions */
+
+    codegen_mark_code_present(block, cs + op_pc, 1);
+
+    if ((fetchdat & 0xc0) == 0xc0) {
+        codegen_accumulate_flush(ir);
+        if (op_32 & 0x100) {
+            uop_CALL_FUNC_RESULT(ir, IREG_32(fetchdat & 7), (void *) jit_smsw32);
+        } else {
+            uop_CALL_FUNC_RESULT(ir, IREG_temp0, (void *) jit_smsw16);
+            uop_MOV(ir, IREG_16(fetchdat & 7), IREG_temp0_W);
+        }
+    } else {
+        x86seg *target_seg = codegen_generate_ea(ir, op_ea_seg, fetchdat, op_ssegs, &op_pc, op_32, 0);
+        codegen_check_seg_write(block, ir, target_seg);
+        CHECK_SEG_LIMITS(block, ir, target_seg, IREG_eaaddr, 1);
+        codegen_accumulate_flush(ir);
+        uop_CALL_FUNC_RESULT(ir, IREG_temp0, (void *) jit_smsw16);
+        uop_MEM_STORE_REG(ir, ireg_seg_base(target_seg), IREG_eaaddr, IREG_temp0_W);
+    }
+
+    return op_pc + 1;
 }
 

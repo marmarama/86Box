@@ -1,0 +1,87 @@
+# sysenter.yaml - Fast System Call and State Management Instructions
+
+families:
+  SYSENTER:
+    description: "Fast Transition to System Call Handler (Ring 0)"
+    availability:
+      min_cpu: CPU_PENTIUM2
+      feature: CPU_FEATURE_SEP
+      exceptions:
+        - cond: "MSR_SYSENTER_CS == 0"
+          fault: GP_FAULT
+    class: sys_interrupt
+    opcode_map:
+      "0x0F 0x34": { none: 0 }
+    semantics:
+      args: []
+      body: |
+        # Privilege transition to ring 0 without stack frame push
+        CPL = 0
+        CS = MSR_SYSENTER_CS & 0xFFFC
+        SS = (MSR_SYSENTER_CS + 8) & 0xFFFC
+        eSP = MSR_SYSENTER_ESP
+        eIP = MSR_SYSENTER_EIP
+        write_flag(VM, 0)
+        write_flag(IF, 0)
+        branch_target: eIP
+
+  SYSEXIT:
+    description: "Fast Return from Fast System Call Handler to User Mode (Ring 3)"
+    availability:
+      min_cpu: CPU_PENTIUM2
+      feature: CPU_FEATURE_SEP
+      exceptions:
+        - cond: "CPL != 0 || MSR_SYSENTER_CS == 0"
+          fault: GP_FAULT
+    class: sys_interrupt
+    opcode_map:
+      "0x0F 0x35": { none: 0 }
+    semantics:
+      args: []
+      body: |
+        CPL = 3
+        CS = (MSR_SYSENTER_CS + 16) | 3
+        SS = (MSR_SYSENTER_CS + 24) | 3
+        eSP = eCX
+        eIP = eDX
+        write_flag(VM, 0)
+        branch_target: eIP
+
+  FXSAVE:
+    description: "Fast Save x87 FPU, MMX, and SSE State (512 bytes)"
+    availability:
+      min_cpu: CPU_PENTIUM2
+      feature: CPU_FEATURE_FXSR
+      exceptions:
+        - cond: "(CR0 & (CR0_EM | CR0_TS)) != 0"
+          fault: NM_FAULT
+        - cond: "(dst.address & 15) != 0"
+          fault: GP_FAULT # Requires 16-byte alignment
+    class: sys_control
+    opcode_map:
+      "0x0F 0xAE /0": { dst: M512 }
+    semantics:
+      args: [dst]
+      body: |
+        write_mem512(dst, fpu_mmx_xmm_state_512())
+        flags: none
+
+  FXRSTOR:
+    description: "Fast Restore x87 FPU, MMX, and SSE State (512 bytes)"
+    availability:
+      min_cpu: CPU_PENTIUM2
+      feature: CPU_FEATURE_FXSR
+      exceptions:
+        - cond: "(CR0 & (CR0_EM | CR0_TS)) != 0"
+          fault: NM_FAULT
+        - cond: "(src.address & 15) != 0"
+          fault: GP_FAULT # Requires 16-byte alignment
+    class: sys_control
+    opcode_map:
+      "0x0F 0xAE /1": { src: M512 }
+    semantics:
+      args: [src]
+      body: |
+        load_fpu_mmx_xmm_state_512(read_mem512(src))
+        flags: none
+

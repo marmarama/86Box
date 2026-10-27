@@ -1,0 +1,200 @@
+# simd_sse2.yaml - Streaming SIMD Extensions 2 (Double-Precision Float & 128-bit Integer SIMD)
+
+common_anchors:
+  availability: &sse2_avail
+    min_cpu: CPU_PENTIUM4
+    feature: CPU_FEATURE_SSE2
+    exceptions:
+      - cond: "(CR0 & (CR0_EM | CR0_TS)) != 0"
+        fault: NM_FAULT
+      - cond: "!(CR4 & CR4_OSFXSR)"
+        fault: UD_FAULT
+
+families:
+  MOVAPD:
+    description: "Move Aligned Packed Double-Precision Floating-Point (128-bit)"
+    availability: *sse2_avail
+    class: simd_mov
+    opcode_map:
+      "0x66 0x0F 0x28": { dst: Vpd, src: Wpd }
+      "0x66 0x0F 0x29": { dst: Wpd, src: Vpd }
+    semantics:
+      args: [dst, src]
+      body: |
+        if is_mem(src) && (src.address & 15) != 0:
+          raise GP_FAULT
+        if is_mem(dst) && (dst.address & 15) != 0:
+          raise GP_FAULT
+        writeback: dst = src
+        flags: none
+
+  MOVUPD:
+    description: "Move Unaligned Packed Double-Precision Floating-Point (128-bit)"
+    availability: *sse2_avail
+    class: simd_mov
+    opcode_map:
+      "0x66 0x0F 0x10": { dst: Vpd, src: Wpd }
+      "0x66 0x0F 0x11": { dst: Wpd, src: Vpd }
+    semantics:
+      args: [dst, src]
+      body: |
+        writeback: dst = src
+        flags: none
+
+  ADDPD:
+    description: "Add Packed Double-Precision Floating-Point Values (2x f64)"
+    availability: *sse2_avail
+    class: simd_alu
+    opcode_map:
+      "0x66 0x0F 0x58": { dst: Vpd, src: Wpd }
+    semantics:
+      args: [dst, src]
+      body: |
+        for i in range(2):
+          res.f64[i] = dst.f64[i] + src.f64[i]
+        writeback: dst = res
+        flags: none
+
+  SUBPD:
+    description: "Subtract Packed Double-Precision Floating-Point Values (2x f64)"
+    availability: *sse2_avail
+    class: simd_alu
+    opcode_map:
+      "0x66 0x0F 0x5C": { dst: Vpd, src: Wpd }
+    semantics:
+      args: [dst, src]
+      body: |
+        for i in range(2):
+          res.f64[i] = dst.f64[i] - src.f64[i]
+        writeback: dst = res
+        flags: none
+
+  MULPD:
+    description: "Multiply Packed Double-Precision Floating-Point Values (2x f64)"
+    availability: *sse2_avail
+    class: simd_mul
+    opcode_map:
+      "0x66 0x0F 0x59": { dst: Vpd, src: Wpd }
+    semantics:
+      args: [dst, src]
+      body: |
+        for i in range(2):
+          res.f64[i] = dst.f64[i] * src.f64[i]
+        writeback: dst = res
+        flags: none
+
+  DIVPD:
+    description: "Divide Packed Double-Precision Floating-Point Values (2x f64)"
+    availability: *sse2_avail
+    class: simd_alu
+    opcode_map:
+      "0x66 0x0F 0x5E": { dst: Vpd, src: Wpd }
+    semantics:
+      args: [dst, src]
+      body: |
+        for i in range(2):
+          res.f64[i] = dst.f64[i] / src.f64[i]
+        writeback: dst = res
+        flags: none
+
+  MOVDQA:
+    description: "Move Aligned 128-bit Integer Vector"
+    availability: *sse2_avail
+    class: simd_mov
+    opcode_map:
+      "0x66 0x0F 0x6F": { dst: Vx, src: Wx }
+      "0x66 0x0F 0x7F": { dst: Wx, src: Vx }
+    semantics:
+      args: [dst, src]
+      body: |
+        if is_mem(src) && (src.address & 15) != 0:
+          raise GP_FAULT
+        if is_mem(dst) && (dst.address & 15) != 0:
+          raise GP_FAULT
+        writeback: dst = src
+        flags: none
+
+  MOVDQU:
+    description: "Move Unaligned 128-bit Integer Vector"
+    availability: *sse2_avail
+    class: simd_mov
+    opcode_map:
+      "0xF3 0x0F 0x6F": { dst: Vx, src: Wx }
+      "0xF3 0x0F 0x7F": { dst: Wx, src: Vx }
+    semantics:
+      args: [dst, src]
+      body: |
+        writeback: dst = src
+        flags: none
+
+  PADDQ:
+    description: "Add Packed 64-bit Quadword Integers (2x u64 in XMM)"
+    availability: *sse2_avail
+    class: simd_alu
+    opcode_map:
+      "0x66 0x0F 0xD4": { dst: Vx, src: Wx }
+    semantics:
+      args: [dst, src]
+      body: |
+        for i in range(2):
+          res.u64[i] = dst.u64[i] + src.u64[i]
+        writeback: dst = res
+        flags: none
+
+  LFENCE:
+    description: "Load Fence (Orders preceding memory read instructions)"
+    availability:
+      min_cpu: CPU_PENTIUM4
+      feature: CPU_FEATURE_SSE2
+    class: sys_control
+    opcode_map:
+      "0x0F 0xAE /5": { none: 0 }
+    semantics:
+      args: []
+      body: |
+        memory_load_barrier()
+        flags: none
+
+  MFENCE:
+    description: "Memory Fence (Orders preceding reads and writes)"
+    availability:
+      min_cpu: CPU_PENTIUM4
+      feature: CPU_FEATURE_SSE2
+    class: sys_control
+    opcode_map:
+      "0x0F 0xAE /6": { none: 0 }
+    semantics:
+      args: []
+      body: |
+        memory_full_barrier()
+        flags: none
+
+  CLFLUSH:
+    description: "Flush Cache Line from Memory"
+    availability:
+      min_cpu: CPU_PENTIUM4
+      feature: CPU_FEATURE_CLFLUSH
+    class: sys_control
+    opcode_map:
+      "0x0F 0xAE /7": { addr: M8 }
+    semantics:
+      args: [addr]
+      body: |
+        flush_cache_line(addr)
+        flags: none
+
+  PAUSE:
+    description: "Spin-Loop Hint (Yields execution pipeline briefly)"
+    availability:
+      min_cpu: CPU_PENTIUM4
+      feature: CPU_FEATURE_SSE2
+    class: sys_control
+    opcode_map:
+      "0xF3 0x90": { none: 0 }
+    semantics:
+      args: []
+      body: |
+        # Improves performance and power in spin-wait loops (treated as NOP on older CPUs)
+        host_spin_pause()
+        flags: none
+

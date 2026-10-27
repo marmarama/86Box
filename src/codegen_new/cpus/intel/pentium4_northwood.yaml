@@ -1,0 +1,50 @@
+# pentium4_northwood.yaml - Intel Pentium 4 (Northwood)
+
+model:
+  cpu_id: CPU_PENTIUM4_NORTHWOOD
+  name: "Intel Pentium 4 (Northwood)"
+  vendor: "GenuineIntel"
+  release_year: 2002
+  family: 15
+  model_id: 2
+  stepping: 4
+  package: [SOCKET_478]
+  frequency_range_mhz: [1600, 3400]
+
+cpuid:
+  signature: 0x00000F24
+  brand_string: "Intel(R) Pentium(R) 4 CPU"
+  features_edx: 0x3FEBFFFF # Includes SSE, SSE2, FXSR, MMX, CLFLUSH, etc.
+
+isa_level: CPU_PENTIUM4
+features:
+  - CPU_FEATURE_FPU
+  - CPU_FEATURE_VME
+  - CPU_FEATURE_DE
+  - CPU_FEATURE_PSE
+  - CPU_FEATURE_TSC
+  - CPU_FEATURE_MSR
+  - CPU_FEATURE_PAE
+  - CPU_FEATURE_MCE
+  - CPU_FEATURE_CX8
+  - CPU_FEATURE_APIC
+  - CPU_FEATURE_SEP
+  - CPU_FEATURE_MTRR
+  - CPU_FEATURE_PGE
+  - CPU_FEATURE_CMOV
+  - CPU_FEATURE_PAT
+  - CPU_FEATURE_PSE36
+  - CPU_FEATURE_CLFLUSH
+  - CPU_FEATURE_MMX
+  - CPU_FEATURE_FXSR
+  - CPU_FEATURE_SSE
+  - CPU_FEATURE_SSE2
+
+timing_profile: "timings/p6.yaml" # Or netburst.yaml
+
+cache:
+  trace_cache_kuops: 12
+  l1_data_kb: 8
+  l2_kb: 512
+  l2_speed: full_speed
+

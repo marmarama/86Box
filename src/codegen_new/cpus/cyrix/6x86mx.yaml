@@ -1,0 +1,33 @@
+# 6x86mx.yaml - Cyrix 6x86MX (M2)
+
+model:
+  cpu_id: CPU_Cx6x86MX
+  name: "Cyrix 6x86MX (M2)"
+  vendor: "CyrixInstead"
+  release_year: 1997
+  family: 6
+  model_id: 0
+  stepping: 5
+  package: [SOCKET_7]
+  frequency_range_mhz: [166, 333]
+
+cpuid:
+  signature: 0x00000605
+  features_edx: 0x008020BF # FPU, VME, DE, TSC, MSR, CX8, PGE, MMX
+
+isa_level: CPU_PENTIUM
+features:
+  - CPU_FEATURE_FPU
+  - CPU_FEATURE_VME
+  - CPU_FEATURE_DE
+  - CPU_FEATURE_TSC
+  - CPU_FEATURE_MSR
+  - CPU_FEATURE_CX8
+  - CPU_FEATURE_PGE
+  - CPU_FEATURE_MMX
+
+timing_profile: "timings/cyrix_686.yaml"
+
+cache:
+  l1_unified_kb: 64 # Unified L1 code/data cache
+

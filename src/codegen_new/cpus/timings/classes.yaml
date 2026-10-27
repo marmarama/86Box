@@ -1,0 +1,122 @@
+# classes.yaml - Abstract Execution and Timing Classes
+
+classes:
+  # Simple Arithmetic & Logic
+  alu_reg:
+    description: "Register-to-register ALU operation (ADD/SUB/AND/OR/XOR)"
+    memory_access: none
+  alu_rm:
+    description: "Memory load + register ALU operation (e.g., ADD eax, [ebx])"
+    memory_access: read
+  alu_rmw:
+    description: "Read-Modify-Write memory ALU operation (e.g., ADD [ebx], eax)"
+    memory_access: read_modify_write
+
+  # Carry/Borrow Arithmetic (dependency on Carry Flag)
+  alu_carry_reg:
+    description: "Register ALU reading Carry Flag (ADC/SBB)"
+    memory_access: none
+    flag_in: [CF]
+  alu_carry_rm:
+    description: "Memory load ALU reading Carry Flag (ADC reg, [mem])"
+    memory_access: read
+    flag_in: [CF]
+  alu_carry_rmw:
+    description: "Read-Modify-Write ALU reading Carry Flag (ADC [mem], reg)"
+    memory_access: read_modify_write
+    flag_in: [CF]
+
+  # Bit Shifts & Rotates
+  shift_reg_1:
+    description: "Register shift/rotate by 1 (e.g., SHL eax, 1)"
+    memory_access: none
+  shift_reg_cl:
+    description: "Register shift/rotate by CL count register"
+    memory_access: none
+    reg_in: [CL]
+  shift_reg_imm:
+    description: "Register shift/rotate by immediate count (186+)"
+    memory_access: none
+  shift_mem_1:
+    description: "Memory shift/rotate by 1"
+    memory_access: read_modify_write
+  shift_mem_cl:
+    description: "Memory shift/rotate by CL count register"
+    memory_access: read_modify_write
+    reg_in: [CL]
+  shift_mem_imm:
+    description: "Memory shift/rotate by immediate count (186+)"
+    memory_access: read_modify_write
+  double_shift:
+    description: "Double-precision shift (SHLD/SHRD)"
+    memory_access: optional_rmw
+
+  # Multiplication and Division
+  mul_reg:
+    description: "Integer multiply (MUL/IMUL)"
+    memory_access: none
+  div_reg:
+    description: "Integer divide (DIV/IDIV)"
+    memory_access: none
+
+  # Data Movement
+  mov_reg_reg:
+    description: "Register-to-register move"
+    memory_access: none
+  mov_reg_mem:
+    description: "Load from memory to register"
+    memory_access: read
+  mov_mem_reg:
+    description: "Store from register to memory"
+    memory_access: write
+  mov_extend:
+    description: "Move with zero/sign-extension (MOVZX/MOVSX)"
+    memory_access: optional_read
+  xchg_reg_reg:
+    description: "Exchange two registers"
+    memory_access: none
+  xchg_reg_mem:
+    description: "Exchange register with memory (implicit atomic LOCK on bus)"
+    memory_access: read_modify_write
+
+  # Control Flow & Branching
+  branch_cond:
+    description: "Conditional branch (Jcc)"
+    has_branch_prediction: true
+  branch_uncond_near:
+    description: "Near unconditional jump / call"
+    memory_access: none
+  branch_far:
+    description: "Far jump / call / return (intersegment)"
+    memory_access: stack_or_memory
+  call_near:
+    description: "Near call (pushes return EIP)"
+    memory_access: write # stack push
+  ret_near:
+    description: "Near return (pops return EIP)"
+    memory_access: read # stack pop
+
+  # Stack
+  stack_push:
+    description: "Push operand onto stack"
+    memory_access: write
+    reg_mod: [ESP]
+  stack_pop:
+    description: "Pop operand from stack"
+    memory_access: read
+    reg_mod: [ESP]
+
+  # SIMD (MMX)
+  simd_alu:
+    description: "MMX packed integer ALU (PADDB/W/D, PSUBB/W/D, PAND, POR, PXOR)"
+    memory_access: none
+  simd_shift:
+    description: "MMX packed shift (PSLL, PSRL, PSRA)"
+    memory_access: none
+  simd_mul:
+    description: "MMX packed multiply (PMULLW, PMULHW)"
+    memory_access: none
+  simd_mov:
+    description: "MMX register load/store (MOVQ, MOVD)"
+    memory_access: optional_read_or_write
+

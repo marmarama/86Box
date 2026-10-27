@@ -1,0 +1,41 @@
+# crusoe_tm5800.yaml - Transmeta Crusoe TM5800 (Code Morphing VLIW Engine)
+
+model:
+  cpu_id: CPU_TRANSMETA_CRUSOE
+  name: "Transmeta Crusoe TM5800"
+  vendor: "GenuineTMx86"
+  release_year: 2001
+  family: 5
+  model_id: 4
+  stepping: 2
+  package: [OBGA_474]
+  frequency_range_mhz: [667, 1000]
+
+cpuid:
+  signature: 0x00000542
+  brand_string: "Transmeta(tm) Crusoe(tm) Processor TM5800"
+  features_edx: 0x008081BF # FPU, VME, DE, TSC, MSR, CX8, CMOV, MMX
+
+isa_level: CPU_PENTIUM
+features:
+  - CPU_FEATURE_FPU
+  - CPU_FEATURE_VME
+  - CPU_FEATURE_DE
+  - CPU_FEATURE_TSC
+  - CPU_FEATURE_MSR
+  - CPU_FEATURE_CX8
+  - CPU_FEATURE_CMOV
+  - CPU_FEATURE_MMX
+
+timing_profile: "timings/pentium.yaml"
+
+code_morphing_engine:
+  vliw_width_bits: 128
+  cms_version: "4.4.8"
+  hardware_shadow_registers: true
+
+cache:
+  l1_instruction_kb: 64
+  l1_data_kb: 64
+  l2_kb: 512
+

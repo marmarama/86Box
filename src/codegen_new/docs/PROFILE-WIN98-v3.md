@@ -320,6 +320,86 @@ With `HLT`, ACPI sleep, and integer division (`DIV`) completely resolved and ver
 | **Integer Division (`DIV`) JIT Lowering**| 0 interpreter fallbacks for rm8/16/32 | 11.0M fallbacks eliminated | **PASS** |
 | **Host RDTSC JIT Lowering** | 0 interpreter fallbacks for 0x0F 0x31 | 5.79M fallbacks eliminated | **PASS** |
 | **CLI / STI JIT Lowering** | 0 interpreter fallbacks for 0xFA / 0xFB | 33.58M fallbacks eliminated | **PASS** |
-| **Branch Chaining Direct Hit Rate** | High direct block linking | 100.00% (1.17B links, 0% fallback) | **PASS** |
+| **POPF / POPFD JIT Lowering** | 0 interpreter fallbacks for 0x9D | 6.72M fallbacks eliminated | **PASS** |
+| **VERR / VERW JIT Lowering** | 0 interpreter fallbacks for 0F 00 /4, /5 | 1.99M fallbacks eliminated | **PASS** |
+| **IRET / IRETD JIT Lowering** | 0 interpreter fallbacks for 0xCF | 4.50M fallbacks eliminated | **PASS** |
+| **Indirect LCALL JIT Lowering** | 0 interpreter fallbacks for FF /3 | 3.21M fallbacks eliminated | **PASS** |
+| **SMSW JIT Lowering** | 0 interpreter fallbacks for 0F 01 /4 | 0.93M fallbacks eliminated | **PASS** |
+| **Branch Chaining Direct Hit Rate** | High direct block linking | 100.00% (1.07B links, 0% fallback) | **PASS** |
 | **Linter: Stale Cycle Hazards** | 0 IREG_cycles hazards | 0 hazards detected | **PASS** |
+
+---
+
+## 11. Unclean Boot & MS-DOS ScanDisk Optimization Wave
+
+### 11.1 Context & Problem Statement
+When Windows 98 shuts down improperly or boots with an unclean filesystem, MS-DOS `SCANDISK.EXE` runs automatically prior to GUI startup. During profiling of an unclean boot:
+- **Drop #4 ($t = 17\text{s} - 42\text{s}$)**: RT speed dropped to 32%–50% during directory structure analysis.
+- **Drop #5 ($t = 44\text{s} - 55\text{s}$)**: RT speed collapsed to **16%–26%** during file cluster verification against FAT in extended memory (XMS).
+
+### 11.2 Root Cause Analysis
+During file cluster verification, ScanDisk uses the HIMEM.SYS XMS driver function `AH=0Bh` (Move Extended Memory Block). For each block copy, HIMEM.SYS invokes the PC BIOS service `INT 15h, AH=87h` (Block Move in Extended Memory). The BIOS implementation:
+1. Builds a temporary Global Descriptor Table (GDT) in conventional memory.
+2. Validates segment selectors using `VERR` and `VERW`.
+3. Sets up descriptors, enters 16-bit protected mode, copies data blocks, and returns via `IRETD`.
+4. Restores CPU flags using `POPF` and `POPFD`.
+5. ScanDisk and HIMEM.SYS communicate via indirect far calls (`LCALL [bp - 8]` and `LCALL ss:[0x378]`), querying CPU status via `SMSW ax`.
+
+Because none of these instructions were lowered in the JIT compiler, every invocation triggered an unlinked interpreter fallback (`UOP_CALL_INSTRUCTION_FUNC`), generating over **17.37 Million** fallback exits during ScanDisk execution.
+
+### 11.3 Implemented JIT Lowerings
+
+1. **`POPF` / `POPFD` (`0x9D` / `0x66 0x9D`)**:
+   - Implemented `ropPOPF` and `ropPOPFD` in [`src/codegen_new/codegen_ops_stack.c`](file:///home/marm/src/86Box/src/codegen_new/codegen_ops_stack.c).
+   - Added `jit_popf` and `jit_popfd` helpers in [`src/codegen_new/codegen_ops_jit_wrappers.h`](file:///home/marm/src/86Box/src/codegen_new/codegen_ops_jit_wrappers.h).
+   - Registered in `recomp_opcodes[0x9D]` and `recomp_opcodes[0x9D | 0x100]`.
+   - **Result**: **6,723,027 fallbacks eliminated** (100% eliminated).
+
+2. **`VERR` / `VERW` (`0x0F 0x00 /4`, `/5`)**:
+   - Implemented `rop0F00` in [`src/codegen_new/codegen_ops_misc.c`](file:///home/marm/src/86Box/src/codegen_new/codegen_ops_misc.c).
+   - Added `jit_verr` and `jit_verw` helpers in [`src/codegen_new/codegen_ops_jit_wrappers.h`](file:///home/marm/src/86Box/src/codegen_new/codegen_ops_jit_wrappers.h) performing GDT/LDT descriptor validation, DPL checks, and `ZF` flag setting.
+   - Registered across all `recomp_opcodes_0f[0x00]` and `recomp_opcodes_0f_no_mmx[0x00]` tables.
+   - **Result**: **1,987,670 fallbacks eliminated** (100% eliminated).
+
+3. **`IRET` / `IRETD` (`0xCF` / `0x66 0xCF`)**:
+   - Implemented `ropIRET_16` and `ropIRETD_32` in [`src/codegen_new/codegen_ops_jump.c`](file:///home/marm/src/86Box/src/codegen_new/codegen_ops_jump.c).
+   - Added `jit_iret` and `jit_iretd` wrappers calling the opcode handlers directly.
+   - Registered in `recomp_opcodes[0xCF]` and `recomp_opcodes[0xCF | 0x100]`.
+   - **Result**: **4,500,432 fallbacks eliminated** (100% eliminated).
+
+4. **Indirect Far Call (`LCALL m16:16` / `m16:32` — `0xFF /3`)**:
+   - Enabled sub-opcode `0x18` in `ropFF_16` and `ropFF_32` in [`src/codegen_new/codegen_ops_misc.c`](file:///home/marm/src/86Box/src/codegen_new/codegen_ops_misc.c).
+   - Disallowed invalid register addressing (`mod == 11`).
+   - For memory operands: loads target selector from `eaaddr + 2` (16-bit) or `eaaddr + 4` (32-bit) into `IREG_temp1_W` and invokes `call_far_16` / `call_far_32` directly with return address `op_pc + 1`.
+   - **Result**: **3,208,793 fallbacks eliminated** (`lcall ss:[0x378]`, `lcall [bp - 8]`, `lcall cs:[0x174]`, `lcall cs:[0xa]`, `lcall cs:[0x956e]` all reduced to 0).
+
+5. **Machine Status Word (`SMSW` — `0x0F 0x01 /4`)**:
+   - Implemented `rop0F01` in [`src/codegen_new/codegen_ops_misc.c`](file:///home/marm/src/86Box/src/codegen_new/codegen_ops_misc.c).
+   - Added `jit_smsw16` and `jit_smsw32` helpers in [`src/codegen_new/codegen_ops_jit_wrappers.h`](file:///home/marm/src/86Box/src/codegen_new/codegen_ops_jit_wrappers.h).
+   - Supports both register destination (16-bit or 32-bit via `IREG_temp0` result register) and 16-bit memory store (`writememw`).
+   - Registered across all `recomp_opcodes_0f[0x01]` and `recomp_opcodes_0f_no_mmx[0x01]` tables.
+   - **Result**: **931,919 fallbacks eliminated** (`smsw ax` reduced to 0).
+
+### 11.4 Verification & Telemetry Comparison
+
+| Metric | Before ScanDisk Wave | After ScanDisk Wave | Improvement |
+|---|---|---|---|
+| **Average Unclean Boot Speed** | 81.4% RT | **83.8% RT** | **+2.4% overall** |
+| **Intervals < 100% RT** | 42 (34.7% runtime) | **37 (32.5% runtime)** | **-12% fewer slow intervals** |
+| **`POPF` / `POPFD` Fallbacks** | 6,723,027 | **0** | **-100%** |
+| **`VERR` / `VERW` Fallbacks** | 1,987,670 | **0** | **-100%** |
+| **`IRET` / `IRETD` Fallbacks** | 4,500,432 | **0** | **-100%** |
+| **Indirect `LCALL` Fallbacks** | 3,208,793 | **0** | **-100%** |
+| **`SMSW` Fallbacks** | 931,919 | **0** | **-100%** |
+| **Total Dynamic Fallbacks Eliminated** | Baseline | **17,351,841** | **-17.35 Million exits** |
+
+### 11.5 Next ScanDisk Bottlenecks
+With all arithmetic, stack, control transfer, and CPU status query instructions in ScanDisk fully lowered:
+1. **Protected Mode Descriptor Reloads (`op_pmodeiret` / `loadseg`)**:
+   - The hottest block remaining during ScanDisk is `Blk #55887` (`cli; pop edx; add sp, 2; pop ebp; iretd` executing 993,835 times, averaging 1,087 host cycles/exec).
+   - In 16-bit protected mode, `iretd` calls `op_pmodeiret(1)`, which validates descriptors, checks task switches, tests CPL/DPL/RPL, and flushes the MMU.
+   - Similarly, `Blk #58565` executes `mov ds, bx` (selector `0xd0`) 696,581 times (1,344 host cycles/exec) calling `loadseg()`.
+   - Optimization: Cache validated descriptor attributes for frequent selector reloads (`0xd0`, `0x20`, `0x28`) when GDT base and limit have not changed.
+2. **Port I/O**:
+   - Status polling loops on port `0x61` (5.51M) and disk I/O on `dx` (4.72M) represent the vast majority of remaining C callouts.
 

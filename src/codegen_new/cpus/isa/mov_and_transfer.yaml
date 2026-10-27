@@ -1,0 +1,201 @@
+# mov_and_transfer.yaml - Data Movement & Type Transfer Families
+
+families:
+  MOV:
+    description: "Move Data between Registers and Memory"
+    availability: { min_cpu: CPU_8086 }
+    class: mov
+    opcode_map:
+      "0x88": { dst: Eb, src: Gb }
+      "0x89": { dst: Ev, src: Gv }
+      "0x8A": { dst: Gb, src: Eb }
+      "0x8B": { dst: Gv, src: Ev }
+      "0x8C": { dst: Ew, src: Sw }
+      "0x8E": { dst: Sw, src: Ew }
+      "0xA0": { dst: AL, src: Ob }
+      "0xA1": { dst: eAX, src: Ov }
+      "0xA2": { dst: Ob, src: AL }
+      "0xA3": { dst: Ov, src: eAX }
+      "0xB0..0xB7": { dst: "gpr8[reg]", src: Ib }
+      "0xB8..0xBF": { dst: "gprv[reg]", src: Iv }
+      "0xC6 /0": { dst: Eb, src: Ib }
+      "0xC7 /0": { dst: Ev, src: Iv }
+    semantics:
+      args: [dst, src]
+      body: |
+        writeback: dst = src
+        flags: none
+
+  MOVZX:
+    description: "Move with Zero-Extend"
+    availability: { min_cpu: CPU_386 }
+    class: mov_extend
+    opcode_map:
+      "0x0F 0xB6": { dst: Gv, src: Eb }
+      "0x0F 0xB7": { dst: Gv, src: Ew }
+    semantics:
+      args: [dst, src]
+      body: |
+        res = zero_extend(src, sizeof(dst))
+        writeback: dst = res
+        flags: none
+
+  MOVSX:
+    description: "Move with Sign-Extend"
+    availability: { min_cpu: CPU_386 }
+    class: mov_extend
+    opcode_map:
+      "0x0F 0xBE": { dst: Gv, src: Eb }
+      "0x0F 0xBF": { dst: Gv, src: Ew }
+    semantics:
+      args: [dst, src]
+      body: |
+        res = sign_extend(src, sizeof(dst))
+        writeback: dst = res
+        flags: none
+
+  LEA:
+    description: "Load Effective Address"
+    availability: { min_cpu: CPU_8086 }
+    class: lea
+    opcode_map:
+      "0x8D": { dst: Gv, src: M }
+    semantics:
+      args: [dst, src]
+      body: |
+        # src is the unresolved effective address offset (no memory access performed)
+        writeback: dst = src.offset
+        flags: none
+
+  XCHG:
+    description: "Exchange Register/Memory with Register"
+    availability: { min_cpu: CPU_8086 }
+    class: xchg
+    opcode_map:
+      "0x86": { op1: Eb, op2: Gb }
+      "0x87": { op1: Ev, op2: Gv }
+      "0x90": { op1: eAX, op2: eAX } # NOP when 0x90
+      "0x91..0x97": { op1: eAX, op2: "gprv[reg]" }
+    semantics:
+      args: [op1, op2]
+      body: |
+        tmp = op1
+        writeback:
+          op1 = op2
+          op2 = tmp
+        flags: none
+
+  CBW_CWDE:
+    description: "Convert Byte to Word / Word to Doubleword"
+    availability:
+      min_cpu: CPU_8086 # CBW on 8086; CWDE requires CPU_386
+    class: alu_reg
+    opcode_map:
+      "0x98": { operand_size_16: { dst: AX, src: AL }, operand_size_32: { dst: EAX, src: AX } }
+    semantics:
+      args: [dst, src]
+      body: |
+        res = sign_extend(src, sizeof(dst))
+        writeback: dst = res
+        flags: none
+
+  CWD_CDQ:
+    description: "Convert Word to Doubleword / Doubleword to Quadword in EDX:EAX"
+    availability:
+      min_cpu: CPU_8086 # CWD on 8086; CDQ requires CPU_386
+    class: alu_reg
+    opcode_map:
+      "0x99": { operand_size_16: { high: DX, low: AX }, operand_size_32: { high: EDX, low: EAX } }
+    semantics:
+      args: [high, low]
+      body: |
+        high = (low < 0) ? -1 : 0
+        writeback: high = high
+        flags: none
+
+  BSWAP:
+    description: "Byte Swap (32-bit endian reversal)"
+    availability: { min_cpu: CPU_486 }
+    class: alu_reg
+    opcode_map:
+      "0x0F 0xC8..0xCF": { dst: "gpr32[reg]" }
+    semantics:
+      args: [dst]
+      body: |
+        res = ((dst & 0x000000FF) << 24) |
+              ((dst & 0x0000FF00) << 8)  |
+              ((dst & 0x00FF0000) >> 8)  |
+              ((dst & 0xFF000000) >> 24)
+        writeback: dst = res
+        flags: none
+
+  XLAT:
+    description: "Table Look-up Translation (AL = [EBX + AL])"
+    availability: { min_cpu: CPU_8086 }
+    class: mov_reg_mem
+    opcode_map:
+      "0xD7": { dst: AL, base: eBX }
+    semantics:
+      args: [dst, base]
+      body: |
+        addr = base + dst
+        val = read_mem8(DS, addr)
+        writeback: dst = val
+        flags: none
+
+  LES:
+    description: "Load Full Pointer into ES and Register"
+    availability: { min_cpu: CPU_8086 }
+    class: mov_ptr
+    opcode_map:
+      "0xC4": { dst: [Gv, ES], src: Mp }
+    semantics:
+      args: [dst, src]
+      body: |
+        load_far_ptr(ES, dst, src)
+
+  LDS:
+    description: "Load Full Pointer into DS and Register"
+    availability: { min_cpu: CPU_8086 }
+    class: mov_ptr
+    opcode_map:
+      "0xC5": { dst: [Gv, DS], src: Mp }
+    semantics:
+      args: [dst, src]
+      body: |
+        load_far_ptr(DS, dst, src)
+
+  LSS:
+    description: "Load Full Pointer into SS and Register"
+    availability: { min_cpu: CPU_386 }
+    class: mov_ptr
+    opcode_map:
+      "0x0F 0xB2": { dst: [Gv, SS], src: Mp }
+    semantics:
+      args: [dst, src]
+      body: |
+        load_far_ptr(SS, dst, src)
+
+  LFS:
+    description: "Load Full Pointer into FS and Register"
+    availability: { min_cpu: CPU_386 }
+    class: mov_ptr
+    opcode_map:
+      "0x0F 0xB4": { dst: [Gv, FS], src: Mp }
+    semantics:
+      args: [dst, src]
+      body: |
+        load_far_ptr(FS, dst, src)
+
+  LGS:
+    description: "Load Full Pointer into GS and Register"
+    availability: { min_cpu: CPU_386 }
+    class: mov_ptr
+    opcode_map:
+      "0x0F 0xB5": { dst: [Gv, GS], src: Mp }
+    semantics:
+      args: [dst, src]
+      body: |
+        load_far_ptr(GS, dst, src)
+
+

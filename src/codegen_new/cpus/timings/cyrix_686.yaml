@@ -1,0 +1,62 @@
+# cyrix_686.yaml - Cyrix 6x86 / 6x86MX / MII Microarchitecture Profile
+
+model:
+  cpu_level: CPU_Cx6x86
+  name: "Cyrix 6x86 (M1) / 6x86MX (M2) / MII"
+  pipeline_type: superscalar_dual_issue
+  pipes: [X, Y]
+  data_forwarding_enabled: true # Cyrix can pair dependent instructions via speculative data forwarding!
+
+pairing_rules:
+  # Arithmetic & Logic (Can pair in either X or Y pipe)
+  alu_reg:          { pair: PAIR_XY, cycles: 1 }
+  alu_rm:           { pair: PAIR_XY, cycles: 1 } # Single-cycle load-execute!
+  alu_rmw:          { pair: PAIR_XY, cycles: 2 }
+
+  # ADC/SBB
+  alu_carry_reg:    { pair: PAIR_X,  cycles: 1 }
+  alu_carry_rm:     { pair: PAIR_X,  cycles: 1 }
+  alu_carry_rmw:    { pair: PAIR_X,  cycles: 2 }
+
+  # Shifts & Rotates
+  shift_reg_1:      { pair: PAIR_XY, cycles: 1 }
+  shift_reg_imm:    { pair: PAIR_XY, cycles: 1 }
+  shift_reg_cl:     { pair: PAIR_NP, cycles: 4 }
+  shift_mem_1:      { pair: PAIR_XY, cycles: 2 }
+  shift_mem_imm:    { pair: PAIR_XY, cycles: 2 }
+  shift_mem_cl:     { pair: PAIR_NP, cycles: 5 }
+  double_shift:     { pair: PAIR_NP, cycles: 3 }
+
+  # Multiplication and Division
+  mul_reg:          { pair: PAIR_NP, min_cycles: 6, max_cycles: 10 }
+  div_reg:          { pair: PAIR_NP, min_cycles: 30, max_cycles: 42 }
+
+  # Data Movement
+  mov_reg_reg:      { pair: PAIR_XY, cycles: 1 }
+  mov_reg_mem:      { pair: PAIR_XY, cycles: 1 }
+  mov_mem_reg:      { pair: PAIR_XY, cycles: 1 }
+  mov_extend:       { pair: PAIR_XY, cycles: 1 }
+  xchg_reg_reg:     { pair: PAIR_NP, cycles: 3 }
+  xchg_reg_mem:     { pair: PAIR_NP, cycles: 5 }
+
+  # Control Flow & Branching
+  branch_cond:
+    pair: PAIR_X_BRANCH
+    taken: 1
+    not_taken: 1
+    mispredict_penalty: 4
+  branch_uncond_near: { pair: PAIR_X_BRANCH, cycles: 1 }
+  branch_far:         { pair: PAIR_NP, cycles: 14 }
+  call_near:          { pair: PAIR_X_BRANCH, cycles: 2 }
+  ret_near:           { pair: PAIR_NP, cycles: 2 }
+
+  # Stack
+  stack_push:       { pair: PAIR_XY, cycles: 1 }
+  stack_pop:        { pair: PAIR_XY, cycles: 1 }
+
+  # SIMD (MMX - Cyrix 6x86MX / MII)
+  simd_alu:         { pair: PAIR_XY, cycles: 1 }
+  simd_shift:       { pair: PAIR_X,  cycles: 1 }
+  simd_mul:         { pair: PAIR_X,  cycles: 2 }
+  simd_mov:         { pair: PAIR_XY, cycles: 1 }
+

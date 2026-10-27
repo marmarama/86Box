@@ -1,0 +1,23 @@
+# am486dx4.yaml - AMD Am486DX4 (Clock Tripled)
+
+model:
+  cpu_id: CPU_Am486DX
+  name: "AMD Am486DX4-100"
+  vendor: "AMD"
+  release_year: 1994
+  family: 4
+  model_id: 8
+  package: [PGA_168, SOCKET_3]
+  frequency_range_mhz: [100, 120]
+  bus_multiplier: 3
+
+isa_level: CPU_486
+features:
+  - CPU_FEATURE_FPU
+
+timing_profile: "timings/486.yaml"
+
+cache:
+  l1_unified_kb: 16 # Enhanced 16KB Write-Back Cache
+  write_back: true
+

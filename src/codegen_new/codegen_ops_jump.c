@@ -7,11 +7,14 @@
 #include "x86.h"
 #include "x86seg_common.h"
 #include "x86seg.h"
+#include "x86_flags.h"
 #include "386_common.h"
 #include "codegen.h"
+#include "codegen_accumulate.h"
 #include "codegen_ir.h"
 #include "codegen_ops.h"
 #include "codegen_ops_helpers.h"
+#include "codegen_ops_jit_wrappers.h"
 #include "codegen_ops_mov.h"
 
 uint32_t
@@ -346,5 +349,67 @@ ropRETF_imm_32(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED
     ADD_SP(ir, 8 + offset);
 
     codegen_mark_code_present(block, cs + op_pc, 2);
+    return -1;
+}
+
+uint32_t
+ropIRET_16(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), UNUSED(uint32_t op_pc))
+{
+    uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
+    codegen_accumulate_flush(ir);
+
+    if (!(msw & 1)) {
+        if (stack32) {
+            uop_MEM_LOAD_REG(ir, IREG_temp0_W, IREG_SS_base, IREG_ESP);
+            uop_MEM_LOAD_REG_OFFSET(ir, IREG_temp1_W, IREG_SS_base, IREG_ESP, 2);
+            uop_MEM_LOAD_REG_OFFSET(ir, IREG_temp2_W, IREG_SS_base, IREG_ESP, 4);
+            ADD_SP(ir, 6);
+        } else {
+            uop_MOVZX(ir, IREG_eaaddr, IREG_SP);
+            uop_MEM_LOAD_REG(ir, IREG_temp0_W, IREG_SS_base, IREG_eaaddr);
+            uop_MEM_LOAD_REG_OFFSET(ir, IREG_temp1_W, IREG_SS_base, IREG_eaaddr, 2);
+            uop_MEM_LOAD_REG_OFFSET(ir, IREG_temp2_W, IREG_SS_base, IREG_eaaddr, 4);
+            ADD_SP(ir, 6);
+        }
+        uop_MOVZX(ir, IREG_pc, IREG_temp0_W);
+        uop_LOAD_FUNC_ARG_REG(ir, 0, IREG_temp1_W);
+        uop_CALL_FUNC(ir, loadcs);
+        uop_LOAD_FUNC_ARG_REG(ir, 0, IREG_temp2_W);
+        uop_CALL_FUNC(ir, jit_popf);
+    } else {
+        uop_CALL_FUNC(ir, jit_iret);
+    }
+
+    return -1;
+}
+
+uint32_t
+ropIRETD_32(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), UNUSED(uint32_t op_pc))
+{
+    uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
+    codegen_accumulate_flush(ir);
+
+    if (!(msw & 1)) {
+        if (stack32) {
+            uop_MEM_LOAD_REG(ir, IREG_temp0, IREG_SS_base, IREG_ESP);
+            uop_MEM_LOAD_REG_OFFSET(ir, IREG_temp1_W, IREG_SS_base, IREG_ESP, 4);
+            uop_MEM_LOAD_REG_OFFSET(ir, IREG_temp2, IREG_SS_base, IREG_ESP, 8);
+            ADD_SP(ir, 12);
+        } else {
+            uop_MOVZX(ir, IREG_eaaddr, IREG_SP);
+            uop_MEM_LOAD_REG(ir, IREG_temp0, IREG_SS_base, IREG_eaaddr);
+            uop_MEM_LOAD_REG_OFFSET(ir, IREG_temp1_W, IREG_SS_base, IREG_eaaddr, 4);
+            uop_MEM_LOAD_REG_OFFSET(ir, IREG_temp2, IREG_SS_base, IREG_eaaddr, 8);
+            ADD_SP(ir, 12);
+        }
+        uop_MOV(ir, IREG_pc, IREG_temp0);
+        uop_LOAD_FUNC_ARG_REG(ir, 0, IREG_temp1_W);
+        uop_CALL_FUNC(ir, loadcs);
+        uop_LOAD_FUNC_ARG_REG(ir, 0, IREG_temp2);
+        uop_CALL_FUNC(ir, jit_popfd);
+    } else {
+        uop_CALL_FUNC(ir, jit_iretd);
+    }
+
     return -1;
 }

@@ -1,0 +1,290 @@
+# arithmetic.yaml - Integer Arithmetic Instruction Families
+
+families:
+  ADD:
+    description: "Add with Carry Status Update"
+    availability: { min_cpu: CPU_8086 }
+    class: alu
+    opcode_map:
+      "0x00": { dst: Eb, src: Gb }
+      "0x01": { dst: Ev, src: Gv }
+      "0x02": { dst: Gb, src: Eb }
+      "0x03": { dst: Gv, src: Ev }
+      "0x04": { dst: AL, src: Ib }
+      "0x05": { dst: eAX, src: Iv }
+      "0x80 /0": { dst: Eb, src: Ib }
+      "0x81 /0": { dst: Ev, src: Iv }
+      "0x82 /0": { dst: Eb, src: Ib }
+      "0x83 /0": { dst: Ev, src: Ib_sext }
+    semantics:
+      args: [dst, src]
+      body: |
+        res = dst + src
+        flags: { tag: FLAGS_ADD, op1: dst, op2: src, res: res }
+        writeback: dst = res
+
+  ADC:
+    description: "Add with Carry"
+    availability: { min_cpu: CPU_8086 }
+    class: alu_carry
+    opcode_map:
+      "0x10": { dst: Eb, src: Gb }
+      "0x11": { dst: Ev, src: Gv }
+      "0x12": { dst: Gb, src: Eb }
+      "0x13": { dst: Gv, src: Ev }
+      "0x14": { dst: AL, src: Ib }
+      "0x15": { dst: eAX, src: Iv }
+      "0x80 /2": { dst: Eb, src: Ib }
+      "0x81 /2": { dst: Ev, src: Iv }
+      "0x82 /2": { dst: Eb, src: Ib }
+      "0x83 /2": { dst: Ev, src: Ib_sext }
+    semantics:
+      args: [dst, src]
+      body: |
+        cf = read_flag(CF)
+        res = dst + src + cf
+        flags: { tag: FLAGS_ADC, op1: dst, op2: src, res: res }
+        writeback: dst = res
+
+  SUB:
+    description: "Subtract"
+    availability: { min_cpu: CPU_8086 }
+    class: alu
+    opcode_map:
+      "0x28": { dst: Eb, src: Gb }
+      "0x29": { dst: Ev, src: Gv }
+      "0x2A": { dst: Gb, src: Eb }
+      "0x2B": { dst: Gv, src: Ev }
+      "0x2C": { dst: AL, src: Ib }
+      "0x2D": { dst: eAX, src: Iv }
+      "0x80 /5": { dst: Eb, src: Ib }
+      "0x81 /5": { dst: Ev, src: Iv }
+      "0x82 /5": { dst: Eb, src: Ib }
+      "0x83 /5": { dst: Ev, src: Ib_sext }
+    semantics:
+      args: [dst, src]
+      body: |
+        res = dst - src
+        flags: { tag: FLAGS_SUB, op1: dst, op2: src, res: res }
+        writeback: dst = res
+
+  SBB:
+    description: "Subtract with Borrow"
+    availability: { min_cpu: CPU_8086 }
+    class: alu_carry
+    opcode_map:
+      "0x18": { dst: Eb, src: Gb }
+      "0x19": { dst: Ev, src: Gv }
+      "0x1A": { dst: Gb, src: Eb }
+      "0x1B": { dst: Gv, src: Ev }
+      "0x1C": { dst: AL, src: Ib }
+      "0x1D": { dst: eAX, src: Iv }
+      "0x80 /3": { dst: Eb, src: Ib }
+      "0x81 /3": { dst: Ev, src: Iv }
+      "0x82 /3": { dst: Eb, src: Ib }
+      "0x83 /3": { dst: Ev, src: Ib_sext }
+    semantics:
+      args: [dst, src]
+      body: |
+        cf = read_flag(CF)
+        res = dst - (src + cf)
+        flags: { tag: FLAGS_SBB, op1: dst, op2: src, res: res }
+        writeback: dst = res
+
+  CMP:
+    description: "Compare Two Operands (SUB with suppressed writeback)"
+    inherit: SUB
+    availability: { min_cpu: CPU_8086 }
+    class: cmp
+    opcode_map:
+      "0x38": { dst: Eb, src: Gb }
+      "0x39": { dst: Ev, src: Gv }
+      "0x3A": { dst: Gb, src: Eb }
+      "0x3B": { dst: Gv, src: Ev }
+      "0x3C": { dst: AL, src: Ib }
+      "0x3D": { dst: eAX, src: Iv }
+      "0x80 /7": { dst: Eb, src: Ib }
+      "0x81 /7": { dst: Ev, src: Iv }
+      "0x82 /7": { dst: Eb, src: Ib }
+      "0x83 /7": { dst: Ev, src: Ib_sext }
+    semantics:
+      args: [dst, src]
+      body: |
+        res = dst - src
+        flags: { tag: FLAGS_SUB, op1: dst, op2: src, res: res }
+        writeback: none
+
+  INC:
+    description: "Increment by 1 (preserves Carry Flag)"
+    availability: { min_cpu: CPU_8086 }
+    class: alu
+    opcode_map:
+      "0xFE /0":    { dst: Eb }
+      "0xFF /0":    { dst: Ev }
+      "0x40..0x47": { dst: "gprv[reg]" }
+    semantics:
+      args: [dst]
+      body: |
+        res = dst + 1
+        flags: { tag: FLAGS_INC, op1: dst, op2: 1, res: res, preserve: [CF] }
+        writeback: dst = res
+
+  DEC:
+    description: "Decrement by 1 (preserves Carry Flag)"
+    availability: { min_cpu: CPU_8086 }
+    class: alu
+    opcode_map:
+      "0xFE /1":    { dst: Eb }
+      "0xFF /1":    { dst: Ev }
+      "0x48..0x4F": { dst: "gprv[reg]" }
+    semantics:
+      args: [dst]
+      body: |
+        res = dst - 1
+        flags: { tag: FLAGS_DEC, op1: dst, op2: 1, res: res, preserve: [CF] }
+        writeback: dst = res
+
+  NEG:
+    description: "Two's Complement Negation (0 - dst)"
+    availability: { min_cpu: CPU_8086 }
+    class: alu
+    opcode_map:
+      "0xF6 /3": { dst: Eb }
+      "0xF7 /3": { dst: Ev }
+    semantics:
+      args: [dst]
+      body: |
+        res = 0 - dst
+        flags: { tag: FLAGS_SUB, op1: 0, op2: dst, res: res }
+        writeback: dst = res
+
+  IMUL:
+    description: "Signed Multiply (Single/Two/Three Operand Forms)"
+    availability: { min_cpu: CPU_8086 }
+    class: mul
+    opcode_map:
+      "0xF6 /5": { src: Eb, dst: AL, implicit_dst: AX }
+      "0xF7 /5": { src: Ev, dst: eAX, implicit_dst: [eAX, eDX] }
+      "0x69":    { dst: Gv, src: [Ev, Iv], min_cpu: CPU_186 }
+      "0x6B":    { dst: Gv, src: [Ev, Ib_sext], min_cpu: CPU_186 }
+      "0x0F 0xAF": { dst: Gv, src: Ev, min_cpu: CPU_386 }
+    semantics:
+      args: [dst, src]
+      body: |
+        res = dst * src
+        writeback: dst = res
+
+  MUL:
+    description: "Unsigned Multiply"
+    availability: { min_cpu: CPU_8086 }
+    class: mul
+    opcode_map:
+      "0xF6 /4": { src: Eb, dst: AL, implicit_dst: AX }
+      "0xF7 /4": { src: Ev, dst: eAX, implicit_dst: [eAX, eDX] }
+    semantics:
+      args: [dst, src]
+      body: |
+        res = (uint64_t)dst * (uint64_t)src
+        writeback: dst = res
+
+  IDIV:
+    description: "Signed Integer Division"
+    availability: { min_cpu: CPU_8086 }
+    class: div
+    opcode_map:
+      "0xF6 /7": { src: Eb, implicit_src: AX, implicit_dst: [AL, AH] }
+      "0xF7 /7": { src: Ev, implicit_src: [eAX, eDX], implicit_dst: [eAX, eDX] }
+    semantics:
+      args: [src]
+      body: |
+        idiv_step(src)
+
+  DIV:
+    description: "Unsigned Integer Division"
+    availability: { min_cpu: CPU_8086 }
+    class: div
+    opcode_map:
+      "0xF6 /6": { src: Eb, implicit_src: AX, implicit_dst: [AL, AH] }
+      "0xF7 /6": { src: Ev, implicit_src: [eAX, eDX], implicit_dst: [eAX, eDX] }
+    semantics:
+      args: [src]
+      body: |
+        div_step(src)
+
+  DAA:
+    description: "Decimal Adjust AL after Addition"
+    availability: { min_cpu: CPU_8086 }
+    class: bcd_adjust
+    opcode_map:
+      "0x27": { dst: AL, src: AL }
+    semantics:
+      args: [dst]
+      body: |
+        daa_step()
+
+  DAS:
+    description: "Decimal Adjust AL after Subtraction"
+    availability: { min_cpu: CPU_8086 }
+    class: bcd_adjust
+    opcode_map:
+      "0x2F": { dst: AL, src: AL }
+    semantics:
+      args: [dst]
+      body: |
+        das_step()
+
+  AAA:
+    description: "ASCII Adjust AL after Addition"
+    availability: { min_cpu: CPU_8086 }
+    class: bcd_adjust
+    opcode_map:
+      "0x37": { dst: eAX, src: eAX }
+    semantics:
+      args: [dst]
+      body: |
+        aaa_step()
+
+  AAS:
+    description: "ASCII Adjust AL after Subtraction"
+    availability: { min_cpu: CPU_8086 }
+    class: bcd_adjust
+    opcode_map:
+      "0x3F": { dst: eAX, src: eAX }
+    semantics:
+      args: [dst]
+      body: |
+        aas_step()
+
+  AAM:
+    description: "ASCII Adjust AX after Multiply"
+    availability: { min_cpu: CPU_8086 }
+    class: bcd_adjust
+    opcode_map:
+      "0xD4": { dst: eAX, src: [eAX, Ib] }
+    semantics:
+      args: [dst, src]
+      body: |
+        aam_step(src)
+
+  AAD:
+    description: "ASCII Adjust AX before Division"
+    availability: { min_cpu: CPU_8086 }
+    class: bcd_adjust
+    opcode_map:
+      "0xD5": { dst: eAX, src: [eAX, Ib] }
+    semantics:
+      args: [dst, src]
+      body: |
+        aad_step(src)
+
+  SALC:
+    description: "Set AL on Carry (Undocumented 8086 opcode)"
+    availability: { min_cpu: CPU_8086 }
+    class: alu_reg
+    opcode_map:
+      "0xD6": { dst: AL }
+    semantics:
+      args: [dst]
+      body: |
+        al = read_flag(CF) ? 0xFF : 0x00
+

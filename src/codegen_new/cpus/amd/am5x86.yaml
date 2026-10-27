@@ -1,0 +1,23 @@
+# am5x86.yaml - AMD Am5x86 (Clock Quadrupled 486 / PR75)
+
+model:
+  cpu_id: CPU_ENH_Am486DX
+  name: "AMD Am5x86-P75 (133 MHz)"
+  vendor: "AMD"
+  release_year: 1995
+  family: 4
+  model_id: 14
+  package: [PGA_168, SOCKET_3]
+  frequency_range_mhz: [133, 160]
+  bus_multiplier: 4
+
+isa_level: CPU_486
+features:
+  - CPU_FEATURE_FPU
+
+timing_profile: "timings/486.yaml"
+
+cache:
+  l1_unified_kb: 16
+  write_back: true
+

@@ -1,0 +1,51 @@
+# 386.yaml - Intel 80386 Microarchitecture Timing Profile
+
+model:
+  cpu_level: CPU_386
+  name: "Intel 80386 (DX/SX)"
+  pipeline_type: unpipelined_microcode
+  bus_width: 32 # 16 on 386SX, 32 on 386DX
+
+timings:
+  # Arithmetic & Logic (microcode execution + bus cycles)
+  alu_reg:          { cycles: 2 }
+  alu_rm:           { cycles: 6, bus_penalty_sx: 2 }
+  alu_rmw:          { cycles: 7, bus_penalty_sx: 4 }
+  alu_carry_reg:    { cycles: 2 }
+  alu_carry_rm:     { cycles: 6, bus_penalty_sx: 2 }
+  alu_carry_rmw:    { cycles: 7, bus_penalty_sx: 4 }
+
+  # Shifts & Rotates (barrel shifter)
+  shift_reg_1:      { cycles: 3 }
+  shift_reg_imm:    { cycles: 3 }
+  shift_reg_cl:     { cycles: 7 }
+  shift_mem_1:      { cycles: 7 }
+  shift_mem_imm:    { cycles: 7 }
+  shift_mem_cl:     { cycles: 10 }
+  double_shift:     { cycles: 7 }
+
+  # Multiplication and Division
+  mul_reg:          { min_cycles: 9,  max_cycles: 41 }
+  div_reg:          { min_cycles: 38, max_cycles: 43 }
+
+  # Data Movement
+  mov_reg_reg:      { cycles: 2 }
+  mov_reg_mem:      { cycles: 4, bus_penalty_sx: 2 }
+  mov_mem_reg:      { cycles: 4, bus_penalty_sx: 2 }
+  mov_extend:       { cycles: 6 }
+  xchg_reg_reg:     { cycles: 3 }
+  xchg_reg_mem:     { cycles: 8 }
+
+  # Control Flow & Branching (No branch prediction)
+  branch_cond:
+    taken: 4
+    not_taken: 3
+  branch_uncond_near: { cycles: 4 }
+  branch_far:         { real_mode: 12, protected_mode: 27 }
+  call_near:          { cycles: 7 }
+  ret_near:           { cycles: 10 }
+
+  # Stack
+  stack_push:       { reg: 2, mem: 5 }
+  stack_pop:        { reg: 4, mem: 5 }
+

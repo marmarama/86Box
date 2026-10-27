@@ -1,0 +1,198 @@
+# logic_and_bit.yaml - Boolean Logic and Bit Manipulation Families
+
+families:
+  AND:
+    description: "Logical AND"
+    availability: { min_cpu: CPU_8086 }
+    class: alu
+    opcode_map:
+      "0x20": { dst: Eb, src: Gb }
+      "0x21": { dst: Ev, src: Gv }
+      "0x22": { dst: Gb, src: Eb }
+      "0x23": { dst: Gv, src: Ev }
+      "0x24": { dst: AL, src: Ib }
+      "0x25": { dst: eAX, src: Iv }
+      "0x80 /4": { dst: Eb, src: Ib }
+      "0x81 /4": { dst: Ev, src: Iv }
+      "0x82 /4": { dst: Eb, src: Ib }
+      "0x83 /4": { dst: Ev, src: Ib_sext }
+    semantics:
+      args: [dst, src]
+      body: |
+        res = dst & src
+        flags: { tag: FLAGS_LOGIC, op1: res, op2: 0, res: res }
+        writeback: dst = res
+
+  OR:
+    description: "Logical Inclusive OR"
+    availability: { min_cpu: CPU_8086 }
+    class: alu
+    opcode_map:
+      "0x08": { dst: Eb, src: Gb }
+      "0x09": { dst: Ev, src: Gv }
+      "0x0A": { dst: Gb, src: Eb }
+      "0x0B": { dst: Gv, src: Ev }
+      "0x0C": { dst: AL, src: Ib }
+      "0x0D": { dst: eAX, src: Iv }
+      "0x80 /1": { dst: Eb, src: Ib }
+      "0x81 /1": { dst: Ev, src: Iv }
+      "0x82 /1": { dst: Eb, src: Ib }
+      "0x83 /1": { dst: Ev, src: Ib_sext }
+    semantics:
+      args: [dst, src]
+      body: |
+        res = dst | src
+        flags: { tag: FLAGS_LOGIC, op1: res, op2: 0, res: res }
+        writeback: dst = res
+
+  XOR:
+    description: "Logical Exclusive OR"
+    availability: { min_cpu: CPU_8086 }
+    class: alu
+    opcode_map:
+      "0x30": { dst: Eb, src: Gb }
+      "0x31": { dst: Ev, src: Gv }
+      "0x32": { dst: Gb, src: Eb }
+      "0x33": { dst: Gv, src: Ev }
+      "0x34": { dst: AL, src: Ib }
+      "0x35": { dst: eAX, src: Iv }
+      "0x80 /6": { dst: Eb, src: Ib }
+      "0x81 /6": { dst: Ev, src: Iv }
+      "0x82 /6": { dst: Eb, src: Ib }
+      "0x83 /6": { dst: Ev, src: Ib_sext }
+    semantics:
+      args: [dst, src]
+      body: |
+        res = dst ^ src
+        flags: { tag: FLAGS_LOGIC, op1: res, op2: 0, res: res }
+        writeback: dst = res
+
+  TEST:
+    description: "Logical Compare (AND with suppressed writeback)"
+    inherit: AND
+    availability: { min_cpu: CPU_8086 }
+    class: bit_test
+    opcode_map:
+      "0x84": { dst: Eb, src: Gb }
+      "0x85": { dst: Ev, src: Gv }
+      "0xA8": { dst: AL, src: Ib }
+      "0xA9": { dst: eAX, src: Iv }
+      "0xF6 /0": { dst: Eb, src: Ib }
+      "0xF7 /0": { dst: Ev, src: Iv }
+    semantics:
+      args: [dst, src]
+      body: |
+        res = dst & src
+        flags: { tag: FLAGS_LOGIC, op1: res, op2: 0, res: res }
+        writeback: none
+
+  NOT:
+    description: "One's Complement Negation (~dst)"
+    availability: { min_cpu: CPU_8086 }
+    class: alu
+    opcode_map:
+      "0xF6 /2": { dst: Eb }
+      "0xF7 /2": { dst: Ev }
+    semantics:
+      args: [dst]
+      body: |
+        res = ~dst
+        flags: none
+        writeback: dst = res
+
+  BT:
+    description: "Bit Test (Copies selected bit into Carry Flag)"
+    availability: { min_cpu: CPU_386 }
+    class: bit_test
+    opcode_map:
+      "0x0F 0xA3":    { base: Ev, bit_offset: Gv }
+      "0x0F 0xBA /4": { base: Ev, bit_offset: Ib }
+    semantics:
+      args: [base, bit_offset]
+      body: |
+        cf = (base >> (bit_offset % sizeof_bits(base))) & 1
+        flags: { write: [CF: cf], preserve: [PF, AF, ZF, SF, OF] }
+        writeback: none
+
+  BTS:
+    description: "Bit Test and Set"
+    availability: { min_cpu: CPU_386 }
+    class: bit_test
+    opcode_map:
+      "0x0F 0xAB":    { base: Ev, bit_offset: Gv }
+      "0x0F 0xBA /5": { base: Ev, bit_offset: Ib }
+    semantics:
+      args: [base, bit_offset]
+      body: |
+        idx = bit_offset % sizeof_bits(base)
+        cf = (base >> idx) & 1
+        res = base | (1 << idx)
+        flags: { write: [CF: cf], preserve: [PF, AF, ZF, SF, OF] }
+        writeback: base = res
+
+  BTR:
+    description: "Bit Test and Reset"
+    availability: { min_cpu: CPU_386 }
+    class: bit_test
+    opcode_map:
+      "0x0F 0xB3":    { base: Ev, bit_offset: Gv }
+      "0x0F 0xBA /6": { base: Ev, bit_offset: Ib }
+    semantics:
+      args: [base, bit_offset]
+      body: |
+        idx = bit_offset % sizeof_bits(base)
+        cf = (base >> idx) & 1
+        res = base & ~(1 << idx)
+        flags: { write: [CF: cf], preserve: [PF, AF, ZF, SF, OF] }
+        writeback: base = res
+
+  BTC:
+    description: "Bit Test and Complement"
+    availability: { min_cpu: CPU_386 }
+    class: bit_test
+    opcode_map:
+      "0x0F 0xBB":    { base: Ev, bit_offset: Gv }
+      "0x0F 0xBA /7": { base: Ev, bit_offset: Ib }
+    semantics:
+      args: [base, bit_offset]
+      body: |
+        idx = bit_offset % sizeof_bits(base)
+        cf = (base >> idx) & 1
+        res = base ^ (1 << idx)
+        flags: { write: [CF: cf], preserve: [PF, AF, ZF, SF, OF] }
+        writeback: base = res
+
+  BSF:
+    description: "Bit Scan Forward (least significant 1-bit)"
+    availability: { min_cpu: CPU_386 }
+    class: bit_scan
+    opcode_map:
+      "0x0F 0xBC": { dst: Gv, src: Ev }
+    semantics:
+      args: [dst, src]
+      body: |
+        if src == 0:
+          flags: { write: [ZF: 1], undefined: [CF, PF, AF, SF, OF] }
+          writeback: none
+        else:
+          res = count_trailing_zeros(src)
+          flags: { write: [ZF: 0], undefined: [CF, PF, AF, SF, OF] }
+          writeback: dst = res
+
+  BSR:
+    description: "Bit Scan Reverse (most significant 1-bit)"
+    availability: { min_cpu: CPU_386 }
+    class: bit_scan
+    opcode_map:
+      "0x0F 0xBD": { dst: Gv, src: Ev }
+    semantics:
+      args: [dst, src]
+      body: |
+        if src == 0:
+          flags: { write: [ZF: 1], undefined: [CF, PF, AF, SF, OF] }
+          writeback: none
+        else:
+          res = (sizeof_bits(src) - 1) - count_leading_zeros(src)
+          flags: { write: [ZF: 0], undefined: [CF, PF, AF, SF, OF] }
+          writeback: dst = res
+

@@ -1,0 +1,161 @@
+# simd_mmx.yaml - MultiMedia eXtensions (MMX) SIMD Integer Families
+
+common_anchors:
+  availability: &mmx_avail
+    min_cpu: CPU_PENTIUM
+    feature: CPU_FEATURE_MMX
+    exceptions:
+      - cond: "(CR0 & (CR0_EM | CR0_TS)) != 0"
+        fault: NM_FAULT   # Device Not Available (FPU/MMX task switch trap)
+
+families:
+  EMMS:
+    description: "Empty MMX Technology State (Marks all x87 FPU tags as empty)"
+    availability: *mmx_avail
+    class: sys_control
+    opcode_map:
+      "0x0F 0x77": { none: 0 }
+    semantics:
+      args: []
+      body: |
+        fpu_tag_word = 0xFFFF
+        flags: none
+
+  MOVQ:
+    description: "Move Quadword (64-bit MMX register / memory transfer)"
+    availability: *mmx_avail
+    class: simd_mov
+    opcode_map:
+      "0x0F 0x6E": { dst: Pq, src: Ed } # Load 32-bit dword zero-extended to MMX
+      "0x0F 0x6F": { dst: Pq, src: Qq } # Load 64-bit quadword
+      "0x0F 0x7E": { dst: Ed, src: Pq } # Store low 32-bits to GPR/mem
+      "0x0F 0x7F": { dst: Qq, src: Pq } # Store 64-bit quadword
+    semantics:
+      args: [dst, src]
+      body: |
+        writeback: dst = src
+        flags: none
+
+  PADDB:
+    description: "Add Packed Bytes with Wraparound"
+    availability: *mmx_avail
+    class: simd_alu
+    opcode_map:
+      "0x0F 0xFC": { dst: Pq, src: Qq }
+    semantics:
+      args: [dst, src]
+      body: |
+        for i in range(8):
+          res.u8[i] = dst.u8[i] + src.u8[i]
+        writeback: dst = res
+        flags: none
+
+  PADDW:
+    description: "Add Packed Words with Wraparound"
+    availability: *mmx_avail
+    class: simd_alu
+    opcode_map:
+      "0x0F 0xFD": { dst: Pq, src: Qq }
+    semantics:
+      args: [dst, src]
+      body: |
+        for i in range(4):
+          res.u16[i] = dst.u16[i] + src.u16[i]
+        writeback: dst = res
+        flags: none
+
+  PADDD:
+    description: "Add Packed Doublewords with Wraparound"
+    availability: *mmx_avail
+    class: simd_alu
+    opcode_map:
+      "0x0F 0xFE": { dst: Pq, src: Qq }
+    semantics:
+      args: [dst, src]
+      body: |
+        for i in range(2):
+          res.u32[i] = dst.u32[i] + src.u32[i]
+        writeback: dst = res
+        flags: none
+
+  PSUBB:
+    description: "Subtract Packed Bytes with Wraparound"
+    availability: *mmx_avail
+    class: simd_alu
+    opcode_map:
+      "0x0F 0xF8": { dst: Pq, src: Qq }
+    semantics:
+      args: [dst, src]
+      body: |
+        for i in range(8):
+          res.u8[i] = dst.u8[i] - src.u8[i]
+        writeback: dst = res
+        flags: none
+
+  PSUBW:
+    description: "Subtract Packed Words with Wraparound"
+    availability: *mmx_avail
+    class: simd_alu
+    opcode_map:
+      "0x0F 0xF9": { dst: Pq, src: Qq }
+    semantics:
+      args: [dst, src]
+      body: |
+        for i in range(4):
+          res.u16[i] = dst.u16[i] - src.u16[i]
+        writeback: dst = res
+        flags: none
+
+  PSUBD:
+    description: "Subtract Packed Doublewords with Wraparound"
+    availability: *mmx_avail
+    class: simd_alu
+    opcode_map:
+      "0x0F 0xFA": { dst: Pq, src: Qq }
+    semantics:
+      args: [dst, src]
+      body: |
+        for i in range(2):
+          res.u32[i] = dst.u32[i] - src.u32[i]
+        writeback: dst = res
+        flags: none
+
+  PAND:
+    description: "Bitwise Logical AND of 64-bit Quadwords"
+    availability: *mmx_avail
+    class: simd_alu
+    opcode_map:
+      "0x0F 0xDB": { dst: Pq, src: Qq }
+    semantics:
+      args: [dst, src]
+      body: |
+        res = dst.u64 & src.u64
+        writeback: dst = res
+        flags: none
+
+  POR:
+    description: "Bitwise Logical OR of 64-bit Quadwords"
+    availability: *mmx_avail
+    class: simd_alu
+    opcode_map:
+      "0x0F 0xEB": { dst: Pq, src: Qq }
+    semantics:
+      args: [dst, src]
+      body: |
+        res = dst.u64 | src.u64
+        writeback: dst = res
+        flags: none
+
+  PXOR:
+    description: "Bitwise Logical XOR of 64-bit Quadwords"
+    availability: *mmx_avail
+    class: simd_alu
+    opcode_map:
+      "0x0F 0xEF": { dst: Pq, src: Qq }
+    semantics:
+      args: [dst, src]
+      body: |
+        res = dst.u64 ^ src.u64
+        writeback: dst = res
+        flags: none
+

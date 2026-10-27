@@ -60,6 +60,274 @@ jit_sti_slow(void)
 }
 
 static JIT_WRAPPER void
+jit_popf(uint32_t val)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        uint16_t tempw = (uint16_t) val;
+        if (!(CPL) || !(msw & 1))
+            cpu_state.flags = (tempw & 0x7fd5) | 2;
+        else if (IOPLp)
+            cpu_state.flags = (cpu_state.flags & 0x3000) | (tempw & 0x4fd5) | 2;
+        else
+            cpu_state.flags = (cpu_state.flags & 0x3200) | (tempw & 0x4dd5) | 2;
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+#ifdef USE_DEBUG_REGS_486
+        rf_flag_no_clear = 1;
+#endif
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        uint16_t tempw = (uint16_t) val;
+        if (!(CPL) || !(msw & 1))
+            cpu_state.flags = (tempw & 0x7fd5) | 2;
+        else if (IOPLp)
+            cpu_state.flags = (cpu_state.flags & 0x3000) | (tempw & 0x4fd5) | 2;
+        else
+            cpu_state.flags = (cpu_state.flags & 0x3200) | (tempw & 0x4dd5) | 2;
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+#ifdef USE_DEBUG_REGS_486
+        rf_flag_no_clear = 1;
+#endif
+    }
+}
+
+static JIT_WRAPPER void
+jit_popfd(uint32_t templ)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        if (!(CPL) || !(msw & 1))
+            cpu_state.flags = (templ & 0x7fd5) | 2;
+        else if (IOPLp)
+            cpu_state.flags = (cpu_state.flags & 0x3000) | (templ & 0x4fd5) | 2;
+        else
+            cpu_state.flags = (cpu_state.flags & 0x3200) | (templ & 0x4dd5) | 2;
+
+        templ &= (is486 || isibm486) ? 0x3c0000 : 0;
+        templ |= ((cpu_state.eflags & 3) << 16);
+        if (cpu_CR4_mask & CR4_VME)
+            cpu_state.eflags = (templ >> 16) & 0x3f;
+        else if (CPUID)
+            cpu_state.eflags = (templ >> 16) & 0x27;
+        else if (is486 || isibm486)
+            cpu_state.eflags = (templ >> 16) & 7;
+        else
+            cpu_state.eflags = (templ >> 16) & 3;
+
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+#ifdef USE_DEBUG_REGS_486
+        rf_flag_no_clear = 1;
+#endif
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        if (!(CPL) || !(msw & 1))
+            cpu_state.flags = (templ & 0x7fd5) | 2;
+        else if (IOPLp)
+            cpu_state.flags = (cpu_state.flags & 0x3000) | (templ & 0x4fd5) | 2;
+        else
+            cpu_state.flags = (cpu_state.flags & 0x3200) | (templ & 0x4dd5) | 2;
+
+        templ &= (is486 || isibm486) ? 0x3c0000 : 0;
+        templ |= ((cpu_state.eflags & 3) << 16);
+        if (cpu_CR4_mask & CR4_VME)
+            cpu_state.eflags = (templ >> 16) & 0x3f;
+        else if (CPUID)
+            cpu_state.eflags = (templ >> 16) & 0x27;
+        else if (is486 || isibm486)
+            cpu_state.eflags = (templ >> 16) & 7;
+        else
+            cpu_state.eflags = (templ >> 16) & 3;
+
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+#ifdef USE_DEBUG_REGS_486
+        rf_flag_no_clear = 1;
+#endif
+    }
+}
+
+static JIT_WRAPPER void
+jit_verr(uint32_t sel_val)
+{
+    uint16_t sel = (uint16_t) sel_val;
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        flags_rebuild();
+        cpu_state.flags &= ~Z_FLAG;
+        if ((cr0 & 1) && (sel & 0xfffc)) {
+            cpl_override = 1;
+            int valid = (sel & ~7) < ((sel & 4) ? ldt.limit : gdt.limit);
+            uint16_t desc = readmemw(0, ((sel & 4) ? ldt.base : gdt.base) + (sel & ~7) + 4);
+            cpl_override = 0;
+            if (!cpu_state.abrt) {
+                if (!(desc & 0x1000))
+                    valid = 0;
+                if ((desc & 0xC00) != 0xC00) {
+                    int dpl = (desc >> 13) & 3;
+                    if (dpl < CPL || dpl < (sel & 3))
+                        valid = 0;
+                }
+                if ((desc & 0x0800) && !(desc & 0x0200))
+                    valid = 0;
+                if (valid)
+                    cpu_state.flags |= Z_FLAG;
+            }
+        }
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        flags_rebuild();
+        cpu_state.flags &= ~Z_FLAG;
+        if ((cr0 & 1) && (sel & 0xfffc)) {
+            cpl_override = 1;
+            int valid = (sel & ~7) < ((sel & 4) ? ldt.limit : gdt.limit);
+            uint16_t desc = readmemw(0, ((sel & 4) ? ldt.base : gdt.base) + (sel & ~7) + 4);
+            cpl_override = 0;
+            if (!cpu_state.abrt) {
+                if (!(desc & 0x1000))
+                    valid = 0;
+                if ((desc & 0xC00) != 0xC00) {
+                    int dpl = (desc >> 13) & 3;
+                    if (dpl < CPL || dpl < (sel & 3))
+                        valid = 0;
+                }
+                if ((desc & 0x0800) && !(desc & 0x0200))
+                    valid = 0;
+                if (valid)
+                    cpu_state.flags |= Z_FLAG;
+            }
+        }
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+    }
+}
+
+static JIT_WRAPPER void
+jit_verw(uint32_t sel_val)
+{
+    uint16_t sel = (uint16_t) sel_val;
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        flags_rebuild();
+        cpu_state.flags &= ~Z_FLAG;
+        if ((cr0 & 1) && (sel & 0xfffc)) {
+            cpl_override = 1;
+            int valid = (sel & ~7) < ((sel & 4) ? ldt.limit : gdt.limit);
+            uint16_t desc = readmemw(0, ((sel & 4) ? ldt.base : gdt.base) + (sel & ~7) + 4);
+            cpl_override = 0;
+            if (!cpu_state.abrt) {
+                if (!(desc & 0x1000))
+                    valid = 0;
+                int dpl = (desc >> 13) & 3;
+                if (dpl < CPL || dpl < (sel & 3))
+                    valid = 0;
+                if (desc & 0x0800)
+                    valid = 0;
+                if (!(desc & 0x0200))
+                    valid = 0;
+                if (valid)
+                    cpu_state.flags |= Z_FLAG;
+            }
+        }
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        flags_rebuild();
+        cpu_state.flags &= ~Z_FLAG;
+        if ((cr0 & 1) && (sel & 0xfffc)) {
+            cpl_override = 1;
+            int valid = (sel & ~7) < ((sel & 4) ? ldt.limit : gdt.limit);
+            uint16_t desc = readmemw(0, ((sel & 4) ? ldt.base : gdt.base) + (sel & ~7) + 4);
+            cpl_override = 0;
+            if (!cpu_state.abrt) {
+                if (!(desc & 0x1000))
+                    valid = 0;
+                int dpl = (desc >> 13) & 3;
+                if (dpl < CPL || dpl < (sel & 3))
+                    valid = 0;
+                if (desc & 0x0800)
+                    valid = 0;
+                if (!(desc & 0x0200))
+                    valid = 0;
+                if (valid)
+                    cpu_state.flags |= Z_FLAG;
+            }
+        }
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+    }
+}
+
+static JIT_WRAPPER void
+jit_iret(void)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        x86_dynarec_opcodes[0xcf](0);
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        x86_dynarec_opcodes[0xcf](0);
+    }
+}
+
+static JIT_WRAPPER void
+jit_iretd(void)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        x86_dynarec_opcodes[0xcf | 0x100](0);
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        x86_dynarec_opcodes[0xcf | 0x100](0);
+    }
+}
+
+static JIT_WRAPPER uint32_t
+jit_smsw16(void)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        uint32_t val;
+        if (is486 || isibm486)
+            val = msw;
+        else if (is386 && !cpu_16bitbus)
+            val = msw | 0xFFE0;
+        else
+            val = msw | 0xFFF0;
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+        return val;
+    } else {
+        if (is486 || isibm486)
+            return msw;
+        else if (is386 && !cpu_16bitbus)
+            return msw | 0xFFE0;
+        else
+            return msw | 0xFFF0;
+    }
+}
+
+static JIT_WRAPPER uint32_t
+jit_smsw32(void)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        uint32_t val;
+        if (is486 || isibm486)
+            val = cr0;
+        else if (is386 && !cpu_16bitbus)
+            val = cr0 | 0x7FFFFFE0;
+        else
+            val = cr0 | 0x7FFFFFF0;
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+        return val;
+    } else {
+        if (is486 || isibm486)
+            return cr0;
+        else if (is386 && !cpu_16bitbus)
+            return cr0 | 0x7FFFFFE0;
+        else
+            return cr0 | 0x7FFFFFF0;
+    }
+}
+
+static JIT_WRAPPER void
 jit_flags_rebuild(void)
 {
     if (codegen_profile_active) {

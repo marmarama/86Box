@@ -1,0 +1,55 @@
+# 8086.yaml - Intel 8086 / 8088 Microarchitecture Timing Profile
+
+model:
+  cpu_level: CPU_8086
+  name: "Intel 8086 / 8088"
+  pipeline_type: unpipelined_microcode
+  bus_width: 16 # 8 on 8088, 16 on 8086
+  prefetch_queue_bytes: 6 # 4 on 8088, 6 on 8086
+
+effective_address_cycles:
+  base_only: 5           # [BX], [BP], [SI], [DI]
+  displacement_only: 6   # [disp16]
+  base_plus_disp: 9      # [BX+disp], [BP+disp], [SI+disp], [DI+disp]
+  base_plus_index: 7     # [BX+SI], [BP+DI] (8 cycles if [BX+DI] or [BP+SI])
+  base_index_disp: 11    # [BX+SI+disp] (12 cycles if [BX+DI+disp])
+
+timings:
+  # Arithmetic & Logic (Cycles include microcode execution; add EA cycles for memory)
+  alu_reg:          { cycles: 3 }
+  alu_rm:           { cycles: 9,  ea_penalty: true, bus_penalty_8088: 4 }
+  alu_rmw:          { cycles: 16, ea_penalty: true, bus_penalty_8088: 8 }
+  alu_carry_reg:    { cycles: 3 }
+  alu_carry_rm:     { cycles: 9,  ea_penalty: true, bus_penalty_8088: 4 }
+  alu_carry_rmw:    { cycles: 16, ea_penalty: true, bus_penalty_8088: 8 }
+
+  # Shifts & Rotates (Iterative shift: 8 + 4 per bit shifted for CL)
+  shift_reg_1:      { cycles: 2 }
+  shift_reg_cl:     { base: 8, per_bit: 4 }
+  shift_mem_1:      { cycles: 15, ea_penalty: true }
+  shift_mem_cl:     { base: 20, per_bit: 4, ea_penalty: true }
+
+  # Multiplication and Division (Data-dependent microcode loops)
+  mul_reg:          { min_cycles: 70, max_cycles: 133 }
+  div_reg:          { min_cycles: 80, max_cycles: 162 }
+
+  # Data Movement
+  mov_reg_reg:      { cycles: 2 }
+  mov_reg_mem:      { cycles: 8, ea_penalty: true, bus_penalty_8088: 4 }
+  mov_mem_reg:      { cycles: 9, ea_penalty: true, bus_penalty_8088: 4 }
+  xchg_reg_reg:     { cycles: 3 }
+  xchg_reg_mem:     { cycles: 17, ea_penalty: true }
+
+  # Control Flow & Branching (Emptying prefetch queue)
+  branch_cond:
+    taken: 16
+    not_taken: 4
+  branch_uncond_near: { cycles: 15 }
+  branch_far:         { cycles: 15 }
+  call_near:          { cycles: 19 }
+  ret_near:           { cycles: 16 }
+
+  # Stack
+  stack_push:       { reg: 11, mem: 16 }
+  stack_pop:        { reg: 8,  mem: 12 }
+

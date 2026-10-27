@@ -1,0 +1,33 @@
+# pentium_p54c.yaml - Intel Pentium (P54C Classic Non-MMX)
+
+model:
+  cpu_id: CPU_PENTIUM
+  name: "Intel Pentium (P54C)"
+  vendor: "GenuineIntel"
+  release_year: 1994
+  family: 5
+  model_id: 2
+  stepping: 5
+  package: [SOCKET_5, SOCKET_7]
+  frequency_range_mhz: [75, 200]
+
+cpuid:
+  signature: 0x00000525
+  features_edx: 0x000001BF # FPU, VME, DE, TSC, MSR, CX8 (No MMX)
+
+isa_level: CPU_PENTIUM
+features:
+  - CPU_FEATURE_FPU
+  - CPU_FEATURE_VME
+  - CPU_FEATURE_DE
+  - CPU_FEATURE_TSC
+  - CPU_FEATURE_MSR
+  - CPU_FEATURE_CX8
+
+timing_profile: "timings/pentium.yaml"
+
+cache:
+  l1_instruction_kb: 8
+  l1_data_kb: 8
+  prefix_cache: false
+
