@@ -35,3 +35,46 @@ cache:
   l1_data_kb: 8
   prefix_cache: false
 
+quirks:
+  - id: ERRATUM_PENTIUM_F00F
+    name: "Pentium F00F (LOCK CMPXCHG8B) Bus Lock Freeze"
+    cve: "CVE-1997-10003"
+    doc_ref: "Intel Pentium Processor Specification Update, Erratum 30"
+    category: BUS_LOCK_HANG
+    description: |
+      Executing LOCK CMPXCHG8B with a register operand (F0 0F C7 C8..CF) asserts
+      the hardware LOCK# signal for an illegal memory access cycle, hanging the
+      memory bus until a hardware reset.
+    steppings_affected:
+      family: 5
+      models: [1, 2]          # P5, P54C
+      stepping_mask: "<= 4"   # C2 and earlier
+    trigger:
+      opcode: [0x0F, 0xC7]
+      modrm_reg: 1            # CMPXCHG8B is group 9, /1
+      modrm_mod: 0b11         # Register target (mod == 3)
+      required_prefix: PREFIX_LOCK
+    behavior:
+      type: HANG_BUS_LOCK
+      synthesized_action: "cpu_bus_lock_freeze(cpu);"
+    fixed_in: "Pentium Pro / Pentium II"
+
+  - id: ERRATUM_PENTIUM_FDIV
+    name: "Pentium FDIV Lookup Table Precision Degradation"
+    doc_ref: "Intel Pentium Processor Specification Update, Erratum 20"
+    category: FPU_PRECISION
+    description: |
+      5 missing entries out of 2048 in the Radix-4 SRT division PLA
+      cause rare precision loss in FDIV and FPREM.
+    steppings_affected:
+      family: 5
+      models: [1, 2]
+      stepping_mask: "< 5"    # Early P54C (prior to B5 stepping)
+    trigger:
+      instructions: [FDIV, FDIVP, FIDIV, FPREM]
+    behavior:
+      type: DEGRADED_FPU_DIVISION
+      synthesized_action: "fpu_srt_fdiv_faulty(st0, st1);"
+    fixed_in: "P54C stepping B5"
+
+

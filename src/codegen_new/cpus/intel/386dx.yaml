@@ -24,3 +24,22 @@ supported_coprocessors:
 
 timing_profile: "timings/386.yaml"
 
+quirks:
+  - id: ERRATUM_386_B0_IMUL
+    name: "80386 A/B Stepping 32-bit Multiply Bug"
+    category: ARITHMETIC_CORRUPT
+    description: |
+      Early 80386DX steppings (A and B0/B1) produce incorrect upper bits 
+      during 32-bit IMUL/MUL under certain operand patterns (marked '16 BIT S/W ONLY').
+    steppings_affected:
+      family: 3
+      stepping_mask: "<= B1"
+    trigger:
+      instructions: [IMUL, MUL]
+      operand_size: 32
+    behavior:
+      type: ARITHMETIC_MISCALCULATE
+      synthesized_action: "op_imul32_b0_erratum(dst, src);"
+    fixed_in: "80386DX stepping D0"
+
+

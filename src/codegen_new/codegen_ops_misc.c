@@ -1419,3 +1419,77 @@ rop0F01(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetc
     return op_pc + 1;
 }
 
+uint32_t
+ropIN(codeblock_t *block, ir_data_t *ir, uint8_t opcode, UNUSED(uint32_t fetchdat), uint32_t op_32, uint32_t op_pc)
+{
+    int is_imm  = !(opcode & 8); /* 0xE4/0xE5: imm8; 0xEC/0xED: DX */
+    int is_word = opcode & 1;    /* 0xE4/0xEC: AL; 0xE5/0xED: AX/EAX */
+    uint32_t next_pc;
+
+    codegen_accumulate_flush(ir);
+
+    if (is_imm) {
+        uint8_t port = fastreadb(cs + op_pc);
+        codegen_mark_code_present(block, cs + op_pc, 1);
+        next_pc = op_pc + 1;
+        uop_LOAD_FUNC_ARG_IMM(ir, 0, port);
+    } else {
+        next_pc = op_pc;
+        uop_LOAD_FUNC_ARG_REG(ir, 0, IREG_DX);
+    }
+
+    uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
+    uop_MOV_IMM(ir, IREG_pc, next_pc);
+
+    void *helper;
+    if (!is_word)
+        helper = (void *) jit_inb;
+    else if (op_32 & 0x100)
+        helper = (void *) jit_inl;
+    else
+        helper = (void *) jit_inw;
+
+    uop_CALL_FUNC_RESULT(ir, IREG_temp0, helper);
+    uop_CMP_IMM_JZ(ir, IREG_temp0, 1, codegen_exit_rout);
+
+    codegen_flags_changed = 0;
+    return next_pc;
+}
+
+uint32_t
+ropOUT(codeblock_t *block, ir_data_t *ir, uint8_t opcode, UNUSED(uint32_t fetchdat), uint32_t op_32, uint32_t op_pc)
+{
+    int is_imm  = !(opcode & 8); /* 0xE6/0xE7: imm8; 0xEE/0xEF: DX */
+    int is_word = opcode & 1;    /* 0xE6/0xEE: AL; 0xE7/0xEF: AX/EAX */
+    uint32_t next_pc;
+
+    codegen_accumulate_flush(ir);
+
+    if (is_imm) {
+        uint8_t port = fastreadb(cs + op_pc);
+        codegen_mark_code_present(block, cs + op_pc, 1);
+        next_pc = op_pc + 1;
+        uop_LOAD_FUNC_ARG_IMM(ir, 0, port);
+    } else {
+        next_pc = op_pc;
+        uop_LOAD_FUNC_ARG_REG(ir, 0, IREG_DX);
+    }
+
+    uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
+    uop_MOV_IMM(ir, IREG_pc, next_pc);
+
+    void *helper;
+    if (!is_word)
+        helper = (void *) jit_outb;
+    else if (op_32 & 0x100)
+        helper = (void *) jit_outl;
+    else
+        helper = (void *) jit_outw;
+
+    uop_CALL_FUNC_RESULT(ir, IREG_temp0, helper);
+    uop_CMP_IMM_JZ(ir, IREG_temp0, 1, codegen_exit_rout);
+
+    codegen_flags_changed = 0;
+    return next_pc;
+}
+

@@ -22,3 +22,37 @@ supported_coprocessors:
 
 timing_profile: "timings/286.yaml"
 
+quirks:
+  - id: ERRATUM_286_POPF_IOPL
+    name: "80286 Protected Mode POPF Modifies IF with CPL > IOPL"
+    category: PRIVILEGE_BYPASS
+    description: |
+      In 80286 protected mode, POPF allows unprivileged modifications of 
+      the Interrupt Flag (IF) even when CPL > IOPL.
+    steppings_affected:
+      stepping_mask: "all_286"
+    trigger:
+      opcode: [0x9D]          # POPF
+      mode: "PROTECTED"
+      condition: "CPL > IOPL"
+    behavior:
+      type: BYPASS_IOPL_SENSITIVE_FLAG
+      synthesized_action: "flags_modify_if_unprivileged();"
+    fixed_in: "80386 (ignores IF modification when CPL > IOPL)"
+
+  - id: ERRATUM_286_LOADALL
+    name: "Undocumented 80286 LOADALL Opcode"
+    category: PRIVILEGE_BYPASS
+    description: |
+      Undocumented opcode 0x0F 0x05 reads 102 bytes from 0x000800 into all internal 
+      CPU registers, descriptor caches, and hidden state in real or protected mode.
+    steppings_affected:
+      stepping_mask: "all_286"
+    trigger:
+      opcode: [0x0F, 0x05]
+    behavior:
+      type: UNDOCUMENTED_INSTRUCTION
+      synthesized_action: "op_loadall286(cpu);"
+    fixed_in: "80386 (replaced by 0x0F 0x07 for 386 LOADALL)"
+
+

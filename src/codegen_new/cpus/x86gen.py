@@ -254,6 +254,10 @@ class CPUManifest:
         self.default_emulated_frequencies_mhz = self.model.get("default_emulated_frequencies_mhz", [])
         if not self.emulated_frequency_range_mhz and "frequency_range_mhz" in self.model:
             self.emulated_frequency_range_mhz = self.model["frequency_range_mhz"]
+        self.quirks: List[Dict[str, Any]] = self.data.get("quirks", []) or self.data.get("errata", [])
+
+    def has_quirk(self, quirk_id: str) -> bool:
+        return any(q.get("id") == quirk_id for q in self.quirks)
 
     def supports_instruction(self, enc: OpcodeEncoding) -> bool:
         req_order = CPU_LEVEL_ORDER.get(enc.min_cpu, 0)
@@ -886,6 +890,45 @@ def inspect_cpu(manifest_path: str, isa: ISADatabase, reg_db: Optional[RegisterD
                     print(f"  * {cinfo.get('name', coproc_ref):<38} [{proto}] (FADD: {fadd_c}c, FMUL: {fmul_c}c)")
             print("-" * 72)
 
+    combined_quirks = []
+    seen_ids = set()
+    for q in cpu.quirks:
+        qid = q.get("id")
+        if qid and qid not in seen_ids:
+            seen_ids.add(qid)
+            combined_quirks.append(q)
+    if fpu_db and cpu.fpu_profile:
+        fpu_data = fpu_db.get_fpu(cpu.fpu_profile)
+        if fpu_data and "quirks" in fpu_data:
+            for q in fpu_data["quirks"]:
+                qid = q.get("id")
+                if qid and qid not in seen_ids:
+                    seen_ids.add(qid)
+                    combined_quirks.append(q)
+
+    if combined_quirks:
+        print(f"Silicon Errata & Architectural Quirks ({len(combined_quirks)} documented):")
+        for q in combined_quirks:
+            qid = q.get("id", "ERRATUM")
+            qname = q.get("name", "Unknown Erratum")
+            qcve = f" [{q['cve']}]" if "cve" in q else ""
+            qcat = q.get("category", "")
+            print(f"  * {qid:<30} {qname}{qcve}")
+            if qcat:
+                print(f"    Category:   {qcat}")
+            if "trigger" in q:
+                print(f"    Trigger:    {q['trigger']}")
+            if "behavior" in q:
+                btype = q["behavior"].get("type", "N/A")
+                baction = q["behavior"].get("synthesized_action", "")
+                action_str = f" -> {baction}" if baction else ""
+                print(f"    Behavior:   {btype}{action_str}")
+            if "steppings_affected" in q:
+                print(f"    Steppings:  {q['steppings_affected']}")
+            if "fixed_in" in q:
+                print(f"    Fixed In:   {q['fixed_in']}")
+        print("-" * 72)
+
     supported_primary = 0
     ud_primary = []
     for op in range(256):
@@ -1354,6 +1397,104 @@ def emit_interpreter_ops(output_path: str, isa: ISADatabase):
     print(f"Emitted interpreter instruction handlers to {output_path}")
 
 
+def list_all_quirks():
+    """Aggregates and displays all hardware errata and silicon quirks defined across manifests."""
+    cpu_files = sorted(glob.glob(os.path.join(SCRIPT_DIR, "*/*.yaml")))
+    all_quirks = {}
+    for cf in cpu_files:
+        if any(skip in cf for skip in ["fpus", "isa", "registers", "timings"]):
+            continue
+        try:
+            with open(cf, "r", encoding="utf-8") as fp:
+                data = yaml.safe_load(fp)
+        except Exception:
+            continue
+        cname = data.get("model", {}).get("name", os.path.basename(cf))
+        qlist = data.get("quirks", []) or data.get("errata", [])
+        for q in qlist:
+            qid = q.get("id")
+            if not qid:
+                continue
+            if qid not in all_quirks:
+                all_quirks[qid] = {
+                    "name": q.get("name", "Unknown"),
+                    "category": q.get("category", "GENERAL"),
+                    "cve": q.get("cve"),
+                    "desc": q.get("description", "").strip().split("\n")[0],
+                    "fixed_in": q.get("fixed_in"),
+                    "cpus": []
+                }
+            all_quirks[qid]["cpus"].append(cname)
+
+    print("=" * 80)
+    print("Architectural Quirks and Silicon Errata Registry")
+    print("=" * 80)
+    for qid, q in sorted(all_quirks.items()):
+        cve_str = f" [{q['cve']}]" if q["cve"] else ""
+        print(f"* {qid}{cve_str}: {q['name']}")
+        print(f"  Category:     {q['category']}")
+        print(f"  Description:  {q['desc']}")
+        if q["fixed_in"]:
+            print(f"  Fixed In:     {q['fixed_in']}")
+        print(f"  Affected:     {', '.join(q['cpus'])}")
+        print()
+    print("=" * 80)
+    print(f"Total Unique Documented Errata: {len(all_quirks)}")
+
+
+def emit_quirks_header(output_path: str):
+    """Emits C header defining CPU errata/quirk bitmask constants and helper signatures."""
+    cpu_files = sorted(glob.glob(os.path.join(SCRIPT_DIR, "*/*.yaml")))
+    unique_quirks = {}
+    for cf in cpu_files:
+        try:
+            with open(cf, "r", encoding="utf-8") as fp:
+                data = yaml.safe_load(fp)
+        except Exception:
+            continue
+        qlist = data.get("quirks", []) or data.get("errata", [])
+        for q in qlist:
+            qid = q.get("id")
+            if qid and qid not in unique_quirks:
+                unique_quirks[qid] = q
+
+    lines = []
+    lines.append("/* Auto-generated CPU quirks and errata definitions by x86gen.py */")
+    lines.append("#ifndef CODEGEN_CPU_QUIRKS_H")
+    lines.append("#define CODEGEN_CPU_QUIRKS_H")
+    lines.append("")
+    lines.append("#include <stdint.h>")
+    lines.append("#include <stdbool.h>")
+    lines.append("")
+    lines.append("/* Architectural Quirks & Hardware Errata Flags */")
+    lines.append("enum {")
+    bit = 0
+    for qid, q in sorted(unique_quirks.items()):
+        cve = f" ({q['cve']})" if "cve" in q else ""
+        lines.append(f"    {qid:<32} = (1ULL << {bit}), /* {q.get('name', '')}{cve} */")
+        bit += 1
+    lines.append("};")
+    lines.append("")
+    lines.append("/* Quirk query helper */")
+    lines.append("static inline bool cpu_has_quirk(const void *cpu_ptr, uint64_t quirk_mask)")
+    lines.append("{")
+    lines.append("    extern uint64_t active_cpu_quirks;")
+    lines.append("    (void)cpu_ptr;")
+    lines.append("    return (active_cpu_quirks & quirk_mask) != 0;")
+    lines.append("}")
+    lines.append("")
+    lines.append("/* Forward declaration of fault/freeze handlers */")
+    lines.append("void cpu_bus_lock_freeze(void *cpu);")
+    lines.append("void fpu_srt_fdiv_faulty(void *st0, void *st1);")
+    lines.append("")
+    lines.append("#endif /* CODEGEN_CPU_QUIRKS_H */")
+    lines.append("")
+
+    with open(output_path, "w", encoding="utf-8") as fp:
+        fp.write("\n".join(lines))
+    print(f"Emitted CPU quirks header to {output_path} ({len(unique_quirks)} errata constants)")
+
+
 def main():
     parser = argparse.ArgumentParser(description="x86gen Declarative Architecture Compiler")
     parser.add_argument("--list-cpus", action="store_true", help="List all available CPU manifests")
@@ -1367,6 +1508,8 @@ def main():
     parser.add_argument("--emit-interpreter-ops", type=str, help="Emit C header containing interpreter instruction handlers")
     parser.add_argument("--groups", action="store_true", help="List all ModR/M group tables and their extension slots")
     parser.add_argument("--semantics", type=str, nargs="?", const="all", help="Inspect formal micro-semantics for an instruction family (or all)")
+    parser.add_argument("--quirks", action="store_true", help="List all declared hardware errata and quirks across all CPUs")
+    parser.add_argument("--emit-quirks-header", type=str, help="Emit C header defining CPU errata/quirk bitmask constants and helpers")
     parser.add_argument("--summary", action="store_true", help="Print ISA, register, and FPU specification summary")
 
     args = parser.parse_args()
@@ -1441,6 +1584,14 @@ def main():
 
     if args.semantics:
         inspect_semantics(args.semantics, isa)
+        return
+
+    if args.quirks:
+        list_all_quirks()
+        return
+
+    if args.emit_quirks_header:
+        emit_quirks_header(args.emit_quirks_header)
         return
 
     parser.print_help()

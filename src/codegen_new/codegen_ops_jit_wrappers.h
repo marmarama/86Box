@@ -17,6 +17,8 @@
 #ifndef CODEGEN_OPS_JIT_WRAPPERS_H
 #define CODEGEN_OPS_JIT_WRAPPERS_H
 
+#include <86box/io.h>
+#include "386_common.h"
 #include "codegen_dump.h"
 
 #define JIT_WRAPPER __attribute__((noinline, used))
@@ -279,6 +281,54 @@ jit_iretd(void)
     }
 }
 
+static JIT_WRAPPER void
+jit_retf16(void)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        op_pmoderetf(0, 0);
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        op_pmoderetf(0, 0);
+    }
+}
+
+static JIT_WRAPPER void
+jit_retf32(void)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        op_pmoderetf(1, 0);
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        op_pmoderetf(1, 0);
+    }
+}
+
+static JIT_WRAPPER void
+jit_retf16_imm(uint32_t offset)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        op_pmoderetf(0, (uint16_t) offset);
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        op_pmoderetf(0, (uint16_t) offset);
+    }
+}
+
+static JIT_WRAPPER void
+jit_retf32_imm(uint32_t offset)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        op_pmoderetf(1, (uint16_t) offset);
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        op_pmoderetf(1, (uint16_t) offset);
+    }
+}
+
 static JIT_WRAPPER uint32_t
 jit_smsw16(void)
 {
@@ -324,6 +374,162 @@ jit_smsw32(void)
             return cr0 | 0x7FFFFFE0;
         else
             return cr0 | 0x7FFFFFF0;
+    }
+}
+
+static JIT_WRAPPER uint32_t
+jit_inb(uint32_t port)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        check_io_perm(port, 1);
+        if (cpu_state.abrt) {
+            codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+            return 1;
+        }
+        AL = inb((uint16_t) port);
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+        if (cpu_state.exit_request || (nmi && nmi_enable && nmi_mask))
+            return 1;
+        return 0;
+    } else {
+        check_io_perm(port, 1);
+        if (cpu_state.abrt)
+            return 1;
+        AL = inb((uint16_t) port);
+        if (cpu_state.exit_request || (nmi && nmi_enable && nmi_mask))
+            return 1;
+        return 0;
+    }
+}
+
+static JIT_WRAPPER uint32_t
+jit_inw(uint32_t port)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        check_io_perm(port, 2);
+        if (cpu_state.abrt) {
+            codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+            return 1;
+        }
+        AX = inw((uint16_t) port);
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+        if (cpu_state.exit_request || (nmi && nmi_enable && nmi_mask))
+            return 1;
+        return 0;
+    } else {
+        check_io_perm(port, 2);
+        if (cpu_state.abrt)
+            return 1;
+        AX = inw((uint16_t) port);
+        if (cpu_state.exit_request || (nmi && nmi_enable && nmi_mask))
+            return 1;
+        return 0;
+    }
+}
+
+static JIT_WRAPPER uint32_t
+jit_inl(uint32_t port)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        check_io_perm(port, 4);
+        if (cpu_state.abrt) {
+            codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+            return 1;
+        }
+        EAX = inl((uint16_t) port);
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+        if (cpu_state.exit_request || (nmi && nmi_enable && nmi_mask))
+            return 1;
+        return 0;
+    } else {
+        check_io_perm(port, 4);
+        if (cpu_state.abrt)
+            return 1;
+        EAX = inl((uint16_t) port);
+        if (cpu_state.exit_request || (nmi && nmi_enable && nmi_mask))
+            return 1;
+        return 0;
+    }
+}
+
+static JIT_WRAPPER uint32_t
+jit_outb(uint32_t port)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        check_io_perm(port, 1);
+        if (cpu_state.abrt) {
+            codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+            return 1;
+        }
+        outb((uint16_t) port, AL);
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+        if (x86_was_reset || cpu_state.exit_request || (nmi && nmi_enable && nmi_mask))
+            return 1;
+        return 0;
+    } else {
+        check_io_perm(port, 1);
+        if (cpu_state.abrt)
+            return 1;
+        outb((uint16_t) port, AL);
+        if (x86_was_reset || cpu_state.exit_request || (nmi && nmi_enable && nmi_mask))
+            return 1;
+        return 0;
+    }
+}
+
+static JIT_WRAPPER uint32_t
+jit_outw(uint32_t port)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        check_io_perm(port, 2);
+        if (cpu_state.abrt) {
+            codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+            return 1;
+        }
+        outw((uint16_t) port, AX);
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+        if (x86_was_reset || cpu_state.exit_request || (nmi && nmi_enable && nmi_mask))
+            return 1;
+        return 0;
+    } else {
+        check_io_perm(port, 2);
+        if (cpu_state.abrt)
+            return 1;
+        outw((uint16_t) port, AX);
+        if (x86_was_reset || cpu_state.exit_request || (nmi && nmi_enable && nmi_mask))
+            return 1;
+        return 0;
+    }
+}
+
+static JIT_WRAPPER uint32_t
+jit_outl(uint32_t port)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        check_io_perm(port, 4);
+        if (cpu_state.abrt) {
+            codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+            return 1;
+        }
+        outl((uint16_t) port, EAX);
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+        if (x86_was_reset || cpu_state.exit_request || (nmi && nmi_enable && nmi_mask))
+            return 1;
+        return 0;
+    } else {
+        check_io_perm(port, 4);
+        if (cpu_state.abrt)
+            return 1;
+        outl((uint16_t) port, EAX);
+        if (x86_was_reset || cpu_state.exit_request || (nmi && nmi_enable && nmi_mask))
+            return 1;
+        return 0;
     }
 }
 

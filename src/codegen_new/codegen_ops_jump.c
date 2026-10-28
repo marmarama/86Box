@@ -253,10 +253,13 @@ ropRET_imm_32(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(
 uint32_t
 ropRETF_16(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), UNUSED(uint32_t op_pc))
 {
-    if ((msw & 1) && !(cpu_state.eflags & VM_FLAG))
-        return 0;
-
     uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
+    codegen_accumulate_flush(ir);
+
+    if ((msw & 1) && !(cpu_state.eflags & VM_FLAG)) {
+        uop_CALL_FUNC(ir, jit_retf16);
+        return -1;
+    }
 
     if (stack32) {
         uop_MEM_LOAD_REG(ir, IREG_temp0_W, IREG_SS_base, IREG_ESP);
@@ -276,10 +279,13 @@ ropRETF_16(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UN
 uint32_t
 ropRETF_32(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), UNUSED(uint32_t op_pc))
 {
-    if ((msw & 1) && !(cpu_state.eflags & VM_FLAG))
-        return 0;
-
     uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
+    codegen_accumulate_flush(ir);
+
+    if ((msw & 1) && !(cpu_state.eflags & VM_FLAG)) {
+        uop_CALL_FUNC(ir, jit_retf32);
+        return -1;
+    }
 
     if (stack32) {
         uop_MEM_LOAD_REG(ir, IREG_temp0, IREG_SS_base, IREG_ESP);
@@ -300,13 +306,17 @@ ropRETF_32(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UN
 uint32_t
 ropRETF_imm_16(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), uint32_t op_pc)
 {
-    uint16_t offset;
+    uint16_t offset = fastreadw(cs + op_pc);
 
-    if ((msw & 1) && !(cpu_state.eflags & VM_FLAG))
-        return 0;
-
-    offset = fastreadw(cs + op_pc);
     uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
+    codegen_accumulate_flush(ir);
+
+    if ((msw & 1) && !(cpu_state.eflags & VM_FLAG)) {
+        uop_LOAD_FUNC_ARG_IMM(ir, 0, offset);
+        uop_CALL_FUNC(ir, jit_retf16_imm);
+        codegen_mark_code_present(block, cs + op_pc, 2);
+        return -1;
+    }
 
     if (stack32) {
         uop_MEM_LOAD_REG(ir, IREG_temp0_W, IREG_SS_base, IREG_ESP);
@@ -327,13 +337,17 @@ ropRETF_imm_16(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED
 uint32_t
 ropRETF_imm_32(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), uint32_t op_pc)
 {
-    uint16_t offset;
+    uint16_t offset = fastreadw(cs + op_pc);
 
-    if ((msw & 1) && !(cpu_state.eflags & VM_FLAG))
-        return 0;
-
-    offset = fastreadw(cs + op_pc);
     uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
+    codegen_accumulate_flush(ir);
+
+    if ((msw & 1) && !(cpu_state.eflags & VM_FLAG)) {
+        uop_LOAD_FUNC_ARG_IMM(ir, 0, offset);
+        uop_CALL_FUNC(ir, jit_retf32_imm);
+        codegen_mark_code_present(block, cs + op_pc, 2);
+        return -1;
+    }
 
     if (stack32) {
         uop_MEM_LOAD_REG(ir, IREG_temp0, IREG_SS_base, IREG_ESP);

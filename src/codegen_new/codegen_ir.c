@@ -110,9 +110,10 @@ codegen_ir_peephole(ir_data_t *ir)
 
         uint32_t uop_masked = uop->type & UOP_MASK;
 
-        /* 1. Self-cancelling operations: XOR R, R or SUB R, R -> MOV_IMM 0 (native size) */
+        /* 1. Self-cancelling operations: XOR R, R or SUB R, R -> MOV_IMM 0 (native size integer) */
         if (uop_masked == (UOP_XOR & UOP_MASK) || uop_masked == (UOP_SUB & UOP_MASK)) {
             if (uop->src_reg_a.reg != IREG_INVALID &&
+                reg_is_integer(uop->dest_reg_a) &&
                 reg_is_native_size(uop->dest_reg_a) &&
                 reg_is_native_size(uop->src_reg_a) &&
                 uop->src_reg_a.reg == uop->src_reg_b.reg &&
@@ -133,10 +134,10 @@ codegen_ir_peephole(ir_data_t *ir)
             }
         }
 
-        /* 2. Check if src_reg_a has a known constant (native size) */
+        /* 2. Check if src_reg_a has a known constant (native size integer) */
         int      src_a_is_const = 0;
         uint32_t c_val_a        = 0;
-        if (uop->src_reg_a.reg != IREG_INVALID && reg_is_native_size(uop->src_reg_a)) {
+        if (uop->src_reg_a.reg != IREG_INVALID && reg_is_integer(uop->src_reg_a) && reg_is_native_size(uop->src_reg_a)) {
             int sreg = IREG_GET_REG(uop->src_reg_a.reg);
             if (const_valid[sreg] && const_version[sreg] == uop->src_reg_a.version) {
                 src_a_is_const = 1;
@@ -144,8 +145,9 @@ codegen_ir_peephole(ir_data_t *ir)
             }
         }
 
-        /* 3. Constant propagation into immediate ALU operations (native size) */
+        /* 3. Constant propagation into immediate ALU operations (native size integer) */
         if (src_a_is_const && (uop->dest_reg_a.reg != IREG_INVALID) &&
+            reg_is_integer(uop->dest_reg_a) &&
             reg_is_native_size(uop->dest_reg_a)) {
             int      folded = 0;
             uint32_t res    = 0;
@@ -197,7 +199,7 @@ codegen_ir_peephole(ir_data_t *ir)
         /* 4. Update or invalidate constant tracking on write */
         if (uop->dest_reg_a.reg != IREG_INVALID) {
             int dreg = IREG_GET_REG(uop->dest_reg_a.reg);
-            if ((uop->type & UOP_MASK) == (UOP_MOV_IMM & UOP_MASK) && reg_is_native_size(uop->dest_reg_a)) {
+            if ((uop->type & UOP_MASK) == (UOP_MOV_IMM & UOP_MASK) && reg_is_integer(uop->dest_reg_a) && reg_is_native_size(uop->dest_reg_a)) {
                 const_val[dreg]     = uop->imm_data;
                 const_version[dreg] = uop->dest_reg_a.version;
                 const_valid[dreg]   = 1;
@@ -282,7 +284,7 @@ codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
             continue;
 
 #ifdef CODEGEN_BACKEND_HAS_MOV_IMM
-        if ((uop->type & UOP_MASK) == (UOP_MOV_IMM & UOP_MASK) && reg_is_native_size(uop->dest_reg_a) && !codegen_reg_is_loaded(uop->dest_reg_a) && reg_version[IREG_GET_REG(uop->dest_reg_a.reg)][uop->dest_reg_a.version].refcount <= 0) {
+        if ((uop->type & UOP_MASK) == (UOP_MOV_IMM & UOP_MASK) && reg_is_integer(uop->dest_reg_a) && reg_is_native_size(uop->dest_reg_a) && !codegen_reg_is_loaded(uop->dest_reg_a) && reg_version[IREG_GET_REG(uop->dest_reg_a.reg)][uop->dest_reg_a.version].refcount <= 0) {
             /*Special case for UOP_MOV_IMM - if destination not already in host register
               and won't be used again then just store directly to memory*/
             if (dump_on)

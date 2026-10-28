@@ -66,3 +66,15 @@ typical_cycles:
   fsincos: 80-120
   fxch: 0       # 0 cycles when paired in V-pipe, 1 cycle unpaired
 
+quirks:
+  - id: ERRATUM_PENTIUM_FDIV
+    name: "Pentium FDIV Lookup Table Precision Degradation"
+    category: FPU_PRECISION
+    description: |
+      5 missing PLA table entries out of 2048 in the Radix-4 SRT division circuit:
+      (12, 1), (12, 2), (12, 3), (12, 4), and (12, 5) cause precision degradation
+      in FDIV, FDIVP, FIDIV, and FPREM for certain operand mantissa patterns.
+    missing_pla_indices: [1066, 1067, 1068, 1069, 1070]
+    fixed_in: "Pentium B5 stepping (1994)"
+
+

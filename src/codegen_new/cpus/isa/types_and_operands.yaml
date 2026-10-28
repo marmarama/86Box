@@ -294,3 +294,22 @@ modrm_groups:
     slots:
       0: { name: MOV, action: DATA_TRANSFER, op: MOV }
 
+errata_and_quirks:
+  categories:
+    BUS_LOCK_HANG:       { desc: "CPU bus state machine deadlocks when asserting LOCK# for illegal access" }
+    FPU_PRECISION:       { desc: "Arithmetic precision degradation or incomplete PLA lookup tables" }
+    INTERRUPT_SHADOW:   { desc: "Failure to inhibit interrupts during stack or state transition" }
+    PREFIX_RESTART:      { desc: "Instruction restart resumes from wrong prefix byte upon interrupt" }
+    PRIVILEGE_BYPASS:    { desc: "Privilege level protection checks bypassed or incomplete in hardware" }
+    ARITHMETIC_CORRUPT:  { desc: "ALU produces erroneous results on specific bit combinations or widths" }
+    TLB_CACHE_HANG:      { desc: "Coherency, TLB invalidation, or pipeline stall deadlock" }
+
+  behavior_actions:
+    HANG_BUS_LOCK:              { action: "Deadlock processor execution and assert external bus LOCK# signal until hard reset" }
+    DEGRADED_FPU_DIVISION:      { action: "Execute Radix-4 SRT division with missing lookup PLA terms" }
+    SUPPRESS_INTERRUPT_SHADOW:  { action: "Permit external hardware interrupts immediately following stack manipulation" }
+    RESTART_AT_LAST_PREFIX:     { action: "IP points to last prefix rather than initial prefix on interrupt frame" }
+    BYPASS_IOPL_SENSITIVE_FLAG: { action: "Permit alteration of sensitive flag bits regardless of CPL > IOPL" }
+    ARITHMETIC_MISCALCULATE:    { action: "Compute erroneous upper bits for arithmetic operations" }
+
+

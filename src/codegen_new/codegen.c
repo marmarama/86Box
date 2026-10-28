@@ -746,6 +746,10 @@ generate_call:
                 insn_end = op_pc + (opcode == 0xc2 ? 3 : 1);
             } else if (opcode == 0x9a || opcode == 0xea) {
                 insn_end = op_pc + ((op_32 & 0x100) ? 6 : 4);
+            } else if (opcode == 0xca) {
+                insn_end = op_pc + 2;
+            } else if (opcode == 0xcb) {
+                insn_end = op_pc;
             } else {
                 insn_end = op_pc + 1;
             }

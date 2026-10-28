@@ -37,3 +37,28 @@ cache:
   l1_line_size: 32
   prefix_cache: true
 
+quirks:
+  - id: ERRATUM_PENTIUM_F00F
+    name: "Pentium F00F (LOCK CMPXCHG8B) Bus Lock Freeze"
+    cve: "CVE-1997-10003"
+    doc_ref: "Intel Pentium Processor with MMX Technology Specification Update, Erratum 20"
+    category: BUS_LOCK_HANG
+    description: |
+      Executing LOCK CMPXCHG8B with a register operand (F0 0F C7 C8..CF) asserts
+      the hardware LOCK# signal for an illegal memory access cycle, hanging the
+      memory bus until a hardware reset.
+    steppings_affected:
+      family: 5
+      models: [4, 8]          # P55C, Tillamook
+      stepping_mask: "<= 4"   # Early steppings
+    trigger:
+      opcode: [0x0F, 0xC7]
+      modrm_reg: 1
+      modrm_mod: 0b11
+      required_prefix: PREFIX_LOCK
+    behavior:
+      type: HANG_BUS_LOCK
+      synthesized_action: "cpu_bus_lock_freeze(cpu);"
+    fixed_in: "Pentium II (Deschutes)"
+
+

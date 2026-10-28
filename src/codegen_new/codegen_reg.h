@@ -371,6 +371,7 @@ codegen_reg_read(int reg)
 }
 
 int reg_is_native_size(ir_reg_t ir_reg);
+int reg_is_integer(ir_reg_t ir_reg);
 
 static inline ir_reg_t
 codegen_reg_write(int reg, int uop_nr)

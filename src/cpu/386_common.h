@@ -206,6 +206,8 @@
         do_mmutranslate((s) + (a), b, 4, 1)
 #endif
 
+extern int checkio(uint32_t port, int mask);
+
 #define check_io_perm(port, size)                                    \
     if (msw & 1 && ((CPL > IOPL) || (cpu_state.eflags & VM_FLAG))) { \
         int tempi = checkio(port, (1 << size) - 1);                  \

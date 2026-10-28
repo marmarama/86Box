@@ -20,3 +20,37 @@ supported_coprocessors:
 
 timing_profile: "timings/8086.yaml"
 
+quirks:
+  - id: ERRATUM_8086_POP_SS_INT_SHADOW
+    name: "8086 Interrupt Non-Shadowing on POP SS"
+    category: INTERRUPT_SHADOW
+    description: |
+      Early 8086 steppings failed to suppress external interrupts on
+      the instruction immediately following 'POP SS'.
+    steppings_affected:
+      stepping_mask: "early_8086"
+    trigger:
+      opcode: [0x17]          # POP SS
+    behavior:
+      type: SUPPRESS_INTERRUPT_SHADOW
+      synthesized_action: "cpu->interrupt_inhibit = 0;"
+    fixed_in: "80186 / 80286 / later 8086 revisions"
+
+  - id: ERRATUM_8086_REP_PREFIX_RESUME
+    name: "Interrupt String Instruction Segment Prefix Loss"
+    category: PREFIX_RESTART
+    description: |
+      When an interrupt occurs during a string instruction preceded by multiple
+      prefixes (e.g. REP ES: MOVSB), the return address points to the segment
+      override rather than REP, losing preceding prefixes on resume.
+    steppings_affected:
+      stepping_mask: "all"
+    trigger:
+      prefixes: ["REP", "segment_override"]
+      instructions: [MOVSB, MOVSW, LODSB, LODSW, STOSB, STOSW, INSB, INSW, OUTSB, OUTSW]
+    behavior:
+      type: RESTART_AT_LAST_PREFIX
+      synthesized_action: "cpu->ip = last_prefix_ip;"
+    fixed_in: "80186 / 80286"
+
+

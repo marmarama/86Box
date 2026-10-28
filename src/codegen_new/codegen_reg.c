@@ -237,6 +237,13 @@ reg_is_native_size(ir_reg_t ir_reg)
     return native_requested_sizes[native_size][requested_size >> IREG_SIZE_SHIFT];
 }
 
+int
+reg_is_integer(ir_reg_t ir_reg)
+{
+    int reg = IREG_GET_REG(ir_reg.reg);
+    return (ireg_data[reg].type == REG_INTEGER && ireg_data[reg].native_size <= REG_DWORD);
+}
+
 void
 codegen_check_regs(void)
 {

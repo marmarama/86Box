@@ -33,3 +33,23 @@ timing_profile: "timings/cyrix_686.yaml"
 cache:
   l1_unified_kb: 64 # Unified L1 code/data cache
 
+quirks:
+  - id: ERRATUM_CYRIX_COMA
+    name: "Cyrix 6x86 Coma Bug (Infinite Loop Pipeline Lockup)"
+    category: TLB_CACHE_HANG
+    description: |
+      An unaligned branch or tight infinite loop spanning a cache line boundary
+      can starve pipeline arbitration and lock up the execution core indefinitely.
+    steppings_affected:
+      family: 6
+      models: [0]
+      stepping_mask: "<= 1"
+    trigger:
+      opcode_sequence: [0xEB, 0xFE] # JMP $
+      condition: "CACHE_LINE_SPLIT"
+    behavior:
+      type: HANG_BUS_LOCK
+      synthesized_action: "cyrix_pipeline_deadlock(cpu);"
+    fixed_in: "MII stepping 2+"
+
+
