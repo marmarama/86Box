@@ -7,7 +7,9 @@ model:
   release_year: 1984
   family: 0
   package: [DIP_40]
-  frequency_range_mhz: [8, 16]
+  cpu_frequencies_mhz: [8, 10, 12, 16]
+  emulated_frequency_range_mhz: [4.77, 16]
+  default_emulated_frequencies_mhz: [4.77, 7.16, 8, 10, 12, 16]
   bus_width_bits: 8 # 8-bit bus, drop-in replacement for 8088
 
 isa_level: CPU_186 # NEC V20/V30 supports 80186 extensions (ENTER, LEAVE, PUSHA, etc.)

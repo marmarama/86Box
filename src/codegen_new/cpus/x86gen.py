@@ -249,6 +249,11 @@ class CPUManifest:
         self.timing_profile = self.data.get("timing_profile", "timings/pentium.yaml")
         self.fpu_profile = self.data.get("fpu_profile")
         self.supported_coprocessors = self.data.get("supported_coprocessors", [])
+        self.cpu_frequencies_mhz = self.model.get("cpu_frequencies_mhz", [])
+        self.emulated_frequency_range_mhz = self.model.get("emulated_frequency_range_mhz", [])
+        self.default_emulated_frequencies_mhz = self.model.get("default_emulated_frequencies_mhz", [])
+        if not self.emulated_frequency_range_mhz and "frequency_range_mhz" in self.model:
+            self.emulated_frequency_range_mhz = self.model["frequency_range_mhz"]
 
     def supports_instruction(self, enc: OpcodeEncoding) -> bool:
         req_order = CPU_LEVEL_ORDER.get(enc.min_cpu, 0)
@@ -827,6 +832,16 @@ def inspect_cpu(manifest_path: str, isa: ISADatabase, reg_db: Optional[RegisterD
     print(f"Vendor: {cpu.vendor}{year_str} | ISA Level: {cpu.isa_level} | Timing: {cpu.timing_profile}")
     print(f"Features: {', '.join(sorted(cpu.features)) or 'None (Base Real Mode)'}")
     print("=" * 72)
+
+    if cpu.cpu_frequencies_mhz or cpu.default_emulated_frequencies_mhz or cpu.emulated_frequency_range_mhz:
+        print("Clock Frequencies:")
+        if cpu.cpu_frequencies_mhz:
+            print(f"  Official Factory Speeds: {', '.join(str(f) for f in cpu.cpu_frequencies_mhz)} MHz")
+        if cpu.emulated_frequency_range_mhz:
+            print(f"  Emulated Range:          {cpu.emulated_frequency_range_mhz[0]} - {cpu.emulated_frequency_range_mhz[1]} MHz")
+        if cpu.default_emulated_frequencies_mhz:
+            print(f"  86Box Emulation Speeds:  {', '.join(str(f) for f in cpu.default_emulated_frequencies_mhz)} MHz")
+        print("-" * 72)
 
     if reg_db:
         reg_map = reg_db.cpu_registers(cpu)

@@ -9,7 +9,9 @@ model:
   model_id: 3
   stepping: 3
   package: [OBGA_783]
-  frequency_range_mhz: [1000, 1200]
+  cpu_frequencies_mhz: [1000, 1100, 1200]
+  emulated_frequency_range_mhz: [800, 1400]
+  default_emulated_frequencies_mhz: [800, 900, 1000, 1100, 1200, 1300, 1400]
   power_tdp_watts: 7.0
 
 cpuid:

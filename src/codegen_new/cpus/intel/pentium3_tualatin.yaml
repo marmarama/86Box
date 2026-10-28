@@ -9,7 +9,9 @@ model:
   model_id: 11 # Model 11 (0.13 um process)
   stepping: 1
   package: [SOCKET_370] # FC-PGA2 with integrated heat spreader (IHS)
-  frequency_range_mhz: [1000, 1400]
+  cpu_frequencies_mhz: [1000, 1133, 1200, 1266, 1333, 1400]
+  emulated_frequency_range_mhz: [800, 1400]
+  default_emulated_frequencies_mhz: [800, 933, 1000, 1133, 1200, 1266, 1333, 1400]
   bus_clock_mhz: [133]
 
 cpuid:

@@ -7,7 +7,9 @@ model:
   release_year: 1992
   family: 4 # 486 core packaged in 132-pin 386 socket
   package: [PGA_132]
-  frequency_range_mhz: [25, 33]
+  cpu_frequencies_mhz: [25, 33]
+  emulated_frequency_range_mhz: [25, 40]
+  default_emulated_frequencies_mhz: [25, 33, 40]
   bus_width_bits: 32
 
 isa_level: CPU_486

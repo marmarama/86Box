@@ -9,7 +9,9 @@ model:
   model_id: 7 # Model 7 (0.25 um process)
   stepping: 3
   package: [SLOT_1]
-  frequency_range_mhz: [450, 600]
+  cpu_frequencies_mhz: [450, 500, 533, 550, 600]
+  emulated_frequency_range_mhz: [266, 600]
+  default_emulated_frequencies_mhz: [266, 300, 350, 400, 450, 500, 533, 550, 600]
   bus_clock_mhz: [100, 133]
 
 cpuid:

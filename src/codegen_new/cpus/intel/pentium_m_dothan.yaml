@@ -9,7 +9,9 @@ model:
   model_id: 13
   stepping: 8
   package: [SOCKET_479, H_PBGA479]
-  frequency_range_mhz: [1000, 2266]
+  cpu_frequencies_mhz: [1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000, 2100, 2133, 2266]
+  emulated_frequency_range_mhz: [600, 2266]
+  default_emulated_frequencies_mhz: [600, 800, 1000, 1200, 1400, 1600, 1800, 2000, 2133, 2266]
   bus_clock_mhz: [100, 133] # Quad-pumped 400/533 MT/s FSB
   power_tdp_watts: 21
 

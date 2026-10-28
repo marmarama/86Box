@@ -8,7 +8,9 @@ model:
   family: 5
   model_id: 0
   package: [PGA_463] # Proprietary NexBus socket
-  frequency_range_mhz: [70, 111] # P75, P80, P90, P100, P120
+  cpu_frequencies_mhz: [70, 75, 84, 93, 102, 111]
+  emulated_frequency_range_mhz: [70, 120]
+  default_emulated_frequencies_mhz: [70, 75, 84, 93, 102, 111, 120]
 
 cpuid:
   signature: 0x00000500 # Supported on late steppings

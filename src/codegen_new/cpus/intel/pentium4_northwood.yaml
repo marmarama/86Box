@@ -9,7 +9,9 @@ model:
   model_id: 2
   stepping: 4
   package: [SOCKET_478]
-  frequency_range_mhz: [1600, 3400]
+  cpu_frequencies_mhz: [1600, 1800, 2000, 2200, 2400, 2533, 2600, 2666, 2800, 3000, 3066, 3200, 3400]
+  emulated_frequency_range_mhz: [1400, 3400]
+  default_emulated_frequencies_mhz: [1600, 1800, 2000, 2200, 2400, 2600, 2800, 3000, 3200, 3400]
 
 cpuid:
   signature: 0x00000F24

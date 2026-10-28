@@ -9,7 +9,9 @@ model:
   model_id: 0
   stepping: 5
   package: [SOCKET_7]
-  frequency_range_mhz: [166, 333]
+  cpu_frequencies_mhz: [133, 150, 166, 188, 208, 225, 250]
+  emulated_frequency_range_mhz: [100, 250]
+  default_emulated_frequencies_mhz: [100, 133, 150, 166, 188, 208, 225, 250]
 
 cpuid:
   signature: 0x00000605

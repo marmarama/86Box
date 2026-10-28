@@ -9,7 +9,9 @@ model:
   model_id: 1
   stepping: 9
   package: [SOCKET_8]
-  frequency_range_mhz: [150, 200]
+  cpu_frequencies_mhz: [150, 166, 180, 200]
+  emulated_frequency_range_mhz: [60, 200]
+  default_emulated_frequencies_mhz: [60, 66, 90, 100, 120, 133, 150, 166, 180, 200]
 
 cpuid:
   signature: 0x00000619

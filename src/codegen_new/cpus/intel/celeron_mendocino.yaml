@@ -9,7 +9,9 @@ model:
   model_id: 6 # Model 6
   stepping: 5
   package: [SOCKET_370, SLOT_1]
-  frequency_range_mhz: [300, 533]
+  cpu_frequencies_mhz: [300, 333, 366, 400, 433, 466, 500, 533]
+  emulated_frequency_range_mhz: [100, 533]
+  default_emulated_frequencies_mhz: [100, 133, 166, 200, 233, 266, 300, 333, 366, 400, 433, 466, 500, 533]
   bus_clock_mhz: [66]
 
 cpuid:

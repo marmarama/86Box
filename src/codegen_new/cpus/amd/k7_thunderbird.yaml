@@ -9,7 +9,9 @@ model:
   model_id: 4
   stepping: 2
   package: [SOCKET_A, SLOT_A]
-  frequency_range_mhz: [650, 1400]
+  cpu_frequencies_mhz: [650, 700, 750, 800, 850, 900, 950, 1000, 1100, 1133, 1200, 1266, 1300, 1333, 1400]
+  emulated_frequency_range_mhz: [500, 1400]
+  default_emulated_frequencies_mhz: [500, 600, 650, 700, 750, 800, 900, 1000, 1100, 1200, 1300, 1400]
 
 cpuid:
   signature: 0x00000642

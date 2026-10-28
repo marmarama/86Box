@@ -8,7 +8,9 @@ model:
   family: 4 # 6x86 core fitted to Socket 3
   model_id: 9
   package: [PGA_168, SOCKET_3]
-  frequency_range_mhz: [100, 133]
+  cpu_frequencies_mhz: [100, 120, 133]
+  emulated_frequency_range_mhz: [75, 133]
+  default_emulated_frequencies_mhz: [75, 80, 100, 120, 133]
   bus_multiplier: 3 # or 4 (133 MHz)
 
 cpuid:

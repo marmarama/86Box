@@ -8,7 +8,9 @@ model:
   family: 4 # 5x86 core with VSA
   model_id: 4
   package: [BGA_352]
-  frequency_range_mhz: [120, 200]
+  cpu_frequencies_mhz: [120, 133, 150, 166, 180, 200]
+  emulated_frequency_range_mhz: [100, 233]
+  default_emulated_frequencies_mhz: [100, 120, 133, 150, 166, 180, 200, 233]
 
 cpuid:
   signature: 0x00000440

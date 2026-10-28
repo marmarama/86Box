@@ -9,7 +9,9 @@ model:
   model_id: 8 # Model 8 (Chomper) / Chomper A
   stepping: 0
   package: [SOCKET_7, SUPER_SOCKET_7]
-  frequency_range_mhz: [266, 550]
+  cpu_frequencies_mhz: [233, 266, 300, 333, 350, 366, 380, 400, 450, 475, 500, 533, 550]
+  emulated_frequency_range_mhz: [100, 550]
+  default_emulated_frequencies_mhz: [100, 133, 166, 200, 233, 266, 300, 333, 350, 400, 450, 500, 533, 550]
   bus_clock_mhz: [66, 100]
 
 cpuid:

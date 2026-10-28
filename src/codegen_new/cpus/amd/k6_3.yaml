@@ -9,7 +9,9 @@ model:
   model_id: 9 # Model 9 (Sharptooth)
   stepping: 1
   package: [SUPER_SOCKET_7]
-  frequency_range_mhz: [400, 500]
+  cpu_frequencies_mhz: [400, 450, 500]
+  emulated_frequency_range_mhz: [100, 500]
+  default_emulated_frequencies_mhz: [100, 133, 166, 200, 233, 266, 300, 350, 400, 450, 500]
   bus_clock_mhz: [100]
 
 cpuid:

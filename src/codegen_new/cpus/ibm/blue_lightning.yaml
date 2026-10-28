@@ -7,7 +7,9 @@ model:
   release_year: 1993
   family: 4
   package: [PGA_132, QFP_144]
-  frequency_range_mhz: [75, 100]
+  cpu_frequencies_mhz: [75, 100]
+  emulated_frequency_range_mhz: [50, 100]
+  default_emulated_frequencies_mhz: [50, 66, 75, 100]
   bus_multiplier: 3 # Clock-tripled 25/75 or 33/100 MHz
   bus_width_bits: 32 # 386DX bus interface
 

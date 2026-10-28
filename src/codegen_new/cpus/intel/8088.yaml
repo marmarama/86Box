@@ -7,7 +7,9 @@ model:
   release_year: 1979
   family: 0 # Pre-CPUID
   package: [DIP_40]
-  frequency_range_mhz: [4.77, 10]
+  cpu_frequencies_mhz: [4.77, 8, 10]
+  emulated_frequency_range_mhz: [4.77, 16]
+  default_emulated_frequencies_mhz: [4.77, 7.16, 8, 9.54, 10, 12, 16]
   bus_width_bits: 8
 
 isa_level: CPU_8086

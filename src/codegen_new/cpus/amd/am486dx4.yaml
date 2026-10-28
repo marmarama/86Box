@@ -8,7 +8,9 @@ model:
   family: 4
   model_id: 8
   package: [PGA_168, SOCKET_3]
-  frequency_range_mhz: [100, 120]
+  cpu_frequencies_mhz: [75, 90, 100, 120]
+  emulated_frequency_range_mhz: [66, 120]
+  default_emulated_frequencies_mhz: [66, 75, 80, 90, 100, 120]
   bus_multiplier: 3
 
 isa_level: CPU_486

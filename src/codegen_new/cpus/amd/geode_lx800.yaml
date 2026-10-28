@@ -8,7 +8,9 @@ model:
   family: 5
   model_id: 10
   stepping: 1
-  frequency_mhz: 500
+  cpu_frequencies_mhz: [433, 500, 600]
+  emulated_frequency_range_mhz: [333, 600]
+  default_emulated_frequencies_mhz: [333, 400, 433, 500, 600]
   power_tdp_watts: 3.3
 
 cpuid:

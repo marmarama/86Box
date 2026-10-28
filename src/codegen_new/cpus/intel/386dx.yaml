@@ -7,7 +7,9 @@ model:
   release_year: 1985
   family: 3
   package: [PGA_132]
-  frequency_range_mhz: [16, 33]
+  cpu_frequencies_mhz: [16, 20, 25, 33]
+  emulated_frequency_range_mhz: [16, 40]
+  default_emulated_frequencies_mhz: [16, 20, 25, 33, 40]
   bus_width_bits: 32
   address_bits: 32
 

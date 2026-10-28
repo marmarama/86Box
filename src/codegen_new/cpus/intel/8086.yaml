@@ -7,7 +7,9 @@ model:
   release_year: 1978
   family: 0
   package: [DIP_40]
-  frequency_range_mhz: [4.77, 10]
+  cpu_frequencies_mhz: [5, 8, 10]
+  emulated_frequency_range_mhz: [4.77, 16]
+  default_emulated_frequencies_mhz: [4.77, 7.16, 8, 9.54, 10, 12, 16]
   bus_width_bits: 16
 
 isa_level: CPU_8086

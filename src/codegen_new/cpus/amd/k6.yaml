@@ -9,7 +9,9 @@ model:
   model_id: 6 # Model 6 (0.35 um) or Model 7 (0.25 um Little Foot)
   stepping: 2
   package: [SOCKET_7]
-  frequency_range_mhz: [166, 300]
+  cpu_frequencies_mhz: [166, 200, 233, 266, 300]
+  emulated_frequency_range_mhz: [100, 300]
+  default_emulated_frequencies_mhz: [100, 133, 166, 200, 233, 266, 300]
   bus_clock_mhz: [66]
 
 cpuid:

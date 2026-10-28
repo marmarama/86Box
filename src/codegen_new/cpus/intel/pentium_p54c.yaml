@@ -9,7 +9,9 @@ model:
   model_id: 2
   stepping: 5
   package: [SOCKET_5, SOCKET_7]
-  frequency_range_mhz: [75, 200]
+  cpu_frequencies_mhz: [75, 90, 100, 120, 133, 150, 166, 200]
+  emulated_frequency_range_mhz: [75, 200]
+  default_emulated_frequencies_mhz: [75, 90, 100, 120, 133, 150, 166, 200]
 
 cpuid:
   signature: 0x00000525

@@ -9,7 +9,9 @@ model:
   model_id: 8
   stepping: 3
   package: [SOCKET_370, SLOT_1]
-  frequency_range_mhz: [500, 1133]
+  cpu_frequencies_mhz: [500, 533, 550, 600, 650, 667, 700, 733, 750, 800, 850, 866, 900, 933, 1000, 1133]
+  emulated_frequency_range_mhz: [400, 1133]
+  default_emulated_frequencies_mhz: [400, 450, 500, 533, 600, 667, 733, 800, 866, 933, 1000, 1133]
 
 cpuid:
   signature: 0x00000683

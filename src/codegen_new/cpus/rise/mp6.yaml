@@ -8,7 +8,9 @@ model:
   family: 5
   model_id: 0
   package: [BGA_387, SOCKET_7]
-  frequency_range_mhz: [166, 266] # PR266, PR333, PR366
+  cpu_frequencies_mhz: [166, 190, 200, 250, 266]
+  emulated_frequency_range_mhz: [133, 266]
+  default_emulated_frequencies_mhz: [133, 166, 190, 200, 233, 250, 266]
 
 cpuid:
   signature: 0x00000500

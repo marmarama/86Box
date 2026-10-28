@@ -9,7 +9,9 @@ model:
   model_id: 5
   stepping: 2
   package: [SLOT_1]
-  frequency_range_mhz: [266, 450]
+  cpu_frequencies_mhz: [266, 300, 333, 350, 400, 450]
+  emulated_frequency_range_mhz: [100, 450]
+  default_emulated_frequencies_mhz: [100, 133, 166, 200, 233, 266, 300, 333, 350, 400, 450]
 
 cpuid:
   signature: 0x00000652

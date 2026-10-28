@@ -7,7 +7,9 @@ model:
   release_year: 1991
   family: 3
   package: [PLCC_100, QFP_100]
-  frequency_range_mhz: [16, 25]
+  cpu_frequencies_mhz: [16, 20, 25]
+  emulated_frequency_range_mhz: [16, 25]
+  default_emulated_frequencies_mhz: [16, 20, 25]
   bus_width_bits: 16
   address_bits: 24
 

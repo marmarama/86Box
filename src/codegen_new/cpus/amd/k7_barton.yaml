@@ -10,7 +10,9 @@ model:
   stepping: 0
   package: [SOCKET_A]
   pr_rating: "2500+ to 3200+"
-  frequency_range_mhz: [1833, 2200]
+  cpu_frequencies_mhz: [1833, 1917, 2083, 2100, 2167, 2200]
+  emulated_frequency_range_mhz: [1500, 2400]
+  default_emulated_frequencies_mhz: [1500, 1667, 1833, 1917, 2083, 2167, 2200]
   bus_clock_mhz: [166, 200] # DDR EV6 FSB: 333 / 400 MT/s
 
 cpuid:

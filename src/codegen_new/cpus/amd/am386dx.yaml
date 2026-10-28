@@ -7,7 +7,9 @@ model:
   release_year: 1991
   family: 3
   package: [PGA_132]
-  frequency_range_mhz: [25, 40]
+  cpu_frequencies_mhz: [25, 33, 40]
+  emulated_frequency_range_mhz: [20, 40]
+  default_emulated_frequencies_mhz: [20, 25, 33, 40]
   bus_width_bits: 32
 
 isa_level: CPU_386

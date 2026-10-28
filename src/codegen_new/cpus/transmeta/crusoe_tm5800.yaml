@@ -9,7 +9,9 @@ model:
   model_id: 4
   stepping: 2
   package: [OBGA_474]
-  frequency_range_mhz: [667, 1000]
+  cpu_frequencies_mhz: [667, 733, 800, 867, 933, 1000]
+  emulated_frequency_range_mhz: [533, 1000]
+  default_emulated_frequencies_mhz: [533, 600, 667, 733, 800, 867, 933, 1000]
 
 cpuid:
   signature: 0x00000542

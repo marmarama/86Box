@@ -7,7 +7,9 @@ model:
   release_year: 1982
   family: 1
   package: [PLCC_68, PGA_68]
-  frequency_range_mhz: [8, 16]
+  cpu_frequencies_mhz: [6, 8, 10, 12, 16, 20, 25]
+  emulated_frequency_range_mhz: [6, 25]
+  default_emulated_frequencies_mhz: [6, 7.16, 8, 9.54, 10, 12, 16, 20, 25]
   bus_width_bits: 16
 
 isa_level: CPU_186
