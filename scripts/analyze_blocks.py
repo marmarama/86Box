@@ -17,6 +17,8 @@ and automatically symbolizes [rbp + disp] operands to cpu_state fields.
 import sys
 import os
 import struct
+import mmap
+import heapq
 import argparse
 import re
 from collections import defaultdict, Counter
@@ -168,6 +170,111 @@ def get_host_reg_name(reg_idx, arch):
         return HOST_REGS_LOONGARCH64.get(base_reg, f"r{base_reg}")
     return f"reg{reg_idx}"
 
+class BDumpBlock:
+    __slots__ = (
+        'rec_type', 'exit_type', 'block_nr', 'compile_seq', 'pc', '_cs',
+        'phys', 'phys_2', 'status', 'flags', 'top', 'unroll_count',
+        'guest_insn_count', 'guest_byte_len', 'uop_count', 'host_byte_len',
+        'prologue_end_off', 'epilogue_pos_off', 'host_code_addr',
+        'page_mask', 'page_mask2',
+        'exec_count', 'host_tsc_total', 'host_tsc_callouts',
+        'link0_target_pc', 'link1_target_pc', 'link0_target_blk', 'link1_target_blk',
+        'invalidate_reason',
+        '_data_offset', '_bdump'
+    )
+
+    def __init__(self, data, data_offset, bdump):
+        (self.rec_type, self.exit_type, self.block_nr, self.compile_seq,
+         self.pc, self._cs, self.phys, self.phys_2, self.status, self.flags,
+         self.top, self.unroll_count, self.guest_insn_count, self.guest_byte_len,
+         self.uop_count, self.host_byte_len, self.prologue_end_off,
+         self.epilogue_pos_off, self.host_code_addr, self.page_mask,
+         self.page_mask2) = data
+        self.exec_count = 0
+        self.host_tsc_total = 0
+        self.host_tsc_callouts = 0
+        self.link0_target_pc = 0
+        self.link1_target_pc = 0
+        self.link0_target_blk = 0xffff
+        self.link1_target_blk = 0xffff
+        self.invalidate_reason = 0
+        self._data_offset = data_offset
+        self._bdump = bdump
+
+    def get_guest_bytes(self):
+        off = self._data_offset
+        return self._bdump.mm[off : off + self.guest_byte_len]
+
+    def get_spans(self):
+        off = self._data_offset + self.guest_byte_len
+        spans = []
+        for _ in range(self.guest_insn_count):
+            g_off, g_len, op32 = struct.unpack_from("<HBB", self._bdump.mm, off)
+            off += 4
+            spans.append({"guest_off": g_off, "guest_len": g_len, "op_32": op32})
+        return spans
+
+    def get_uops(self):
+        off = self._data_offset + self.guest_byte_len + self.guest_insn_count * 4
+        uops = []
+        for _ in range(self.uop_count):
+            (orig_type, final_type, imm_data, func_ptr,
+             dest_reg_a, src_reg_a, src_reg_b, src_reg_c,
+             dest_host_reg, src_host_reg_a, src_host_reg_b, src_host_reg_c,
+             guest_insn_idx, host_start_off, host_body_off, host_end_off) = \
+                struct.unpack_from("<IIIQHHHHhhhhHHHH", self._bdump.mm, off)
+            off += 44
+            uops.append({
+                "orig_type": orig_type,
+                "final_type": final_type,
+                "imm_data": imm_data,
+                "func_ptr": func_ptr,
+                "dest_reg_a": dest_reg_a,
+                "src_reg_a": src_reg_a,
+                "src_reg_b": src_reg_b,
+                "src_reg_c": src_reg_c,
+                "dest_host_reg": dest_host_reg,
+                "src_host_reg_a": src_host_reg_a,
+                "src_host_reg_b": src_host_reg_b,
+                "src_host_reg_c": src_host_reg_c,
+                "guest_insn_idx": guest_insn_idx,
+                "host_start_off": host_start_off,
+                "host_body_off": host_body_off,
+                "host_end_off": host_end_off,
+            })
+        return uops
+
+    def get_host_code(self):
+        off = self._data_offset + self.guest_byte_len + self.guest_insn_count * 4 + self.uop_count * 44
+        return self._bdump.mm[off : off + self.host_byte_len]
+
+    def __getitem__(self, key):
+        if key == "uops":
+            return self.get_uops()
+        if key == "spans":
+            return self.get_spans()
+        if key == "guest_bytes":
+            return self.get_guest_bytes()
+        if key == "host_code":
+            return self.get_host_code()
+        try:
+            return getattr(self, key)
+        except AttributeError:
+            raise KeyError(key)
+
+    def __setitem__(self, key, value):
+        setattr(self, key, value)
+
+    def get(self, key, default=None):
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+    def __contains__(self, key):
+        return hasattr(self, key) or key in ("uops", "spans", "guest_bytes", "host_code")
+
+
 class BDumpFile:
     def __init__(self, filename):
         self.filename = filename
@@ -181,11 +288,25 @@ class BDumpFile:
         self.host_profile = None # bdump_host_profile_t
         self.rt_samples = []    # list of bdump_rt_sample_t
         self.hang_record = None # bdump_hang_record_t + trace
+        self.f = None
+        self.mm = None
         self._parse()
 
+    def close(self):
+        if self.mm:
+            self.mm.close()
+            self.mm = None
+        if self.f:
+            self.f.close()
+            self.f = None
+
+    def __del__(self):
+        self.close()
+
     def _parse(self):
-        with open(self.filename, "rb") as f:
-            data = f.read()
+        self.f = open(self.filename, "rb")
+        self.mm = mmap.mmap(self.f.fileno(), 0, access=mmap.ACCESS_READ)
+        data = self.mm
 
         offset = 0
         file_len = len(data)
@@ -224,10 +345,7 @@ class BDumpFile:
         self.symbols_sorted = sorted(self.symbols.items(), key=lambda x: x[0])
 
         # Parse records
-        # Compile record format: < B B H I I I I I I H B B H H H H H H Q Q Q
         compile_rec_size = 68
-        insn_span_size = 4
-        uop_entry_size = 44
         exec_rec_size = 44
         profile_rec_size_old = 112
         profile_rec_size_new = 144
@@ -238,95 +356,18 @@ class BDumpFile:
             if rec_type == BDUMP_REC_COMPILE:
                 if offset + compile_rec_size > file_len:
                     break
-                (rec_type, exit_type, block_nr, compile_seq, pc, _cs, phys, phys_2,
-                 status, flags, top, unroll_count, guest_insn_count, guest_byte_len,
-                 uop_count, host_byte_len, prologue_end_off, epilogue_pos_off,
-                 host_code_addr, page_mask, page_mask2) = struct.unpack_from(
-                    "<BBHIIIIIIHBBHHHHHHQQQ", data, offset
-                )
+                rec_tuple = struct.unpack_from("<BBHIIIIIIHBBHHHHHHQQQ", data, offset)
                 offset += compile_rec_size
 
-                guest_bytes = data[offset : offset + guest_byte_len]
-                offset += guest_byte_len
-
-                # Instruction spans
-                spans = []
-                for _ in range(guest_insn_count):
-                    g_off, g_len, op32 = struct.unpack_from("<HBB", data, offset)
-                    offset += insn_span_size
-                    spans.append({"guest_off": g_off, "guest_len": g_len, "op_32": op32})
-
-                # uOps
-                uops = []
-                for _ in range(uop_count):
-                    (orig_type, final_type, imm_data, func_ptr,
-                     dest_reg_a, src_reg_a, src_reg_b, src_reg_c,
-                     dest_host_reg, src_host_reg_a, src_host_reg_b, src_host_reg_c,
-                     guest_insn_idx, host_start_off, host_body_off, host_end_off) = \
-                        struct.unpack_from("<IIIQHHHHhhhhHHHH", data, offset)
-                    offset += uop_entry_size
-                    uops.append({
-                        "orig_type": orig_type,
-                        "final_type": final_type,
-                        "imm_data": imm_data,
-                        "func_ptr": func_ptr,
-                        "dest_reg_a": dest_reg_a,
-                        "src_reg_a": src_reg_a,
-                        "src_reg_b": src_reg_b,
-                        "src_reg_c": src_reg_c,
-                        "dest_host_reg": dest_host_reg,
-                        "src_host_reg_a": src_host_reg_a,
-                        "src_host_reg_b": src_host_reg_b,
-                        "src_host_reg_c": src_host_reg_c,
-                        "guest_insn_idx": guest_insn_idx,
-                        "host_start_off": host_start_off,
-                        "host_body_off": host_body_off,
-                        "host_end_off": host_end_off,
-                    })
-
-                host_code = data[offset : offset + host_byte_len]
-                offset += host_byte_len
-
-                block = {
-                    "rec_type": rec_type,
-                    "exit_type": exit_type,
-                    "block_nr": block_nr,
-                    "compile_seq": compile_seq,
-                    "pc": pc,
-                    "_cs": _cs,
-                    "phys": phys,
-                    "phys_2": phys_2,
-                    "status": status,
-                    "flags": flags,
-                    "top": top,
-                    "unroll_count": unroll_count,
-                    "guest_insn_count": guest_insn_count,
-                    "guest_byte_len": guest_byte_len,
-                    "uop_count": uop_count,
-                    "host_byte_len": host_byte_len,
-                    "prologue_end_off": prologue_end_off,
-                    "epilogue_pos_off": epilogue_pos_off,
-                    "host_code_addr": host_code_addr,
-                    "page_mask": page_mask,
-                    "page_mask2": page_mask2,
-                    "guest_bytes": guest_bytes,
-                    "spans": spans,
-                    "uops": uops,
-                    "host_code": host_code,
-                    "exec_count": 0,
-                    "host_tsc_total": 0,
-                    "host_tsc_callouts": 0,
-                    "link0_target_pc": 0,
-                    "link1_target_pc": 0,
-                    "link0_target_blk": 0xffff,
-                    "link1_target_blk": 0xffff,
-                    "invalidate_reason": 0
-                }
+                block = BDumpBlock(rec_tuple, offset, self)
                 self.blocks.append(block)
-                if block_nr not in self.blocks_by_nr:
-                    self.blocks_by_nr[block_nr] = []
-                self.blocks_by_nr[block_nr].append(block)
-                self.blocks_by_seq[compile_seq] = block
+                if block.block_nr not in self.blocks_by_nr:
+                    self.blocks_by_nr[block.block_nr] = []
+                self.blocks_by_nr[block.block_nr].append(block)
+                self.blocks_by_seq[block.compile_seq] = block
+
+                # Skip raw payload (guest bytes, spans, uops, host code) without unpacking
+                offset += block.guest_byte_len + block.guest_insn_count * 4 + block.uop_count * 44 + block.host_byte_len
 
             elif rec_type == BDUMP_REC_EXEC:
                 if offset + exec_rec_size > file_len:
@@ -337,29 +378,30 @@ class BDumpFile:
                     "<BBHIQQQIIHH", data, offset
                 )
                 offset += exec_rec_size
-                exec_rec = {
-                    "invalidate_reason": inv_reason,
-                    "block_nr": block_nr,
-                    "compile_seq": compile_seq,
-                    "exec_count": exec_count,
-                    "host_tsc_total": host_tsc_total,
-                    "host_tsc_callouts": host_tsc_callouts,
-                    "link0_target_pc": link0_pc,
-                    "link1_target_pc": link1_pc,
-                    "link0_target_blk": link0_blk,
-                    "link1_target_blk": link1_blk
-                }
-                self.exec_records.append(exec_rec)
-                if compile_seq in self.blocks_by_seq:
-                    b = self.blocks_by_seq[compile_seq]
-                    b["exec_count"] = exec_count
-                    b["host_tsc_total"] = host_tsc_total
-                    b["host_tsc_callouts"] = host_tsc_callouts
-                    b["link0_target_pc"] = link0_pc
-                    b["link1_target_pc"] = link1_pc
-                    b["link0_target_blk"] = link0_blk
-                    b["link1_target_blk"] = link1_blk
-                    b["invalidate_reason"] = inv_reason
+                b = self.blocks_by_seq.get(compile_seq)
+                if b:
+                    b.exec_count = exec_count
+                    b.host_tsc_total = host_tsc_total
+                    b.host_tsc_callouts = host_tsc_callouts
+                    b.link0_target_pc = link0_pc
+                    b.link1_target_pc = link1_pc
+                    b.link0_target_blk = link0_blk
+                    b.link1_target_blk = link1_blk
+                    b.invalidate_reason = inv_reason
+                else:
+                    exec_rec = {
+                        "invalidate_reason": inv_reason,
+                        "block_nr": block_nr,
+                        "compile_seq": compile_seq,
+                        "exec_count": exec_count,
+                        "host_tsc_total": host_tsc_total,
+                        "host_tsc_callouts": host_tsc_callouts,
+                        "link0_target_pc": link0_pc,
+                        "link1_target_pc": link1_pc,
+                        "link0_target_blk": link0_blk,
+                        "link1_target_blk": link1_blk
+                    }
+                    self.exec_records.append(exec_rec)
 
             elif rec_type == BDUMP_REC_HOST_PROFILE:
                 if offset + profile_rec_size_new <= file_len:
@@ -1028,39 +1070,39 @@ def generate_summary(bdump, top_n=25):
         print()
 
     # Rank Top Hottest Blocks
-    has_tsc = any(b.get("host_tsc_total", 0) > 0 for b in bdump.blocks)
-    scored_blocks = []
-    for b in bdump.blocks:
-        host_insn_count = len(disassemble_host_code(b["host_code"], host_arch, 0)) or max(1, b["host_byte_len"] // 4)
-        dynamic_insns = b["exec_count"] * host_insn_count
-        sort_metric = b.get("host_tsc_total", 0) if has_tsc else dynamic_insns
-        scored_blocks.append((sort_metric, dynamic_insns, host_insn_count, b))
-
-    scored_blocks.sort(key=lambda x: x[0], reverse=True)
+    has_tsc = any(b.host_tsc_total > 0 for b in bdump.blocks)
+    scored_blocks = heapq.nlargest(
+        top_n,
+        bdump.blocks,
+        key=lambda b: b.host_tsc_total if has_tsc else (b.exec_count * max(1, b.host_byte_len // 4))
+    )
 
     metric_title = "dynamic host TSC cycles" if has_tsc else "dynamic host instructions"
     print(f"--- TOP {min(top_n, len(scored_blocks))} HOTTEST BLOCKS (by {metric_title}) ---")
     if has_tsc:
         print(f"{'Rank':<5} {'Block':<10} {'PC (CS:EIP)':<18} {'Phys':<10} {'Exec Count':<12} {'Host Insns':<11} {'Host TSC':<14} {'Pure JIT':<14} {'Avg Cyc':<9} {'% Tot'}")
         print("-" * 115)
-        tot_metric = sum(s[0] for s in scored_blocks) or 1
-        for rank, (metric, dyn_insns, h_insns, b) in enumerate(scored_blocks[:top_n], 1):
-            pct = (metric / tot_metric) * 100
-            cs_eip = f"{b['_cs']>>4:04x}:{b['pc']-b['_cs']:08x}"
-            pure_jit = max(0, b.get("host_tsc_total", 0) - b.get("host_tsc_callouts", 0))
-            avg_cyc = b.get("host_tsc_total", 0) / max(1, b["exec_count"])
-            print(f"#{rank:<4} blk#{b['block_nr']:<6} {cs_eip:<18} {b['phys']:08x}   {b['exec_count']:<12,d} {h_insns:<11,d} {b.get('host_tsc_total', 0):<14,d} {pure_jit:<14,d} {avg_cyc:<9.1f} {pct:5.2f}%")
+        tot_metric = sum(b.host_tsc_total for b in bdump.blocks) or 1
+        for rank, b in enumerate(scored_blocks, 1):
+            pct = (b.host_tsc_total / tot_metric) * 100
+            cs_eip = f"{b._cs>>4:04x}:{b.pc-b._cs:08x}"
+            pure_jit = max(0, b.host_tsc_total - b.host_tsc_callouts)
+            avg_cyc = b.host_tsc_total / max(1, b.exec_count)
+            h_insns = len(disassemble_host_code(b.get_host_code(), host_arch, 0)) or max(1, b.host_byte_len // 4)
+            print(f"#{rank:<4} blk#{b.block_nr:<6} {cs_eip:<18} {b.phys:08x}   {b.exec_count:<12,d} {h_insns:<11,d} {b.host_tsc_total:<14,d} {pure_jit:<14,d} {avg_cyc:<9.1f} {pct:5.2f}%")
     else:
         print(f"{'Rank':<5} {'Block':<10} {'PC (CS:EIP)':<18} {'Phys':<10} {'Exec Count':<12} {'Host Insns':<12} {'Total Dyn Insns':<16} {'% Tot'}")
         print("-" * 88)
-        tot_metric = sum(s[0] for s in scored_blocks) or 1
-        for rank, (metric, dyn_insns, h_insns, b) in enumerate(scored_blocks[:top_n], 1):
-            pct = (metric / tot_metric) * 100
-            cs_eip = f"{b['_cs']>>4:04x}:{b['pc']-b['_cs']:08x}"
-            print(f"#{rank:<4} blk#{b['block_nr']:<6} {cs_eip:<18} {b['phys']:08x}   {b['exec_count']:<12,d} {h_insns:<12,d} {dyn_insns:<16,d} {pct:5.2f}%")
+        tot_metric = sum(b.exec_count * max(1, b.host_byte_len // 4) for b in bdump.blocks) or 1
+        for rank, b in enumerate(scored_blocks, 1):
+            h_insns = len(disassemble_host_code(b.get_host_code(), host_arch, 0)) or max(1, b.host_byte_len // 4)
+            dyn_insns = b.exec_count * h_insns
+            pct = (dyn_insns / tot_metric) * 100
+            cs_eip = f"{b._cs>>4:04x}:{b.pc-b._cs:08x}"
+            print(f"#{rank:<4} blk#{b.block_nr:<6} {cs_eip:<18} {b.phys:08x}   {b.exec_count:<12,d} {h_insns:<12,d} {dyn_insns:<16,d} {pct:5.2f}%")
     print()
 
-    # Dynamic Instruction Mix Breakdown
+    # Dynamic Instruction Mix Breakdown, Exit Chaining, & Fallback Leaderboard in a single streaming pass
     total_prologue_bytes = 0
     total_epilogue_bytes = 0
     total_glue_bytes = 0
@@ -1069,26 +1111,72 @@ def generate_summary(bdump, top_n=25):
     total_compute_bytes = 0
     total_dynamic_bytes = 0
 
+    exit_counts = Counter()
+    linked_counts = 0
+    unlinked_counts = 0
+    fallback_ops = Counter()
+
+    mem_uops = {0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46}
+    book_regs = {8, 9, 10, 11, 12, 13}
+    mm = bdump.mm
+
     for b in bdump.blocks:
-        weight = max(1, b["exec_count"])
-        total_dynamic_bytes += b["host_byte_len"] * weight
-        total_prologue_bytes += b["prologue_end_off"] * weight
-        total_epilogue_bytes += (b["host_byte_len"] - b["epilogue_pos_off"]) * weight
+        cnt = b.exec_count
+        weight = max(1, cnt)
 
-        for uop in b["uops"]:
-            glue_len = max(0, uop["host_body_off"] - uop["host_start_off"])
-            body_len = max(0, uop["host_end_off"] - uop["host_body_off"])
-            total_glue_bytes += glue_len * weight
-
-            uop_code = uop["final_type"] & 0xffff
-            dest_base = uop["dest_reg_a"] & 0xff
-
-            if uop_code in [0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46]: # MEM ops
-                total_mem_bytes += body_len * weight
-            elif dest_base in [8, 9, 10, 11, 12, 13]: # flags, pc, oldpc
-                total_bookkeeping_bytes += body_len * weight
+        # Chaining
+        exit_counts[b.exit_type] += weight
+        if b.link0_target_blk != 0xffff:
+            linked_counts += weight
+        else:
+            unlinked_counts += weight
+        if b.exit_type == 2: # COND_2
+            if b.link1_target_blk != 0xffff:
+                linked_counts += weight
             else:
-                total_compute_bytes += body_len * weight
+                unlinked_counts += weight
+
+        if cnt <= 0:
+            continue
+
+        h_len = b.host_byte_len
+        total_dynamic_bytes += h_len * cnt
+        total_prologue_bytes += b.prologue_end_off * cnt
+        total_epilogue_bytes += (h_len - b.epilogue_pos_off) * cnt
+
+        uop_ptr = b._data_offset + b.guest_byte_len + b.guest_insn_count * 4
+        spans = None
+        guest_bytes = None
+
+        for _ in range(b.uop_count):
+            final_type, dest_reg, g_insn_idx, h_start, h_body, h_end = struct.unpack_from(
+                "<4xI12xH14xHHHH", mm, uop_ptr
+            )
+            uop_ptr += 44
+
+            glue_len = max(0, h_body - h_start)
+            body_len = max(0, h_end - h_body)
+            total_glue_bytes += glue_len * cnt
+
+            uop_code = final_type & 0xffff
+            dest_base = dest_reg & 0xff
+
+            if uop_code in mem_uops:
+                total_mem_bytes += body_len * cnt
+            elif dest_base in book_regs:
+                total_bookkeeping_bytes += body_len * cnt
+            else:
+                total_compute_bytes += body_len * cnt
+
+            if uop_code == 0x11: # UOP_CALL_INSTRUCTION_FUNC
+                if spans is None:
+                    spans = b.get_spans()
+                    guest_bytes = b.get_guest_bytes()
+                if g_insn_idx < len(spans):
+                    span = spans[g_insn_idx]
+                    g_bytes = guest_bytes[span["guest_off"] : span["guest_off"] + span["guest_len"]]
+                    dis = disassemble_guest_insn(g_bytes, span["op_32"], b.pc)
+                    fallback_ops[dis] += cnt
 
     print("--- DYNAMIC INSTRUCTION MIX BREAKDOWN ---")
     if total_dynamic_bytes > 0:
@@ -1099,24 +1187,6 @@ def generate_summary(bdump, top_n=25):
         print(f"  PC / Flags Bookkeeping:       {total_bookkeeping_bytes / total_dynamic_bytes * 100:6.2f}%")
         print(f"  Core ALU / FPU Computation:   {total_compute_bytes / total_dynamic_bytes * 100:6.2f}%")
     print()
-
-    # Block Exit & Chaining Breakdown
-    exit_counts = Counter()
-    linked_counts = 0
-    unlinked_counts = 0
-
-    for b in bdump.blocks:
-        weight = max(1, b["exec_count"])
-        exit_counts[b["exit_type"]] += weight
-        if b["link0_target_blk"] != 0xffff:
-            linked_counts += weight
-        else:
-            unlinked_counts += weight
-        if b["exit_type"] == 2: # COND_2
-            if b["link1_target_blk"] != 0xffff:
-                linked_counts += weight
-            else:
-                unlinked_counts += weight
 
     print("--- BLOCK EXIT & CHAINING EFFICIENCY ---")
     tot_exits = sum(exit_counts.values()) or 1
@@ -1129,25 +1199,12 @@ def generate_summary(bdump, top_n=25):
     print(f"  Chaining Fallback Rate:    {unlinked_counts / tot_chain_branches * 100:5.2f}% ({unlinked_counts:,} unlinked to dispatcher)")
     print()
 
-    # Interpreter Fallback Leaderboard
-    fallback_ops = Counter()
-    for b in bdump.blocks:
-        weight = max(1, b["exec_count"])
-        for uop in b["uops"]:
-            uop_code = uop["final_type"] & 0xffff
-            if uop_code == 0x11: # UOP_CALL_INSTRUCTION_FUNC
-                insn_idx = uop["guest_insn_idx"]
-                if insn_idx < len(b["spans"]):
-                    span = b["spans"][insn_idx]
-                    g_bytes = b["guest_bytes"][span["guest_off"] : span["guest_off"] + span["guest_len"]]
-                    dis = disassemble_guest_insn(g_bytes, span["op_32"], b["pc"])
-                    fallback_ops[dis] += weight
-
     if fallback_ops:
         print("--- INTERPRETER FALLBACK LEADERBOARD (UOP_CALL_INSTRUCTION_FUNC) ---")
         for op, count in fallback_ops.most_common(10):
             print(f"  {op:<32}: {count:<12,d} dynamic executions")
         print()
+    print("=" * 80)
     print("=" * 80)
 
 
