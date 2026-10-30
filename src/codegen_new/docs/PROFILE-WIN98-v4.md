@@ -243,4 +243,50 @@ To eliminate the **39.99 Billion cycle (6.30%)** CPU bottleneck in `tsc_c_callou
    - Tested across Windows 98 boot: **all 8.03 Million variable shift fallbacks were completely eliminated** (0 exits on leaderboard).
    - Chaining direct hit rate remained at **100.00%**.
 
+---
+
+## 13. Native Lowering of `LAR` & `LSL` (`0x0F 0x02` / `0x0F 0x03`)
+
+### 13.1 Background & Bottleneck Analysis
+- Windows 98 protected-mode sub-systems (kernel, memory manager, VMM32) frequently validate segment selectors using `LAR` (Load Access Rights Byte) and `LSL` (Load Segment Limit).
+- Prior to this optimization, neither `recomp_opcodes_0f` nor `recomp_opcodes_0f_no_mmx` had handlers for `0x0F 0x02` (`LAR`) or `0x0F 0x03` (`LSL`), forcing fallback to `UOP_CALL_INSTRUCTION_FUNC`:
+  - `lar`: **3,722,862** dynamic interpreter executions.
+  - `lsl`: **1,477,888** dynamic interpreter executions.
+  - Combined total: **5,200,750 (5.20 Million) exits**.
+
+### 13.2 Architecture & Lowering Design
+1. **Protected Mode Verification**:
+   - In real-address mode or Virtual-8086 mode, x86 requires `LAR` and `LSL` to trigger an Invalid Opcode Exception (`#UD`).
+   - The JIT handlers inspect `(msw & 1) && !(cpu_state.eflags & VM_FLAG)` upfront; if in real or V86 mode, the handler returns `0` before emitting any uOps, ensuring the interpreter executes `NOTRM` and raises `#UD`.
+2. **C Descriptor Validation Helpers**:
+   - Implemented typed runtime helpers [`jit_lar16`](file:///home/marm/src/86Box/src/codegen_new/codegen_ops_jit_wrappers.h), [`jit_lar32`](file:///home/marm/src/86Box/src/codegen_new/codegen_ops_jit_wrappers.h), [`jit_lsl16`](file:///home/marm/src/86Box/src/codegen_new/codegen_ops_jit_wrappers.h), and [`jit_lsl32`](file:///home/marm/src/86Box/src/codegen_new/codegen_ops_jit_wrappers.h).
+   - Each helper inspects null selectors, table bounds (`GDT`/`LDT`), descriptor types (excluding gates and illegal types), and descriptor privilege levels (`DPL` vs `CPL` and `RPL`).
+   - On validity, sets `cpu_state.flags |= Z_FLAG` and computes the access rights byte or granularity-scaled segment limit.
+   - On invalidity, clears `cpu_state.flags &= ~Z_FLAG`.
+3. **Register Allocator Decoupling & Conditional Update**:
+   - Per x86 specification, when `ZF == 0` (invalid selector/descriptor), the destination register **must remain unmodified**.
+   - Rather than modifying `cpu_state.regs` inside the C callout (which risks desynchronization with host-cached registers), the JIT calls the helper via `uop_CALL_FUNC_RESULT(ir, IREG_temp0, helper)`.
+   - The IR tests `Z_FLAG` using in-block conditional branch:
+     ```c
+     uop_MOVZX(ir, IREG_temp1, IREG_flags);
+     uop_AND_IMM(ir, IREG_temp1, IREG_temp1, Z_FLAG);
+     int jump_invalid = uop_CMP_IMM_JZ_DEST(ir, IREG_temp1, 0);
+     if (is_32)
+         uop_MOV(ir, IREG_32(dest_reg), IREG_temp0);
+     else
+         uop_MOV(ir, IREG_16(dest_reg), IREG_temp0_W);
+     uop_NOP_BARRIER(ir);
+     uop_set_jump_dest(ir, jump_invalid);
+     ```
+   - When valid, destination register writeback is explicitly tracked by the IR and register allocator. When invalid, the destination register is completely untouched.
+4. **Opcode Dispatch Wiring**:
+   - Registered `ropLAR_16`, `ropLSL_16`, `ropLAR_32`, and `ropLSL_32` across `recomp_opcodes_0f` and `recomp_opcodes_0f_no_mmx` at opcodes `0x0F 0x02` and `0x0F 0x03`.
+
+### 13.3 Results & Verification
+- Profiled against Windows 98 boot session:
+  - `lar` fallbacks: **3.72M $\rightarrow$ 0**.
+  - `lsl` fallbacks: **1.48M $\rightarrow$ 0**.
+  - **All 5.20 Million interpreter fallbacks were eliminated**.
+  - Block chaining hit rate remained solid at **100.00%**.
+
 

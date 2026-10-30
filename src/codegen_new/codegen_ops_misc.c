@@ -1501,3 +1501,72 @@ ropOUT(codeblock_t *block, ir_data_t *ir, uint8_t opcode, UNUSED(uint32_t fetchd
     return next_pc;
 }
 
+static inline uint32_t
+ropLAR_LSL_common(codeblock_t *block, ir_data_t *ir, uint32_t fetchdat, uint32_t op_32, uint32_t op_pc, int is_lsl, int is_32)
+{
+    if (!(msw & 1) || (cpu_state.eflags & VM_FLAG))
+        return 0; /* Protected mode only: fall back to interpreter for #UD */
+
+    int dest_reg = (fetchdat >> 3) & 7;
+    int src_reg;
+    codegen_mark_code_present(block, cs + op_pc, 1);
+
+    if ((fetchdat & 0xc0) == 0xc0) {
+        src_reg = IREG_16(fetchdat & 7);
+    } else {
+        x86seg *target_seg = codegen_generate_ea(ir, op_ea_seg, fetchdat, op_ssegs, &op_pc, op_32, 0);
+        codegen_check_seg_read(block, ir, target_seg);
+        CHECK_SEG_LIMITS(block, ir, target_seg, IREG_eaaddr, 1);
+        src_reg = IREG_temp0_W;
+        uop_MEM_LOAD_REG(ir, src_reg, ireg_seg_base(target_seg), IREG_eaaddr);
+    }
+
+    codegen_accumulate_flush(ir);
+    uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
+    uop_MOV_IMM(ir, IREG_pc, op_pc + 1);
+
+    uop_LOAD_FUNC_ARG_REG(ir, 0, src_reg);
+    void *helper = is_lsl ? (is_32 ? (void *) jit_lsl32 : (void *) jit_lsl16)
+                          : (is_32 ? (void *) jit_lar32 : (void *) jit_lar16);
+    uop_CALL_FUNC_RESULT(ir, IREG_temp0, helper);
+
+    /* Test ZF: if descriptor is valid, ZF == 1 and destination register is updated */
+    uop_MOVZX(ir, IREG_temp1, IREG_flags);
+    uop_AND_IMM(ir, IREG_temp1, IREG_temp1, Z_FLAG);
+    int jump_invalid = uop_CMP_IMM_JZ_DEST(ir, IREG_temp1, 0);
+    if (is_32)
+        uop_MOV(ir, IREG_32(dest_reg), IREG_temp0);
+    else
+        uop_MOV(ir, IREG_16(dest_reg), IREG_temp0_W);
+    uop_NOP_BARRIER(ir);
+    uop_set_jump_dest(ir, jump_invalid);
+
+    codegen_last_flags_op = FLAGS_UNKNOWN;
+    codegen_flags_changed = 0;
+    return op_pc + 1;
+}
+
+uint32_t
+ropLAR_16(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
+{
+    return ropLAR_LSL_common(block, ir, fetchdat, op_32, op_pc, 0, 0);
+}
+
+uint32_t
+ropLAR_32(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
+{
+    return ropLAR_LSL_common(block, ir, fetchdat, op_32, op_pc, 0, 1);
+}
+
+uint32_t
+ropLSL_16(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
+{
+    return ropLAR_LSL_common(block, ir, fetchdat, op_32, op_pc, 1, 0);
+}
+
+uint32_t
+ropLSL_32(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
+{
+    return ropLAR_LSL_common(block, ir, fetchdat, op_32, op_pc, 1, 1);
+}
+

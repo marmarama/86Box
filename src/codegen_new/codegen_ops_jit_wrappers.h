@@ -257,6 +257,352 @@ jit_verw(uint32_t sel_val)
     }
 }
 
+static JIT_WRAPPER uint32_t
+jit_lar16(uint32_t sel_val)
+{
+    uint16_t sel = (uint16_t) sel_val;
+    uint32_t ret = 0;
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        flags_rebuild();
+        cpu_state.flags &= ~Z_FLAG;
+        if ((cr0 & 1) && (sel & 0xfffc)) {
+            int valid = (sel & ~7) < ((sel & 4) ? ldt.limit : gdt.limit);
+            uint16_t desc = 0;
+            if (valid) {
+                cpl_override = 1;
+                desc = readmemw(0, ((sel & 4) ? ldt.base : gdt.base) + (sel & ~7) + 4);
+                cpl_override = 0;
+                if (cpu_state.abrt) {
+                    codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+                    return 0;
+                }
+            }
+            if ((desc & 0x1f00) == 0x000)
+                valid = 0;
+            if ((desc & 0x1f00) == 0x800)
+                valid = 0;
+            if ((desc & 0x1f00) == 0xa00)
+                valid = 0;
+            if ((desc & 0x1f00) == 0xd00)
+                valid = 0;
+            if ((desc & 0x1c00) < 0x1c00) /* Exclude conforming code segments */
+            {
+                int dpl = (desc >> 13) & 3;
+                if (dpl < CPL || dpl < (sel & 3))
+                    valid = 0;
+            }
+            if (valid) {
+                cpu_state.flags |= Z_FLAG;
+                ret = desc & 0xff00;
+            }
+        }
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        flags_rebuild();
+        cpu_state.flags &= ~Z_FLAG;
+        if ((cr0 & 1) && (sel & 0xfffc)) {
+            int valid = (sel & ~7) < ((sel & 4) ? ldt.limit : gdt.limit);
+            uint16_t desc = 0;
+            if (valid) {
+                cpl_override = 1;
+                desc = readmemw(0, ((sel & 4) ? ldt.base : gdt.base) + (sel & ~7) + 4);
+                cpl_override = 0;
+                if (cpu_state.abrt)
+                    return 0;
+            }
+            if ((desc & 0x1f00) == 0x000)
+                valid = 0;
+            if ((desc & 0x1f00) == 0x800)
+                valid = 0;
+            if ((desc & 0x1f00) == 0xa00)
+                valid = 0;
+            if ((desc & 0x1f00) == 0xd00)
+                valid = 0;
+            if ((desc & 0x1c00) < 0x1c00) /* Exclude conforming code segments */
+            {
+                int dpl = (desc >> 13) & 3;
+                if (dpl < CPL || dpl < (sel & 3))
+                    valid = 0;
+            }
+            if (valid) {
+                cpu_state.flags |= Z_FLAG;
+                ret = desc & 0xff00;
+            }
+        }
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+    }
+    return ret;
+}
+
+static JIT_WRAPPER uint32_t
+jit_lar32(uint32_t sel_val)
+{
+    uint16_t sel = (uint16_t) sel_val;
+    uint32_t ret = 0;
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        flags_rebuild();
+        cpu_state.flags &= ~Z_FLAG;
+        if ((cr0 & 1) && (sel & 0xfffc)) {
+            int valid = (sel & ~7) < ((sel & 4) ? ldt.limit : gdt.limit);
+            uint32_t desc32 = 0;
+            if (valid) {
+                cpl_override = 1;
+                desc32 = readmeml(0, ((sel & 4) ? ldt.base : gdt.base) + (sel & ~7) + 4);
+                cpl_override = 0;
+                if (cpu_state.abrt) {
+                    codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+                    return 0;
+                }
+            }
+            uint16_t desc = (uint16_t) desc32;
+            if ((desc & 0x1f00) == 0x000)
+                valid = 0;
+            if ((desc & 0x1f00) == 0x800)
+                valid = 0;
+            if ((desc & 0x1f00) == 0xa00)
+                valid = 0;
+            if ((desc & 0x1f00) == 0xd00)
+                valid = 0;
+            if ((desc & 0x1c00) < 0x1c00) /* Exclude conforming code segments */
+            {
+                int dpl = (desc >> 13) & 3;
+                if (dpl < CPL || dpl < (sel & 3))
+                    valid = 0;
+            }
+            if (valid) {
+                cpu_state.flags |= Z_FLAG;
+                ret = desc32 & 0xffff00;
+            }
+        }
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        flags_rebuild();
+        cpu_state.flags &= ~Z_FLAG;
+        if ((cr0 & 1) && (sel & 0xfffc)) {
+            int valid = (sel & ~7) < ((sel & 4) ? ldt.limit : gdt.limit);
+            uint32_t desc32 = 0;
+            if (valid) {
+                cpl_override = 1;
+                desc32 = readmeml(0, ((sel & 4) ? ldt.base : gdt.base) + (sel & ~7) + 4);
+                cpl_override = 0;
+                if (cpu_state.abrt)
+                    return 0;
+            }
+            uint16_t desc = (uint16_t) desc32;
+            if ((desc & 0x1f00) == 0x000)
+                valid = 0;
+            if ((desc & 0x1f00) == 0x800)
+                valid = 0;
+            if ((desc & 0x1f00) == 0xa00)
+                valid = 0;
+            if ((desc & 0x1f00) == 0xd00)
+                valid = 0;
+            if ((desc & 0x1c00) < 0x1c00) /* Exclude conforming code segments */
+            {
+                int dpl = (desc >> 13) & 3;
+                if (dpl < CPL || dpl < (sel & 3))
+                    valid = 0;
+            }
+            if (valid) {
+                cpu_state.flags |= Z_FLAG;
+                ret = desc32 & 0xffff00;
+            }
+        }
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+    }
+    return ret;
+}
+
+static JIT_WRAPPER uint32_t
+jit_lsl16(uint32_t sel_val)
+{
+    uint16_t sel = (uint16_t) sel_val;
+    uint32_t ret = 0;
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        flags_rebuild();
+        cpu_state.flags &= ~Z_FLAG;
+        if ((cr0 & 1) && (sel & 0xfffc)) {
+            int valid = (sel & ~7) < ((sel & 4) ? ldt.limit : gdt.limit);
+            uint16_t desc = 0;
+            if (valid) {
+                cpl_override = 1;
+                desc = readmemw(0, ((sel & 4) ? ldt.base : gdt.base) + (sel & ~7) + 4);
+                cpl_override = 0;
+                if (cpu_state.abrt) {
+                    codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+                    return 0;
+                }
+            }
+            if ((desc & 0x1400) == 0x400)
+                valid = 0; /* Interrupt or trap or call gate */
+            if ((desc & 0x1f00) == 0x000)
+                valid = 0;
+            if ((desc & 0x1f00) == 0xa00)
+                valid = 0;
+            if ((desc & 0x1c00) != 0x1c00) /* Exclude conforming code segments */
+            {
+                int rpl = (desc >> 13) & 3;
+                if (rpl < CPL || rpl < (sel & 3))
+                    valid = 0;
+            }
+            if (valid) {
+                cpu_state.flags |= Z_FLAG;
+                cpl_override = 1;
+                ret = readmemw(0, ((sel & 4) ? ldt.base : gdt.base) + (sel & ~7));
+                cpl_override = 0;
+                if (cpu_state.abrt) {
+                    codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+                    return 0;
+                }
+            }
+        }
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        flags_rebuild();
+        cpu_state.flags &= ~Z_FLAG;
+        if ((cr0 & 1) && (sel & 0xfffc)) {
+            int valid = (sel & ~7) < ((sel & 4) ? ldt.limit : gdt.limit);
+            uint16_t desc = 0;
+            if (valid) {
+                cpl_override = 1;
+                desc = readmemw(0, ((sel & 4) ? ldt.base : gdt.base) + (sel & ~7) + 4);
+                cpl_override = 0;
+                if (cpu_state.abrt)
+                    return 0;
+            }
+            if ((desc & 0x1400) == 0x400)
+                valid = 0; /* Interrupt or trap or call gate */
+            if ((desc & 0x1f00) == 0x000)
+                valid = 0;
+            if ((desc & 0x1f00) == 0xa00)
+                valid = 0;
+            if ((desc & 0x1c00) != 0x1c00) /* Exclude conforming code segments */
+            {
+                int rpl = (desc >> 13) & 3;
+                if (rpl < CPL || rpl < (sel & 3))
+                    valid = 0;
+            }
+            if (valid) {
+                cpu_state.flags |= Z_FLAG;
+                cpl_override = 1;
+                ret = readmemw(0, ((sel & 4) ? ldt.base : gdt.base) + (sel & ~7));
+                cpl_override = 0;
+                if (cpu_state.abrt)
+                    return 0;
+            }
+        }
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+    }
+    return ret;
+}
+
+static JIT_WRAPPER uint32_t
+jit_lsl32(uint32_t sel_val)
+{
+    uint16_t sel = (uint16_t) sel_val;
+    uint32_t ret = 0;
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        flags_rebuild();
+        cpu_state.flags &= ~Z_FLAG;
+        if ((cr0 & 1) && (sel & 0xfffc)) {
+            int valid = (sel & ~7) < ((sel & 4) ? ldt.limit : gdt.limit);
+            uint16_t desc = 0;
+            if (valid) {
+                cpl_override = 1;
+                desc = readmemw(0, ((sel & 4) ? ldt.base : gdt.base) + (sel & ~7) + 4);
+                cpl_override = 0;
+                if (cpu_state.abrt) {
+                    codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+                    return 0;
+                }
+            }
+            if ((desc & 0x1400) == 0x400)
+                valid = 0; /* Interrupt or trap or call gate */
+            if ((desc & 0x1f00) == 0x000)
+                valid = 0;
+            if ((desc & 0x1f00) == 0xa00)
+                valid = 0;
+            if ((desc & 0x1c00) != 0x1c00) /* Exclude conforming code segments */
+            {
+                int rpl = (desc >> 13) & 3;
+                if (rpl < CPL || rpl < (sel & 3))
+                    valid = 0;
+            }
+            if (valid) {
+                cpu_state.flags |= Z_FLAG;
+                cpl_override = 1;
+                uint32_t addr = ((sel & 4) ? ldt.base : gdt.base) + (sel & ~7);
+                uint32_t limit = readmemw(0, addr);
+                uint8_t byte6 = readmemb(0, addr + 6);
+                cpl_override = 0;
+                if (cpu_state.abrt) {
+                    codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+                    return 0;
+                }
+                limit |= ((uint32_t) (byte6 & 0xF)) << 16;
+                if (byte6 & 0x80) {
+                    limit <<= 12;
+                    limit |= 0xFFF;
+                }
+                ret = limit;
+            }
+        }
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        flags_rebuild();
+        cpu_state.flags &= ~Z_FLAG;
+        if ((cr0 & 1) && (sel & 0xfffc)) {
+            int valid = (sel & ~7) < ((sel & 4) ? ldt.limit : gdt.limit);
+            uint16_t desc = 0;
+            if (valid) {
+                cpl_override = 1;
+                desc = readmemw(0, ((sel & 4) ? ldt.base : gdt.base) + (sel & ~7) + 4);
+                cpl_override = 0;
+                if (cpu_state.abrt)
+                    return 0;
+            }
+            if ((desc & 0x1400) == 0x400)
+                valid = 0; /* Interrupt or trap or call gate */
+            if ((desc & 0x1f00) == 0x000)
+                valid = 0;
+            if ((desc & 0x1f00) == 0xa00)
+                valid = 0;
+            if ((desc & 0x1c00) != 0x1c00) /* Exclude conforming code segments */
+            {
+                int rpl = (desc >> 13) & 3;
+                if (rpl < CPL || rpl < (sel & 3))
+                    valid = 0;
+            }
+            if (valid) {
+                cpu_state.flags |= Z_FLAG;
+                cpl_override = 1;
+                uint32_t addr = ((sel & 4) ? ldt.base : gdt.base) + (sel & ~7);
+                uint32_t limit = readmemw(0, addr);
+                uint8_t byte6 = readmemb(0, addr + 6);
+                cpl_override = 0;
+                if (cpu_state.abrt)
+                    return 0;
+                limit |= ((uint32_t) (byte6 & 0xF)) << 16;
+                if (byte6 & 0x80) {
+                    limit <<= 12;
+                    limit |= 0xFFF;
+                }
+                ret = limit;
+            }
+        }
+        cpu_state.flags_op = FLAGS_UNKNOWN;
+    }
+    return ret;
+}
+
 static JIT_WRAPPER void
 jit_iret(void)
 {
