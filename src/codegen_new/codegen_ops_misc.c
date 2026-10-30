@@ -325,32 +325,6 @@ ropF7_32(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fet
     return 0;
 }
 
-static void
-rebuild_c(ir_data_t *ir)
-{
-    int needs_rebuild = 1;
-
-    if (codegen_flags_changed) {
-        switch (codegen_last_flags_op) {
-            case FLAGS_INC8:
-            case FLAGS_INC16:
-            case FLAGS_INC32:
-            case FLAGS_DEC8:
-            case FLAGS_DEC16:
-            case FLAGS_DEC32:
-                needs_rebuild = 0;
-                break;
-
-            default:
-                break;
-        }
-    }
-
-    if (needs_rebuild) {
-        uop_CALL_FUNC(ir, jit_flags_rebuild_c);
-    }
-}
-
 uint32_t
 ropFF_16(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
 {
@@ -694,6 +668,40 @@ uint32_t
 ropSTD(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), uint32_t op_pc)
 {
     uop_OR_IMM(ir, IREG_flags, IREG_flags, D_FLAG);
+    return op_pc;
+}
+
+uint32_t
+ropSAHF(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), uint32_t op_pc)
+{
+    if (!codegen_flags_changed || codegen_last_flags_op != FLAGS_UNKNOWN)
+        uop_CALL_FUNC(ir, jit_flags_rebuild);
+
+    uop_AND_IMM(ir, IREG_flags, IREG_flags, 0xff00);
+    uop_OR_IMM(ir, IREG_flags, IREG_flags, 0x0002);
+    uop_SHR_IMM(ir, IREG_temp0, IREG_EAX, 8);
+    uop_AND_IMM(ir, IREG_temp0, IREG_temp0, 0x00d5);
+    uop_OR(ir, IREG_flags, IREG_flags, IREG_temp0_W);
+
+    uop_MOV_IMM(ir, IREG_flags_op, FLAGS_UNKNOWN);
+    codegen_flags_changed = 1;
+    codegen_last_flags_op = FLAGS_UNKNOWN;
+
+    return op_pc;
+}
+
+uint32_t
+ropLAHF(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), uint32_t op_pc)
+{
+    if (!codegen_flags_changed || codegen_last_flags_op != FLAGS_UNKNOWN)
+        uop_CALL_FUNC(ir, jit_flags_rebuild);
+
+    uop_AND_IMM(ir, IREG_temp0, IREG_flags, 0x00d5);
+    uop_OR_IMM(ir, IREG_temp0, IREG_temp0, 0x0002);
+    uop_SHL_IMM(ir, IREG_temp0, IREG_temp0, 8);
+    uop_AND_IMM(ir, IREG_EAX, IREG_EAX, 0xffff00ff);
+    uop_OR(ir, IREG_EAX, IREG_EAX, IREG_temp0);
+
     return op_pc;
 }
 

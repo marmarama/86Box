@@ -26,6 +26,82 @@ emit_flags_rebuild_zpna(ir_data_t *ir)
     uop_CALL_FUNC(ir, jit_flags_rebuild_zpna);
 }
 
+/*
+ * Rebuild / materialize the Carry Flag (CF) into cpu_state.flags / IREG_flags.
+ * Used before INC and DEC instructions which preserve CF while modifying other flags.
+ *
+ * Fast paths:
+ * - If codegen_flags_changed is set:
+ *   - For FLAGS_INCx, FLAGS_DECx, or FLAGS_UNKNOWN: CF is already preserved/materialized in cpu_state.flags.
+ *   - For FLAGS_ZN* (logic ops): CF is unconditionally cleared (1 uop).
+ *   - For FLAGS_ADD*: CF is set if unsigned sum wrapped: (flags_res < flags_op1) (3 uops via uop_SETCC).
+ *   - For FLAGS_SUB*: CF is set if unsigned borrow: (flags_op1 < flags_op2) (3 uops via uop_SETCC).
+ *   - All fast paths avoid calling the C helper jit_flags_rebuild_c, eliminating register flush barriers.
+ */
+static inline void
+rebuild_c(ir_data_t *ir)
+{
+    if (codegen_flags_changed) {
+        switch (codegen_last_flags_op) {
+            case FLAGS_INC8:
+            case FLAGS_INC16:
+            case FLAGS_INC32:
+            case FLAGS_DEC8:
+            case FLAGS_DEC16:
+            case FLAGS_DEC32:
+            case FLAGS_UNKNOWN:
+                return;
+
+            case FLAGS_ZN8:
+            case FLAGS_ZN16:
+            case FLAGS_ZN32:
+                uop_AND_IMM(ir, IREG_flags, IREG_flags, ~C_FLAG);
+                return;
+
+            case FLAGS_ADD32:
+                uop_SETCC(ir, IREG_temp2, IREG_flags_res, IREG_flags_op1, COND_B);
+                uop_AND_IMM(ir, IREG_flags, IREG_flags, ~C_FLAG);
+                uop_OR(ir, IREG_flags, IREG_flags, IREG_temp2_W);
+                return;
+
+            case FLAGS_ADD16:
+                uop_SETCC(ir, IREG_temp2, IREG_flags_res_W, IREG_flags_op1_W, COND_B);
+                uop_AND_IMM(ir, IREG_flags, IREG_flags, ~C_FLAG);
+                uop_OR(ir, IREG_flags, IREG_flags, IREG_temp2_W);
+                return;
+
+            case FLAGS_ADD8:
+                uop_SETCC(ir, IREG_temp2, IREG_flags_res_B, IREG_flags_op1_B, COND_B);
+                uop_AND_IMM(ir, IREG_flags, IREG_flags, ~C_FLAG);
+                uop_OR(ir, IREG_flags, IREG_flags, IREG_temp2_W);
+                return;
+
+            case FLAGS_SUB32:
+                uop_SETCC(ir, IREG_temp2, IREG_flags_op1, IREG_flags_op2, COND_B);
+                uop_AND_IMM(ir, IREG_flags, IREG_flags, ~C_FLAG);
+                uop_OR(ir, IREG_flags, IREG_flags, IREG_temp2_W);
+                return;
+
+            case FLAGS_SUB16:
+                uop_SETCC(ir, IREG_temp2, IREG_flags_op1_W, IREG_flags_op2_W, COND_B);
+                uop_AND_IMM(ir, IREG_flags, IREG_flags, ~C_FLAG);
+                uop_OR(ir, IREG_flags, IREG_flags, IREG_temp2_W);
+                return;
+
+            case FLAGS_SUB8:
+                uop_SETCC(ir, IREG_temp2, IREG_flags_op1_B, IREG_flags_op2_B, COND_B);
+                uop_AND_IMM(ir, IREG_flags, IREG_flags, ~C_FLAG);
+                uop_OR(ir, IREG_flags, IREG_flags, IREG_temp2_W);
+                return;
+
+            default:
+                break;
+        }
+    }
+
+    uop_CALL_FUNC(ir, jit_flags_rebuild_c);
+}
+
 static inline int
 LOAD_SP_WITH_OFFSET(ir_data_t *ir, int offset)
 {

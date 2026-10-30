@@ -2267,32 +2267,6 @@ rop83_l(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetc
     return op_pc + 2;
 }
 
-static void
-rebuild_c(ir_data_t *ir)
-{
-    int needs_rebuild = 1;
-
-    if (codegen_flags_changed) {
-        switch (codegen_last_flags_op) {
-            case FLAGS_INC8:
-            case FLAGS_INC16:
-            case FLAGS_INC32:
-            case FLAGS_DEC8:
-            case FLAGS_DEC16:
-            case FLAGS_DEC32:
-                needs_rebuild = 0;
-                break;
-
-            default:
-                break;
-        }
-    }
-
-    if (needs_rebuild) {
-        uop_CALL_FUNC(ir, jit_flags_rebuild_c);
-    }
-}
-
 uint32_t
 ropINC_r16(UNUSED(UNUSED(codeblock_t *block)), ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), uint32_t op_pc)
 {

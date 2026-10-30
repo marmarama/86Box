@@ -367,7 +367,13 @@ class BDumpFile:
                 self.blocks_by_seq[block.compile_seq] = block
 
                 # Skip raw payload (guest bytes, spans, uops, host code) without unpacking
-                offset += block.guest_byte_len + block.guest_insn_count * 4 + block.uop_count * 44 + block.host_byte_len
+                payload_len = block.guest_byte_len + block.guest_insn_count * 4 + block.uop_count * 44 + block.host_byte_len
+                if offset + payload_len > file_len:
+                    self.blocks.pop()
+                    if block.compile_seq in self.blocks_by_seq:
+                        del self.blocks_by_seq[block.compile_seq]
+                    break
+                offset += payload_len
 
             elif rec_type == BDUMP_REC_EXEC:
                 if offset + exec_rec_size > file_len:
