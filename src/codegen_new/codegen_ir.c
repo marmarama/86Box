@@ -83,6 +83,172 @@ peephole_release_src_reg(ir_reg_t ir_reg)
     }
 }
 
+#define FLAG_LIVE_OP   (1 << 0)
+#define FLAG_LIVE_RES  (1 << 1)
+#define FLAG_LIVE_OP1  (1 << 2)
+#define FLAG_LIVE_OP2  (1 << 3)
+#define FLAGS_ALL_LIVE (FLAG_LIVE_OP | FLAG_LIVE_RES | FLAG_LIVE_OP1 | FLAG_LIVE_OP2)
+
+static inline void
+invalidate_dead_uop(uop_t *uop)
+{
+    if (uop->dest_reg_a.reg != IREG_INVALID) {
+        int dreg = IREG_GET_REG(uop->dest_reg_a.reg);
+        reg_version_t *dest_regv = &reg_version[dreg][uop->dest_reg_a.version];
+        dest_regv->flags &= ~REG_FLAGS_REQUIRED;
+        dest_regv->flags |= REG_FLAGS_DEAD;
+    }
+    peephole_release_src_reg(uop->src_reg_a);
+    peephole_release_src_reg(uop->src_reg_b);
+    peephole_release_src_reg(uop->src_reg_c);
+    uop->src_reg_a = invalid_ir_reg;
+    uop->src_reg_b = invalid_ir_reg;
+    uop->src_reg_c = invalid_ir_reg;
+    uop->dest_reg_a = invalid_ir_reg;
+    uop->type = UOP_INVALID;
+}
+
+void
+codegen_ir_optimize_liveness(ir_data_t *ir)
+{
+    int flags_live = FLAGS_ALL_LIVE;
+    int pc_live = 1;
+    int oldpc_live = 0;
+
+    for (int c = ir->wr_pos - 1; c >= 0; c--) {
+        uop_t *uop = &ir->uops[c];
+
+        if ((uop->type & UOP_MASK) == UOP_INVALID)
+            continue;
+
+        /* Invalidate liveness optimizations across barriers, branches, and loop boundaries.
+           At these points, all architectural flags and PC states must be live. */
+        if (uop->type & (UOP_TYPE_BARRIER | UOP_TYPE_ORDER_BARRIER | UOP_TYPE_JUMP_DEST | UOP_TYPE_JUMP)) {
+            flags_live = FLAGS_ALL_LIVE;
+            pc_live = 1;
+            oldpc_live = 1;
+            continue;
+        }
+        if ((uop->type & UOP_MASK) == (UOP_LOOP_LABEL & UOP_MASK)) {
+            flags_live = FLAGS_ALL_LIVE;
+            pc_live = 1;
+            oldpc_live = 1;
+            continue;
+        }
+
+        /* Check destination register write for dead store elimination */
+        if (uop->dest_reg_a.reg != IREG_INVALID) {
+            int dreg = IREG_GET_REG(uop->dest_reg_a.reg);
+            int version = uop->dest_reg_a.version;
+            int refcount = reg_version[dreg][version].refcount;
+            int is_native = reg_is_native_size(uop->dest_reg_a);
+
+            if (dreg == IREG_flags_op) {
+                if (!(flags_live & FLAG_LIVE_OP) && is_native && refcount == 0) {
+                    invalidate_dead_uop(uop);
+                    continue;
+                }
+                flags_live &= ~FLAG_LIVE_OP;
+            } else if (dreg == IREG_flags_res) {
+                if (!(flags_live & FLAG_LIVE_RES) && is_native && refcount == 0) {
+                    invalidate_dead_uop(uop);
+                    continue;
+                }
+                flags_live &= ~FLAG_LIVE_RES;
+            } else if (dreg == IREG_flags_op1) {
+                if (!(flags_live & FLAG_LIVE_OP1) && is_native && refcount == 0) {
+                    invalidate_dead_uop(uop);
+                    continue;
+                }
+                flags_live &= ~FLAG_LIVE_OP1;
+            } else if (dreg == IREG_flags_op2) {
+                if (!(flags_live & FLAG_LIVE_OP2) && is_native && refcount == 0) {
+                    invalidate_dead_uop(uop);
+                    continue;
+                }
+                flags_live &= ~FLAG_LIVE_OP2;
+            } else if (dreg == IREG_oldpc) {
+                if (!oldpc_live && is_native && refcount == 0) {
+                    invalidate_dead_uop(uop);
+                    continue;
+                }
+                oldpc_live = 0;
+            } else if (dreg == IREG_pc) {
+                if (!pc_live && is_native && refcount == 0) {
+                    invalidate_dead_uop(uop);
+                    continue;
+                }
+                pc_live = 0;
+            }
+
+            /* Partial (non-native size) writes have an implicit dependency on the previous version */
+            if (!is_native) {
+                if (dreg == IREG_flags_op)
+                    flags_live |= FLAG_LIVE_OP;
+                else if (dreg == IREG_flags_res)
+                    flags_live |= FLAG_LIVE_RES;
+                else if (dreg == IREG_flags_op1)
+                    flags_live |= FLAG_LIVE_OP1;
+                else if (dreg == IREG_flags_op2)
+                    flags_live |= FLAG_LIVE_OP2;
+                else if (dreg == IREG_oldpc)
+                    oldpc_live = 1;
+                else if (dreg == IREG_pc)
+                    pc_live = 1;
+            }
+        }
+
+        /* Check source registers to mark inputs as live */
+        if (uop->src_reg_a.reg != IREG_INVALID) {
+            int sreg = IREG_GET_REG(uop->src_reg_a.reg);
+            if (sreg == IREG_flags_op)
+                flags_live |= FLAG_LIVE_OP;
+            else if (sreg == IREG_flags_res)
+                flags_live |= FLAG_LIVE_RES;
+            else if (sreg == IREG_flags_op1)
+                flags_live |= FLAG_LIVE_OP1;
+            else if (sreg == IREG_flags_op2)
+                flags_live |= FLAG_LIVE_OP2;
+            else if (sreg == IREG_oldpc)
+                oldpc_live = 1;
+            else if (sreg == IREG_pc)
+                pc_live = 1;
+        }
+
+        if (uop->src_reg_b.reg != IREG_INVALID) {
+            int sreg = IREG_GET_REG(uop->src_reg_b.reg);
+            if (sreg == IREG_flags_op)
+                flags_live |= FLAG_LIVE_OP;
+            else if (sreg == IREG_flags_res)
+                flags_live |= FLAG_LIVE_RES;
+            else if (sreg == IREG_flags_op1)
+                flags_live |= FLAG_LIVE_OP1;
+            else if (sreg == IREG_flags_op2)
+                flags_live |= FLAG_LIVE_OP2;
+            else if (sreg == IREG_oldpc)
+                oldpc_live = 1;
+            else if (sreg == IREG_pc)
+                pc_live = 1;
+        }
+
+        if (uop->src_reg_c.reg != IREG_INVALID) {
+            int sreg = IREG_GET_REG(uop->src_reg_c.reg);
+            if (sreg == IREG_flags_op)
+                flags_live |= FLAG_LIVE_OP;
+            else if (sreg == IREG_flags_res)
+                flags_live |= FLAG_LIVE_RES;
+            else if (sreg == IREG_flags_op1)
+                flags_live |= FLAG_LIVE_OP1;
+            else if (sreg == IREG_flags_op2)
+                flags_live |= FLAG_LIVE_OP2;
+            else if (sreg == IREG_oldpc)
+                oldpc_live = 1;
+            else if (sreg == IREG_pc)
+                pc_live = 1;
+        }
+    }
+}
+
 
 void
 codegen_ir_peephole(ir_data_t *ir)
@@ -243,8 +409,15 @@ codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
         }
     }
 
+    for (c = 0; c < ir->wr_pos; c++) {
+        if ((ir->uops[c].type & UOP_TYPE_JUMP) && ir->uops[c].jump_dest_uop >= 0 && ir->uops[c].jump_dest_uop < ir->wr_pos) {
+            ir->uops[ir->uops[c].jump_dest_uop].type |= UOP_TYPE_JUMP_DEST;
+        }
+    }
+
     codegen_reg_mark_as_required();
     codegen_ir_peephole(ir);
+    codegen_ir_optimize_liveness(ir);
     codegen_reg_process_dead_list(ir);
     codegen_dump_begin_block();
     block_write_data = codeblock_allocator_get_ptr(block->head_mem_block);

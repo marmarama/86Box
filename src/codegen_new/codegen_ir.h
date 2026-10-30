@@ -6,4 +6,5 @@ ir_data_t *codegen_ir_init(void);
 
 void codegen_ir_set_unroll(int count, int start, int first_instruction);
 void codegen_ir_peephole(ir_data_t *ir);
+void codegen_ir_optimize_liveness(ir_data_t *ir);
 void codegen_ir_compile(ir_data_t *ir, codeblock_t *block);
