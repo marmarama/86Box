@@ -113,7 +113,7 @@ codegen_ir_optimize_liveness(ir_data_t *ir)
 {
     int flags_live = FLAGS_ALL_LIVE;
     int pc_live = 1;
-    int oldpc_live = 0;
+    int oldpc_live = 1;
 
     for (int c = ir->wr_pos - 1; c >= 0; c--) {
         uop_t *uop = &ir->uops[c];
@@ -141,40 +141,41 @@ codegen_ir_optimize_liveness(ir_data_t *ir)
             int dreg = IREG_GET_REG(uop->dest_reg_a.reg);
             int version = uop->dest_reg_a.version;
             int refcount = reg_version[dreg][version].refcount;
+            int required = (reg_version[dreg][version].flags & REG_FLAGS_REQUIRED) != 0;
             int is_native = reg_is_native_size(uop->dest_reg_a);
 
             if (dreg == IREG_flags_op) {
-                if (!(flags_live & FLAG_LIVE_OP) && is_native && refcount == 0) {
+                if (!(flags_live & FLAG_LIVE_OP) && is_native && refcount == 0 && !required) {
                     invalidate_dead_uop(uop);
                     continue;
                 }
                 flags_live &= ~FLAG_LIVE_OP;
             } else if (dreg == IREG_flags_res) {
-                if (!(flags_live & FLAG_LIVE_RES) && is_native && refcount == 0) {
+                if (!(flags_live & FLAG_LIVE_RES) && is_native && refcount == 0 && !required) {
                     invalidate_dead_uop(uop);
                     continue;
                 }
                 flags_live &= ~FLAG_LIVE_RES;
             } else if (dreg == IREG_flags_op1) {
-                if (!(flags_live & FLAG_LIVE_OP1) && is_native && refcount == 0) {
+                if (!(flags_live & FLAG_LIVE_OP1) && is_native && refcount == 0 && !required) {
                     invalidate_dead_uop(uop);
                     continue;
                 }
                 flags_live &= ~FLAG_LIVE_OP1;
             } else if (dreg == IREG_flags_op2) {
-                if (!(flags_live & FLAG_LIVE_OP2) && is_native && refcount == 0) {
+                if (!(flags_live & FLAG_LIVE_OP2) && is_native && refcount == 0 && !required) {
                     invalidate_dead_uop(uop);
                     continue;
                 }
                 flags_live &= ~FLAG_LIVE_OP2;
             } else if (dreg == IREG_oldpc) {
-                if (!oldpc_live && is_native && refcount == 0) {
+                if (!oldpc_live && is_native && refcount == 0 && !required) {
                     invalidate_dead_uop(uop);
                     continue;
                 }
                 oldpc_live = 0;
             } else if (dreg == IREG_pc) {
-                if (!pc_live && is_native && refcount == 0) {
+                if (!pc_live && is_native && refcount == 0 && !required) {
                     invalidate_dead_uop(uop);
                     continue;
                 }

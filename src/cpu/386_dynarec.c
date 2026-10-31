@@ -360,55 +360,74 @@ update_tsc(void)
 int32_t
 codegen_handle_jit_event(void)
 {
-    /* 1. Synchronize guest TSC with cycles elapsed in the JIT */
+    uint64_t t_event_start = codegen_profile_active ? host_rdtsc() : 0;
+
+    /* 1. Synchronize guest TSC with cycles elapsed in the JIT (also runs timer_process if target reached) */
     update_tsc();
 
-    /* 2. Process expired device/hardware timers */
+    /* 2. Process expired device/hardware timers (e.g. if cycdiff == 0 or cascading timers) */
     if (TIMER_VAL_LESS_THAN_VAL(timer_target, (uint64_t) tsc))
         timer_process();
 
-    /* 3. Deliver pending maskable hardware interrupts if interrupts are enabled */
-    if ((cpu_state.flags & I_FLAG) && pic.int_pending && !cpu_end_block_after_ins) {
-        int vector = picinterrupt();
-        if (vector != -1) {
-            cpu_is_halted   = 0;
-            oldcs           = CS;
-            cpu_state.oldpc = cpu_state.pc;
-            x86_int(vector);
-            /* Guest CS:EIP redirected to interrupt handler, exit to C dispatcher */
-            return 0;
-        }
-    }
-
-    /* 4. Check for asynchronous conditions requiring return to the C interpreter/dispatch loop */
+    /* 3. Check for asynchronous conditions or pending interrupts requiring return to C dispatch loop */
     cpu_update_exit_request();
-    if (cpu_state.exit_request || cpu_flush_pending || codegen_code_write_pending ||
-        cpu_is_halted || cpu_force_interpreter || cpu_override_dynarec ||
-        (cr0 & (1 << 30)) || is_quit || dopause || !cpu_thread_run) {
+    if (cpu_state.exit_request ||
+        ((cpu_state.flags & I_FLAG) && pic.int_pending) ||
+        cpu_end_block_after_ins || cpu_flush_pending || codegen_code_write_pending ||
+        cpu_is_halted || cpu_cache_enabled || cpu_force_interpreter || cpu_override_dynarec ||
+        (!CACHE_ON()) || is_quit || dopause || !cpu_thread_run) {
+        if (codegen_profile_active) {
+            uint64_t elapsed = host_rdtsc() - t_event_start;
+            codegen_host_profile.tsc_c_timers_devices += elapsed;
+            if (codegen_current_executing_block)
+                codegen_current_executing_block->host_tsc_callouts += elapsed;
+        }
         return 0;
     }
 
-    /* 5. If cycles remaining in current slice, we can stay in JIT */
-    if (cpu_state._cycles > 0)
+    /* 4. If cycles remaining in current slice, we can stay in JIT */
+    if (cpu_state._cycles > 0) {
+        if (codegen_profile_active) {
+            uint64_t elapsed = host_rdtsc() - t_event_start;
+            codegen_host_profile.tsc_c_timers_devices += elapsed;
+            if (codegen_current_executing_block)
+                codegen_current_executing_block->host_tsc_callouts += elapsed;
+        }
         return 1;
+    }
 
-    /* 6. Consume the finished slice from cycles_main */
+    /* 5. Consume the finished slice from cycles_main and synchronize baselines */
     int32_t cycs_executed = dyn_cycles_start - cpu_state._cycles;
     cycles_main -= cycs_executed;
+    dyn_cycles_start = cpu_state._cycles;
+    cycles_old       = cpu_state._cycles;
+    dyn_oldcyc       = cpu_state._cycles;
+    tsc_old          = tsc;
+    dyn_oldtsc       = tsc;
 
-    /* 7. If cycles_main has budget to replenish another slice, do so and stay in JIT! */
+    /* 6. If cycles_main has budget to replenish another slice, do so and stay in JIT! */
     if (cycles_main > 0) {
         int32_t next_slice = (cycles_main > dyn_cyc_period) ? dyn_cyc_period : cycles_main;
         cpu_state._cycles += next_slice;
         dyn_cycles_start   = cpu_state._cycles;
         cycles_old         = cpu_state._cycles;
         dyn_oldcyc         = cpu_state._cycles;
-        tsc_old            = tsc;
-        dyn_oldtsc         = tsc;
+        if (codegen_profile_active) {
+            uint64_t elapsed = host_rdtsc() - t_event_start;
+            codegen_host_profile.tsc_c_timers_devices += elapsed;
+            if (codegen_current_executing_block)
+                codegen_current_executing_block->host_tsc_callouts += elapsed;
+        }
         return 1;
     }
 
     /* Quantum exhausted; return 0 to exit back to C loop */
+    if (codegen_profile_active) {
+        uint64_t elapsed = host_rdtsc() - t_event_start;
+        codegen_host_profile.tsc_c_timers_devices += elapsed;
+        if (codegen_current_executing_block)
+            codegen_current_executing_block->host_tsc_callouts += elapsed;
+    }
     return 0;
 }
 #endif
