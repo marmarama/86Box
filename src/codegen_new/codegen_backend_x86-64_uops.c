@@ -1012,7 +1012,7 @@ codegen_EXIT_BLOCK(codeblock_t *block, uop_t *uop)
 
     block->links[exit_idx].target_pc = target_pc;
 
-    codegen_alloc_bytes(block, 128);
+    codegen_alloc_bytes(block, 192);
 
     /* Write target_pc to cpu_state.pc up front so direct linked jumps,
        unlinked stubs, and cycle/interrupt exits all have accurate architectural PC: */
@@ -1056,6 +1056,7 @@ codegen_EXIT_BLOCK(codeblock_t *block, uop_t *uop)
     /* 4. Direct branch instruction (patched to target_block->direct_entry_pos when linked):
           jmp rel32
     */
+    uint8_t *proceed_link = &block_write_data[block_pos];
     block->links[exit_idx].jmp_disp_ptr = host_x86_JMP_long(block);
 
     /* 5. Unlinked stub:
@@ -1071,14 +1072,14 @@ codegen_EXIT_BLOCK(codeblock_t *block, uop_t *uop)
     host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, last_exit_idx) - 128, exit_idx);
     host_x86_JMP(block, codegen_exit_rout);
 
-    /* 6. Exit due to cycle expiry, async event, or pending interrupt: */
-    uint8_t *exit_cycles_stub = &block_write_data[block_pos];
-    patch_disp32(jle_disp, exit_cycles_stub);
-    patch_disp32(jne_disp, exit_cycles_stub);
-    patch_disp32(jnz_irq, exit_cycles_stub);
+    /* 6. Event handling stub: call codegen_event_stub to process timer/interrupt/replenish cycles */
+    uint8_t *event_stub_target = &block_write_data[block_pos];
+    patch_disp32(jle_disp, event_stub_target);
+    patch_disp32(jne_disp, event_stub_target);
+    patch_disp32(jnz_irq, event_stub_target);
 
-    host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, last_block_nr) - 128, 0);
-    host_x86_JMP(block, codegen_exit_rout);
+    host_x86_CALL(block, codegen_event_stub);
+    host_x86_JMP(block, proceed_link);
 
     return 0;
 }
@@ -1090,7 +1091,7 @@ codegen_EXIT_BLOCK_RET(codeblock_t *block, uop_t *uop)
 
     block->links[exit_idx].target_pc = BLOCK_PC_INVALID;
 
-    codegen_alloc_bytes(block, 160);
+    codegen_alloc_bytes(block, 192);
 
     /* 1. Compare popped return address in cpu_state.pc with predicted target_pc in block->links[exit_idx].target_pc: */
     int pc_disp = (int) offsetof(cpu_state_t, pc) - 128;
@@ -1122,6 +1123,7 @@ codegen_EXIT_BLOCK_RET(codeblock_t *block, uop_t *uop)
     *no_irq = (uint8_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) (no_irq + 1));
 
     /* 5. Direct branch instruction (patched to target_block->direct_entry_pos when linked): */
+    uint8_t *proceed_link = &block_write_data[block_pos];
     block->links[exit_idx].jmp_disp_ptr = host_x86_JMP_long(block);
 
     /* 6. Unlinked stub: */
@@ -1135,14 +1137,14 @@ codegen_EXIT_BLOCK_RET(codeblock_t *block, uop_t *uop)
     host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, last_exit_idx) - 128, exit_idx);
     host_x86_JMP(block, codegen_exit_rout);
 
-    /* 7. Exit due to cycle expiry, async event, or pending interrupt: */
-    uint8_t *exit_cycles_stub = &block_write_data[block_pos];
-    patch_disp32(jle_disp, exit_cycles_stub);
-    patch_disp32(jne_disp, exit_cycles_stub);
-    patch_disp32(jnz_irq, exit_cycles_stub);
+    /* 7. Event handling stub: call codegen_event_stub to process timer/interrupt/replenish cycles */
+    uint8_t *event_stub_target = &block_write_data[block_pos];
+    patch_disp32(jle_disp, event_stub_target);
+    patch_disp32(jne_disp, event_stub_target);
+    patch_disp32(jnz_irq, event_stub_target);
 
-    host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, last_block_nr) - 128, 0);
-    host_x86_JMP(block, codegen_exit_rout);
+    host_x86_CALL(block, codegen_event_stub);
+    host_x86_JMP(block, proceed_link);
 
     return 0;
 }

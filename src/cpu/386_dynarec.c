@@ -31,6 +31,9 @@
 #include <86box/machine.h>
 #include <86box/plat_fallthrough.h>
 #include <86box/plat_unused.h>
+
+extern int          dopause;
+extern volatile int is_quit;
 #include <86box/gdbstub.h>
 #ifdef USE_DYNAREC
 #    include "codegen.h"
@@ -284,6 +287,12 @@ dr_blocks_cache(void)
 int32_t         cycles_main = 0;
 static int32_t  cycles_old  = 0;
 static uint64_t tsc_old     = 0;
+#    ifdef USE_NEW_DYNAREC
+static int32_t  dyn_cycles_start = 0;
+static int32_t  dyn_cyc_period   = 0;
+static int32_t  dyn_oldcyc       = 0;
+static uint64_t dyn_oldtsc       = 0;
+#    endif
 
 #    ifdef USE_ACYCS
 int32_t acycs = 0;
@@ -346,6 +355,63 @@ update_tsc(void)
             timer_process();
     }
 }
+
+#ifdef USE_NEW_DYNAREC
+int32_t
+codegen_handle_jit_event(void)
+{
+    /* 1. Synchronize guest TSC with cycles elapsed in the JIT */
+    update_tsc();
+
+    /* 2. Process expired device/hardware timers */
+    if (TIMER_VAL_LESS_THAN_VAL(timer_target, (uint64_t) tsc))
+        timer_process();
+
+    /* 3. Deliver pending maskable hardware interrupts if interrupts are enabled */
+    if ((cpu_state.flags & I_FLAG) && pic.int_pending && !cpu_end_block_after_ins) {
+        int vector = picinterrupt();
+        if (vector != -1) {
+            cpu_is_halted   = 0;
+            oldcs           = CS;
+            cpu_state.oldpc = cpu_state.pc;
+            x86_int(vector);
+            /* Guest CS:EIP redirected to interrupt handler, exit to C dispatcher */
+            return 0;
+        }
+    }
+
+    /* 4. Check for asynchronous conditions requiring return to the C interpreter/dispatch loop */
+    cpu_update_exit_request();
+    if (cpu_state.exit_request || cpu_flush_pending || codegen_code_write_pending ||
+        cpu_is_halted || cpu_force_interpreter || cpu_override_dynarec ||
+        (cr0 & (1 << 30)) || is_quit || dopause || !cpu_thread_run) {
+        return 0;
+    }
+
+    /* 5. If cycles remaining in current slice, we can stay in JIT */
+    if (cpu_state._cycles > 0)
+        return 1;
+
+    /* 6. Consume the finished slice from cycles_main */
+    int32_t cycs_executed = dyn_cycles_start - cpu_state._cycles;
+    cycles_main -= cycs_executed;
+
+    /* 7. If cycles_main has budget to replenish another slice, do so and stay in JIT! */
+    if (cycles_main > 0) {
+        int32_t next_slice = (cycles_main > dyn_cyc_period) ? dyn_cyc_period : cycles_main;
+        cpu_state._cycles += next_slice;
+        dyn_cycles_start   = cpu_state._cycles;
+        cycles_old         = cpu_state._cycles;
+        dyn_oldcyc         = cpu_state._cycles;
+        tsc_old            = tsc;
+        dyn_oldtsc         = tsc;
+        return 1;
+    }
+
+    /* Quantum exhausted; return 0 to exit back to C loop */
+    return 0;
+}
+#endif
 
 static __inline void
 exec386_dynarec_int(void)
@@ -1019,6 +1085,9 @@ exec386_dynarec(int32_t cycs)
     uint64_t delta;
 
     int32_t cyc_period = cycs / (force_10ms ? 2000 : 200); /*5us*/
+#ifdef USE_NEW_DYNAREC
+    dyn_cyc_period = cyc_period;
+#endif
 
 #    ifdef USE_ACYCS
     acycs = 0;
@@ -1043,6 +1112,9 @@ exec386_dynarec(int32_t cycs)
 
         cycles += cyc_period;
         cycles_start = cycles;
+#ifdef USE_NEW_DYNAREC
+        dyn_cycles_start = cycles_start;
+#endif
 #    ifdef USE_NEW_DYNAREC
         uint64_t t_thread_start = codegen_profile_active ? host_rdtsc() : 0;
 #    endif
@@ -1061,6 +1133,10 @@ exec386_dynarec(int32_t cycs)
             cycles_old       = cycles;
             oldtsc           = tsc;
             tsc_old          = tsc;
+#ifdef USE_NEW_DYNAREC
+            dyn_oldcyc       = oldcyc;
+            dyn_oldtsc       = oldtsc;
+#endif
             if (cpu_cache_enabled || cpu_force_interpreter || cpu_override_dynarec || cpu_flush_pending || (!CACHE_ON())) /*Interpret block*/
             {
                 cpu_is_halted = 0;
@@ -1068,6 +1144,11 @@ exec386_dynarec(int32_t cycs)
             } else {
                 cpu_is_halted = 0;
                 exec386_dynarec_dyn();
+#ifdef USE_NEW_DYNAREC
+                oldcyc           = dyn_oldcyc;
+                oldtsc           = dyn_oldtsc;
+                cycles_start     = dyn_cycles_start;
+#endif
                 /* A CR0 paging toggle ends the block it is in, so it was the
                    last instruction executed. */
                 if (cpu_flush_pending == 1)

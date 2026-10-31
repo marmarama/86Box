@@ -46,6 +46,7 @@ void *codegen_mem_store_double;
 
 void *codegen_gpf_rout;
 void *codegen_exit_rout;
+void *codegen_event_stub;
 
 host_reg_def_t codegen_host_reg_list[CODEGEN_HOST_REGS] = {
     /* Note: while EAX, EDX, R10, R11 are normally volatile registers under x86
@@ -346,7 +347,7 @@ codegen_backend_init(void)
     block_write_data                        = codeblock[block_current].data;
     build_loadstore_routines(&codeblock[block_current]);
 
-    codegen_alloc_bytes(block, 80);
+    codegen_alloc_bytes(block, 256);
     codegen_gpf_rout = &block_write_data[block_pos];
 #    if _WIN64
     host_x86_XOR32_REG_REG(block, REG_ECX, REG_ECX);
@@ -378,9 +379,52 @@ codegen_backend_init(void)
     host_x86_POP(block, REG_RBX);
     host_x86_RET(block);
 
+    /* Continuous In-JIT Event Loop Stub:
+       Invoked from UOP_EXIT_BLOCK / UOP_EXIT_BLOCK_RET when cycles <= 0 or an event occurs.
+       Preserves volatile caller registers, aligns stack, calls codegen_handle_jit_event().
+       If codegen_handle_jit_event() returns non-zero, resumes the JIT by returning to caller;
+       if it returns zero (cold exit requested), jumps to codegen_exit_rout. */
+    codegen_event_stub = &block_write_data[block_pos];
+    host_x86_PUSH(block, REG_RAX);
+    host_x86_PUSH(block, REG_RDX);
+    host_x86_PUSH(block, REG_R10);
+    host_x86_PUSH(block, REG_R11);
+#ifdef _WIN64
+    host_x86_SUB64_REG_IMM(block, REG_RSP, 0x28);
+#else
+    host_x86_SUB64_REG_IMM(block, REG_RSP, 0x8);
+#endif
+    host_x86_CALL(block, (void *) codegen_handle_jit_event);
+#ifdef _WIN64
+    host_x86_ADD64_REG_IMM(block, REG_RSP, 0x28);
+#else
+    host_x86_ADD64_REG_IMM(block, REG_RSP, 0x8);
+#endif
+    host_x86_TEST32_REG(block, REG_EAX, REG_EAX);
+    uint8_t *cold_exit_branch = host_x86_JZ_short(block);
+
+    /* Event handled in JIT: restore registers and return to continue execution */
+    host_x86_POP(block, REG_R11);
+    host_x86_POP(block, REG_R10);
+    host_x86_POP(block, REG_RDX);
+    host_x86_POP(block, REG_RAX);
+    host_x86_RET(block);
+
+    /* Cold exit: drop saved registers and CALL return address, reset last_block_nr, and jump to exit routine */
+    *cold_exit_branch = (uint8_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) (cold_exit_branch + 1));
+    host_x86_POP(block, REG_R11);
+    host_x86_POP(block, REG_R10);
+    host_x86_POP(block, REG_RDX);
+    host_x86_POP(block, REG_RAX);
+    host_x86_ADD64_REG_IMM(block, REG_RSP, 8);
+    int last_block_nr_disp = (int) offsetof(cpu_state_t, last_block_nr) - 128;
+    host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, last_block_nr_disp, 0);
+    host_x86_JMP(block, codegen_exit_rout);
+
     if (codegen_dump_perf_map_active()) {
         codegen_dump_perf_map_symbol((uintptr_t) codegen_gpf_rout, (uintptr_t) codegen_exit_rout - (uintptr_t) codegen_gpf_rout, "jit_gpf_rout");
-        codegen_dump_perf_map_symbol((uintptr_t) codegen_exit_rout, (uintptr_t) &block_write_data[block_pos] - (uintptr_t) codegen_exit_rout, "jit_exit_rout");
+        codegen_dump_perf_map_symbol((uintptr_t) codegen_exit_rout, (uintptr_t) codegen_event_stub - (uintptr_t) codegen_exit_rout, "jit_exit_rout");
+        codegen_dump_perf_map_symbol((uintptr_t) codegen_event_stub, (uintptr_t) &block_write_data[block_pos] - (uintptr_t) codegen_event_stub, "jit_event_stub");
     }
 
     block_write_data = NULL;

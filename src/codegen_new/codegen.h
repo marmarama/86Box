@@ -533,6 +533,10 @@ void codegen_link_set_policy(uint32_t mask, uint32_t limit);
    to the C dispatcher on block exit (called on CR3/TLB flushes via codegen_flush). */
 void codegen_unpatch_all_links(void);
 
+/* Continuous In-JIT event handler: processes expired timers, interrupts, and pacing
+   without returning to the C outer interpreter loop when possible. */
+int32_t codegen_handle_jit_event(void);
+
 #ifdef DEBUG_EXTRA
 extern uint32_t instr_counts[256 * 256];
 #endif

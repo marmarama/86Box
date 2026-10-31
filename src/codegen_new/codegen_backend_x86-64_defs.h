@@ -65,3 +65,4 @@ extern void *codegen_mem_store_double;
 
 extern void *codegen_gpf_rout;
 extern void *codegen_exit_rout;
+extern void *codegen_event_stub;
