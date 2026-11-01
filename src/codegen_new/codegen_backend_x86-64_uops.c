@@ -1126,12 +1126,22 @@ codegen_EXIT_BLOCK_RET(codeblock_t *block, uop_t *uop)
     uint8_t *proceed_link = &block_write_data[block_pos];
     block->links[exit_idx].jmp_disp_ptr = host_x86_JMP_long(block);
 
-    /* 6. Unlinked stub: */
+    /* 6. Unlinked / Miss stub: */
+    uint8_t *ret_miss_target = &block_write_data[block_pos];
+    patch_disp32(jne_unlinked, ret_miss_target);
+
+    uint8_t *is_unlinked = NULL;
+    if (codegen_dispatch_stub) {
+        host_x86_CMP32_REG_IMM(block, REG_EDX, BLOCK_PC_INVALID);
+        is_unlinked = host_x86_JZ_short(block);
+        host_x86_JMP(block, codegen_dispatch_stub);
+    }
+
     uint8_t *unlinked_stub = &block_write_data[block_pos];
     block->links[exit_idx].unlinked_target = unlinked_stub;
-
-    patch_disp32(jne_unlinked, unlinked_stub);
     patch_disp32(block->links[exit_idx].jmp_disp_ptr, unlinked_stub);
+    if (is_unlinked)
+        *is_unlinked = (uint8_t) ((uintptr_t) unlinked_stub - (uintptr_t) (is_unlinked + 1));
 
     host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, last_block_nr) - 128, get_block_nr(block));
     host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, last_exit_idx) - 128, exit_idx);

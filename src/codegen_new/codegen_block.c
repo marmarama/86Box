@@ -7,6 +7,7 @@
 #include <86box/86box.h>
 #include "cpu.h"
 #include <86box/mem.h>
+#include <86box/pic.h>
 #include <86box/plat_unused.h>
 
 #include "x86.h"
@@ -35,6 +36,7 @@
 
 uint8_t *block_write_data = NULL;
 void    (*codegen_enter_jit)(void *entry_ptr) = NULL;
+void    *codegen_dispatch_stub = NULL;
 
 int      codegen_flat_ds;
 int      codegen_flat_ss;
@@ -1302,3 +1304,92 @@ codegen_mark_code_present_multibyte(codeblock_t *block, uint32_t start_pc, int l
         }
     }
 }
+
+/* In-JIT Dispatch Helper (Proposal 2.2):
+   Probes the codeblock hash table (and page tree) directly for the target PC.
+   If a valid compiled block exists and all invariants match, returns the direct entry pointer.
+   If cycles expired, attempts in-JIT replenishment via codegen_handle_jit_event().
+   Returns NULL if compilation is required or execution must exit to C dispatcher. */
+void *
+codegen_handle_dispatch(void)
+{
+    /* 1. Cycle & asynchronous event check: */
+    cpu_update_exit_request();
+    if (cpu_state._cycles <= 0 || cpu_state.exit_request ||
+        ((cpu_state.flags & I_FLAG) && pic.int_pending)) {
+        if (!codegen_handle_jit_event())
+            return NULL; /* Exit JIT to C dispatcher */
+    }
+
+    if (UNLIKELY(cpu_state.abrt || cpu_state.exit_request || cpu_is_halted ||
+                 codegen_code_write_pending))
+        return NULL;
+
+    /* 2. Fast physical address translation */
+    uint32_t pc = cs + cpu_state.pc;
+    uint32_t phys_addr;
+    if (!(cr0 >> 31)) {
+        phys_addr = pc & rammask;
+    } else {
+        uintptr_t lookup = (uintptr_t) readlookup2[pc >> 12];
+        if (lookup == (uintptr_t) -1)
+            return NULL; /* TLB miss -> let C handle MMU translation */
+        phys_addr = (uint32_t) (lookup + pc - (uintptr_t) ram);
+    }
+
+    /* Check device memory execution fallback */
+    if (UNLIKELY(_mem_exec[phys_addr >> MEM_GRANULARITY_BITS] == NULL))
+        return NULL;
+
+    /* 3. Refresh FPU status bits */
+    if (cpu_state.npxc & 0x300)
+        cpu_cur_status &= ~CPU_STATUS_FPU_PC24;
+    else
+        cpu_cur_status |= CPU_STATUS_FPU_PC24;
+    if ((cpu_state.npxc >> 10) & 3)
+        cpu_cur_status |= CPU_STATUS_FPU_RC_NZ;
+    else
+        cpu_cur_status &= ~CPU_STATUS_FPU_RC_NZ;
+
+    /* 4. Probe codeblock hash table */
+    int hash = HASH(phys_addr);
+    codeblock_t *block = &codeblock[codeblock_hash[hash]];
+
+    /* 5. Validate block match */
+    int valid = (block->valid && (block->flags & CODEBLOCK_WAS_RECOMPILED) &&
+                 !(block->flags & CODEBLOCK_IN_DIRTY_LIST) &&
+                 (block->pc == pc) && (block->_cs == cs) && (block->phys == phys_addr) &&
+                 !((block->status ^ cpu_cur_status) & CPU_STATUS_FLAGS) &&
+                 ((block->status & cpu_cur_status & CPU_STATUS_MASK) == (cpu_cur_status & CPU_STATUS_MASK)) &&
+                 !(block->page_mask & *block->dirty_mask) &&
+                 !block->page_mask2 &&
+                 (!(block->flags & CODEBLOCK_STATIC_TOP) || block->TOP == (cpu_state.TOP & 7)));
+
+    if (!valid) {
+        codeblock_t *tree_block = codeblock_tree_find(phys_addr, cs);
+        if (tree_block && tree_block->valid && (tree_block->flags & CODEBLOCK_WAS_RECOMPILED) &&
+            !(tree_block->flags & CODEBLOCK_IN_DIRTY_LIST) &&
+            (tree_block->pc == pc) && (tree_block->_cs == cs) && (tree_block->phys == phys_addr) &&
+            !((tree_block->status ^ cpu_cur_status) & CPU_STATUS_FLAGS) &&
+            ((tree_block->status & cpu_cur_status & CPU_STATUS_MASK) == (cpu_cur_status & CPU_STATUS_MASK)) &&
+            !(tree_block->page_mask & *tree_block->dirty_mask) &&
+            !tree_block->page_mask2 &&
+            (!(tree_block->flags & CODEBLOCK_STATIC_TOP) || tree_block->TOP == (cpu_state.TOP & 7))) {
+
+            block = tree_block;
+            codeblock_hash[hash] = get_block_nr(block);
+            valid = 1;
+        }
+    }
+
+    if (valid) {
+        cpu_state.last_block_nr = 0;
+        if (!codegen_dump_is_active() && !codegen_profile_active) {
+            block->exec_count++;
+        }
+        return &block->data[block->direct_entry_pos];
+    }
+
+    return NULL; /* Cache miss / compile needed -> exit JIT to C dispatcher */
+}
+

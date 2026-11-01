@@ -1846,6 +1846,13 @@ host_x86_TEST32_REG(codeblock_t *block, int src_reg, int dst_reg)
     codegen_addbyte2(block, 0x85, 0xc0 | ((dst_reg & 7) << 3) | (src_reg & 7)); /*TEST dst_host_reg, src_host_reg*/
 }
 void
+host_x86_TEST64_REG(codeblock_t *block, int src_reg, int dst_reg)
+{
+    codegen_alloc_bytes(block, 3);
+    codegen_addbyte(block, rex_byte(1, dst_reg, 0, src_reg));
+    codegen_addbyte2(block, 0x85, 0xc0 | ((dst_reg & 7) << 3) | (src_reg & 7)); /*TEST dst_host_reg, src_host_reg*/
+}
+void
 host_x86_TEST32_REG_IMM(codeblock_t *block, int dst_reg, uint32_t imm_data)
 {
     if (dst_reg == REG_EAX) {

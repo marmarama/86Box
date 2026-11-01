@@ -421,6 +421,27 @@ codegen_backend_init(void)
     host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, last_block_nr_disp, 0);
     host_x86_JMP(block, codegen_exit_rout);
 
+    /* In-JIT Dispatch Stub (Proposal 2.2):
+       Invoked from block exits (unpredicted RET, indirect branches, block epilogue).
+       Calls codegen_handle_dispatch() to look up the next block in the codeblock cache.
+       If hit, jumps directly to target_block->direct_entry_pos (in RAX) without leaving JIT.
+       If miss, compiles needed, or event pending, jumps to codegen_exit_rout to return to C. */
+    codegen_dispatch_stub = &block_write_data[block_pos];
+#ifdef _WIN64
+    host_x86_SUB64_REG_IMM(block, REG_RSP, 0x20);
+    host_x86_CALL(block, (void *) codegen_handle_dispatch);
+    host_x86_ADD64_REG_IMM(block, REG_RSP, 0x20);
+#else
+    host_x86_CALL(block, (void *) codegen_handle_dispatch);
+#endif
+    host_x86_TEST64_REG(block, REG_RAX, REG_RAX);
+    uint8_t *dispatch_miss = host_x86_JZ_short(block);
+    host_x86_JMP_REG(block, REG_RAX);
+
+    /* Dispatch miss: exit JIT to C dispatcher */
+    *dispatch_miss = (uint8_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) (dispatch_miss + 1));
+    host_x86_JMP(block, codegen_exit_rout);
+
     /* Persistent JIT Entry Trampoline:
        Takes target block entry address in first argument (RDI on SysV, RCX on Win64).
        Saves host callee-saved registers, sets up host stack frame, sets RBP to cpu_state+128
@@ -455,7 +476,8 @@ codegen_backend_init(void)
     if (codegen_dump_perf_map_active()) {
         codegen_dump_perf_map_symbol((uintptr_t) codegen_gpf_rout, (uintptr_t) codegen_exit_rout - (uintptr_t) codegen_gpf_rout, "jit_gpf_rout");
         codegen_dump_perf_map_symbol((uintptr_t) codegen_exit_rout, (uintptr_t) codegen_event_stub - (uintptr_t) codegen_exit_rout, "jit_exit_rout");
-        codegen_dump_perf_map_symbol((uintptr_t) codegen_event_stub, (uintptr_t) codegen_enter_jit - (uintptr_t) codegen_event_stub, "jit_event_stub");
+        codegen_dump_perf_map_symbol((uintptr_t) codegen_event_stub, (uintptr_t) codegen_dispatch_stub - (uintptr_t) codegen_event_stub, "jit_event_stub");
+        codegen_dump_perf_map_symbol((uintptr_t) codegen_dispatch_stub, (uintptr_t) codegen_enter_jit - (uintptr_t) codegen_dispatch_stub, "jit_dispatch_stub");
         codegen_dump_perf_map_symbol((uintptr_t) codegen_enter_jit, (uintptr_t) &block_write_data[block_pos] - (uintptr_t) codegen_enter_jit, "jit_enter_trampoline");
     }
 
@@ -496,6 +518,9 @@ codegen_backend_prologue(codeblock_t *block)
 void
 codegen_backend_epilogue(codeblock_t *block)
 {
-    host_x86_JMP(block, codegen_exit_rout);
+    if (codegen_dispatch_stub)
+        host_x86_JMP(block, codegen_dispatch_stub);
+    else
+        host_x86_JMP(block, codegen_exit_rout);
 }
 #endif

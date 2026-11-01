@@ -190,6 +190,7 @@ void host_x86_SUB32_REG_REG(codeblock_t *block, int dst_reg, int src_reg);
 void host_x86_TEST8_REG(codeblock_t *block, int src_host_reg, int dst_host_reg);
 void host_x86_TEST16_REG(codeblock_t *block, int src_host_reg, int dst_host_reg);
 void host_x86_TEST32_REG(codeblock_t *block, int src_reg, int dst_reg);
+void host_x86_TEST64_REG(codeblock_t *block, int src_reg, int dst_reg);
 void host_x86_TEST32_REG_IMM(codeblock_t *block, int dst_reg, uint32_t imm_data);
 
 void host_x86_XOR8_REG_IMM(codeblock_t *block, int dst_reg, uint8_t imm_data);
