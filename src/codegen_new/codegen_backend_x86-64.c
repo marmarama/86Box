@@ -477,25 +477,6 @@ void
 codegen_backend_prologue(codeblock_t *block)
 {
     block_pos = BLOCK_START; /*Entry code*/
-    host_x86_PUSH(block, REG_RBX);
-    host_x86_PUSH(block, REG_RBP);
-#ifdef _WIN64
-    host_x86_PUSH(block, REG_RSI);
-    host_x86_PUSH(block, REG_RDI);
-#endif
-    host_x86_PUSH(block, REG_R12);
-    host_x86_PUSH(block, REG_R13);
-    host_x86_PUSH(block, REG_R14);
-    host_x86_PUSH(block, REG_R15);
-#ifdef _WIN64
-    host_x86_SUB64_REG_IMM(block, REG_RSP, CODEGEN_WIN64_FRAME);
-    host_x86_MOVDQU_BASE_OFFSET_XREG(block, REG_RSP, CODEGEN_XMM6_SAVE, REG_XMM6);
-    host_x86_MOVDQU_BASE_OFFSET_XREG(block, REG_RSP, CODEGEN_XMM7_SAVE, REG_XMM7);
-#else
-    host_x86_SUB64_REG_IMM(block, REG_RSP, 0x48);
-#endif
-    host_x86_MOV64_REG_IMM(block, REG_RBP, ((uintptr_t) &cpu_state) + 128);
-    host_x86_MOV64_REG_IMM(block, REG_R12, (uint64_t) (uintptr_t) readlookup2);
     block->direct_entry_pos = block_pos;
     if (codegen_dump_is_active() || codegen_profile_active || codegen_hang_detect_active) {
 #ifdef _WIN64
@@ -515,25 +496,6 @@ codegen_backend_prologue(codeblock_t *block)
 void
 codegen_backend_epilogue(codeblock_t *block)
 {
-#ifdef _WIN64
-    /* XMM6 and XMM7 hold guest FPU/MMX values in blocks, and the Windows
-       x64 ABI makes them the caller's: put back what the caller had. */
-    host_x86_MOVDQU_XREG_BASE_OFFSET(block, REG_XMM6, REG_RSP, CODEGEN_XMM6_SAVE);
-    host_x86_MOVDQU_XREG_BASE_OFFSET(block, REG_XMM7, REG_RSP, CODEGEN_XMM7_SAVE);
-    host_x86_ADD64_REG_IMM(block, REG_RSP, CODEGEN_WIN64_FRAME);
-#else
-    host_x86_ADD64_REG_IMM(block, REG_RSP, 0x48);
-#endif
-    host_x86_POP(block, REG_R15);
-    host_x86_POP(block, REG_R14);
-    host_x86_POP(block, REG_R13);
-    host_x86_POP(block, REG_R12);
-#ifdef _WIN64
-    host_x86_POP(block, REG_RDI);
-    host_x86_POP(block, REG_RSI);
-#endif
-    host_x86_POP(block, REG_RBP);
-    host_x86_POP(block, REG_RBX);
-    host_x86_RET(block);
+    host_x86_JMP(block, codegen_exit_rout);
 }
 #endif
