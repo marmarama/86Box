@@ -1313,6 +1313,10 @@ codegen_mark_code_present_multibyte(codeblock_t *block, uint32_t start_pc, int l
 void *
 codegen_handle_dispatch(void)
 {
+    uint16_t prev_block_nr = cpu_state.last_block_nr;
+    int      prev_exit_idx = cpu_state.last_exit_idx;
+    cpu_state.last_block_nr = 0;
+
     /* 1. Cycle & asynchronous event check: */
     cpu_update_exit_request();
     if (cpu_state._cycles <= 0 || cpu_state.exit_request ||
@@ -1321,25 +1325,48 @@ codegen_handle_dispatch(void)
             return NULL; /* Exit JIT to C dispatcher */
     }
 
+    uint64_t t_dispatch_start = codegen_profile_active ? host_rdtsc() : 0;
+
+    if (UNLIKELY(codegen_code_write_pending))
+        codegen_flush_code_writes();
+
     if (UNLIKELY(cpu_state.abrt || cpu_state.exit_request || cpu_is_halted ||
-                 codegen_code_write_pending))
+                 cpu_flush_pending || cpu_end_block_after_ins || !is_dynarec_active())) {
+        if (codegen_profile_active) {
+            uint64_t elapsed = host_rdtsc() - t_dispatch_start;
+            codegen_host_profile.tsc_c_dispatcher += elapsed;
+            if (codegen_current_executing_block)
+                codegen_current_executing_block->host_tsc_callouts += elapsed;
+        }
         return NULL;
+    }
+
+    oldcs  = CS;
+    oldcpl = CPL;
 
     /* 2. Fast physical address translation */
-    uint32_t pc = cs + cpu_state.pc;
-    uint32_t phys_addr;
-    if (!(cr0 >> 31)) {
-        phys_addr = pc & rammask;
-    } else {
-        uintptr_t lookup = (uintptr_t) readlookup2[pc >> 12];
-        if (lookup == (uintptr_t) -1)
-            return NULL; /* TLB miss -> let C handle MMU translation */
-        phys_addr = (uint32_t) (lookup + pc - (uintptr_t) ram);
+    uint32_t pc        = cs + cpu_state.pc;
+    uint32_t phys_addr = get_phys(pc);
+    if (UNLIKELY(cpu_state.abrt)) {
+        if (codegen_profile_active) {
+            uint64_t elapsed = host_rdtsc() - t_dispatch_start;
+            codegen_host_profile.tsc_c_dispatcher += elapsed;
+            if (codegen_current_executing_block)
+                codegen_current_executing_block->host_tsc_callouts += elapsed;
+        }
+        return NULL;
     }
 
     /* Check device memory execution fallback */
-    if (UNLIKELY(_mem_exec[phys_addr >> MEM_GRANULARITY_BITS] == NULL))
+    if (UNLIKELY(_mem_exec[phys_addr >> MEM_GRANULARITY_BITS] == NULL)) {
+        if (codegen_profile_active) {
+            uint64_t elapsed = host_rdtsc() - t_dispatch_start;
+            codegen_host_profile.tsc_c_dispatcher += elapsed;
+            if (codegen_current_executing_block)
+                codegen_current_executing_block->host_tsc_callouts += elapsed;
+        }
         return NULL;
+    }
 
     /* 3. Refresh FPU status bits */
     if (cpu_state.npxc & 0x300)
@@ -1383,13 +1410,41 @@ codegen_handle_dispatch(void)
     }
 
     if (valid) {
-        cpu_state.last_block_nr = 0;
+        if ((block->flags & CODEBLOCK_BYTE_MASK) && !(block->flags & CODEBLOCK_NO_IMMEDIATES) &&
+            block->dirty_list_recompile_hits) {
+            block->dirty_list_recompile_hits = 0;
+            block->dirty_list_last_epoch     = 0;
+        }
+        if (prev_block_nr) {
+            codeblock_t *src_block = &codeblock[prev_block_nr];
+            if (src_block->valid && (src_block->flags & CODEBLOCK_WAS_RECOMPILED) &&
+                !(src_block->flags & CODEBLOCK_IN_DIRTY_LIST) &&
+                !(src_block->flags & CODEBLOCK_STATIC_TOP) &&
+                !(block->flags & CODEBLOCK_STATIC_TOP)) {
+                codegen_link_exit(src_block, prev_exit_idx, block);
+                if (codegen_profile_active)
+                    codegen_host_profile.count_chained_transfers++;
+            }
+        }
         if (!codegen_dump_is_active() && !codegen_profile_active) {
             block->exec_count++;
+        } else if (codegen_profile_active) {
+            uint64_t elapsed = host_rdtsc() - t_dispatch_start;
+            codegen_host_profile.tsc_c_dispatcher += elapsed;
+            if (codegen_current_executing_block)
+                codegen_current_executing_block->host_tsc_callouts += elapsed;
         }
         return &block->data[block->direct_entry_pos];
     }
 
-    return NULL; /* Cache miss / compile needed -> exit JIT to C dispatcher */
+    /* Cache miss / compile needed -> preserve prev_block_nr so C dispatcher can link after compiling */
+    cpu_state.last_block_nr = prev_block_nr;
+    if (codegen_profile_active) {
+        uint64_t elapsed = host_rdtsc() - t_dispatch_start;
+        codegen_host_profile.tsc_c_dispatcher += elapsed;
+        if (codegen_current_executing_block)
+            codegen_current_executing_block->host_tsc_callouts += elapsed;
+    }
+    return NULL;
 }
 

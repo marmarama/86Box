@@ -1070,7 +1070,7 @@ codegen_EXIT_BLOCK(codeblock_t *block, uop_t *uop)
 
     host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, last_block_nr) - 128, get_block_nr(block));
     host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, last_exit_idx) - 128, exit_idx);
-    host_x86_JMP(block, codegen_exit_rout);
+    host_x86_JMP(block, codegen_dispatch_stub ? codegen_dispatch_stub : codegen_exit_rout);
 
     /* 6. Event handling stub: call codegen_event_stub to process timer/interrupt/replenish cycles */
     uint8_t *event_stub_target = &block_write_data[block_pos];
@@ -1145,7 +1145,7 @@ codegen_EXIT_BLOCK_RET(codeblock_t *block, uop_t *uop)
 
     host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, last_block_nr) - 128, get_block_nr(block));
     host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, (int) offsetof(cpu_state_t, last_exit_idx) - 128, exit_idx);
-    host_x86_JMP(block, codegen_exit_rout);
+    host_x86_JMP(block, codegen_dispatch_stub ? codegen_dispatch_stub : codegen_exit_rout);
 
     /* 7. Event handling stub: call codegen_event_stub to process timer/interrupt/replenish cycles */
     uint8_t *event_stub_target = &block_write_data[block_pos];

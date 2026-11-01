@@ -844,6 +844,12 @@ codegen_dump_notify_idle(void)
 }
 
 void
+codegen_dump_notify_event(void)
+{
+    hang_chained_streak = 0;
+}
+
+void
 codegen_profile_exit_chain(void)
 {
     if (codegen_profile_active && codegen_current_executing_block) {

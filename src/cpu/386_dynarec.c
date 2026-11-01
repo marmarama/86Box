@@ -375,7 +375,7 @@ codegen_handle_jit_event(void)
         ((cpu_state.flags & I_FLAG) && pic.int_pending) ||
         cpu_end_block_after_ins || cpu_flush_pending || codegen_code_write_pending ||
         cpu_is_halted || cpu_cache_enabled || cpu_force_interpreter || cpu_override_dynarec ||
-        (!CACHE_ON()) || is_quit || dopause || !cpu_thread_run) {
+        trap || (!CACHE_ON()) || is_quit || dopause || !cpu_thread_run) {
         if (codegen_profile_active) {
             uint64_t elapsed = host_rdtsc() - t_event_start;
             codegen_host_profile.tsc_c_timers_devices += elapsed;
@@ -387,6 +387,8 @@ codegen_handle_jit_event(void)
 
     /* 4. If cycles remaining in current slice, we can stay in JIT */
     if (cpu_state._cycles > 0) {
+        if (codegen_hang_detect_active)
+            codegen_dump_notify_event();
         if (codegen_profile_active) {
             uint64_t elapsed = host_rdtsc() - t_event_start;
             codegen_host_profile.tsc_c_timers_devices += elapsed;
@@ -412,6 +414,8 @@ codegen_handle_jit_event(void)
         dyn_cycles_start   = cpu_state._cycles;
         cycles_old         = cpu_state._cycles;
         dyn_oldcyc         = cpu_state._cycles;
+        if (codegen_hang_detect_active)
+            codegen_dump_notify_event();
         if (codegen_profile_active) {
             uint64_t elapsed = host_rdtsc() - t_event_start;
             codegen_host_profile.tsc_c_timers_devices += elapsed;
@@ -1292,7 +1296,7 @@ is_dynarec_active(void)
 #ifndef USE_DYNAREC
     return false;
 #else
-    return cpu_exec == exec386_dynarec && cpu_use_dynarec && !(cpu_cache_enabled || cpu_force_interpreter || cpu_override_dynarec || (!CACHE_ON()));
+    return cpu_exec == exec386_dynarec && cpu_use_dynarec && !(cpu_cache_enabled || cpu_force_interpreter || cpu_override_dynarec || trap || (!CACHE_ON()));
 #endif
 }
 
