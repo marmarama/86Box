@@ -378,6 +378,7 @@ extern void codegen_block_end(void);
 extern void codegen_delete_block(codeblock_t *block);
 extern void codegen_generate_call(uint8_t opcode, OpFn op, uint32_t fetchdat, uint32_t new_pc, uint32_t old_pc);
 extern void codegen_generate_seg_restore(void);
+extern void dynarec_link_previous_block(codeblock_t *dst_block, uint16_t prev_block_nr, int prev_exit_idx);
 extern void codegen_set_op32(void);
 extern void codegen_flush(void);
 extern void codegen_check_flush(struct page_t *page, uint64_t mask, uint32_t phys_addr);

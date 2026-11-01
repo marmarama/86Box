@@ -1344,17 +1344,24 @@ codegen_handle_dispatch(void)
     oldcs  = CS;
     oldcpl = CPL;
 
-    /* 2. Fast physical address translation */
-    uint32_t pc        = cs + cpu_state.pc;
-    uint32_t phys_addr = get_phys(pc);
-    if (UNLIKELY(cpu_state.abrt)) {
-        if (codegen_profile_active) {
-            uint64_t elapsed = host_rdtsc() - t_dispatch_start;
-            codegen_host_profile.tsc_c_dispatcher += elapsed;
-            if (codegen_current_executing_block)
-                codegen_current_executing_block->host_tsc_callouts += elapsed;
+    /* 2. Fast physical address translation (non-faulting TLB probe) */
+    uint32_t pc = cs + cpu_state.pc;
+    uint32_t phys_addr;
+    if (!(cr0 >> 31)) {
+        phys_addr = pc & rammask;
+    } else {
+        uintptr_t lookup = (uintptr_t) readlookup2[pc >> 12];
+        if (lookup == (uintptr_t) -1) {
+            cpu_state.last_block_nr = prev_block_nr;
+            if (codegen_profile_active) {
+                uint64_t elapsed = host_rdtsc() - t_dispatch_start;
+                codegen_host_profile.tsc_c_dispatcher += elapsed;
+                if (codegen_current_executing_block)
+                    codegen_current_executing_block->host_tsc_callouts += elapsed;
+            }
+            return NULL; /* TLB miss -> let C handle MMU translation */
         }
-        return NULL;
+        phys_addr = (uint32_t) (lookup + pc - (uintptr_t) ram);
     }
 
     /* Check device memory execution fallback */
@@ -1416,15 +1423,7 @@ codegen_handle_dispatch(void)
             block->dirty_list_last_epoch     = 0;
         }
         if (prev_block_nr) {
-            codeblock_t *src_block = &codeblock[prev_block_nr];
-            if (src_block->valid && (src_block->flags & CODEBLOCK_WAS_RECOMPILED) &&
-                !(src_block->flags & CODEBLOCK_IN_DIRTY_LIST) &&
-                !(src_block->flags & CODEBLOCK_STATIC_TOP) &&
-                !(block->flags & CODEBLOCK_STATIC_TOP)) {
-                codegen_link_exit(src_block, prev_exit_idx, block);
-                if (codegen_profile_active)
-                    codegen_host_profile.count_chained_transfers++;
-            }
+            dynarec_link_previous_block(block, prev_block_nr, prev_exit_idx);
         }
         if (!codegen_dump_is_active() && !codegen_profile_active) {
             block->exec_count++;

@@ -568,7 +568,7 @@ block_ended:
 }
 
 #ifdef USE_NEW_DYNAREC
-static inline void
+void
 dynarec_link_previous_block(codeblock_t *dst_block, uint16_t prev_block_nr, int prev_exit_idx)
 {
     if (prev_block_nr) {
