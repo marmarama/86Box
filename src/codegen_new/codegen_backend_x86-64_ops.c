@@ -382,6 +382,15 @@ host_x86_JMP(codeblock_t *block, void *p)
 }
 
 void
+host_x86_JMP_REG(codeblock_t *block, int reg)
+{
+    codegen_alloc_bytes(block, (reg & 8) ? 3 : 2);
+    if (reg & 8)
+        codegen_addbyte(block, rex_byte(0, 0, 0, reg));
+    codegen_addbyte2(block, 0xff, 0xe0 | (reg & 7));
+}
+
+void
 host_x86_JNZ(codeblock_t *block, void *p)
 {
     codegen_alloc_bytes(block, 6);

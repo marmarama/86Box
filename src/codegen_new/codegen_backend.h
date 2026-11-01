@@ -14,6 +14,7 @@
 void codegen_backend_init(void);
 void codegen_backend_prologue(codeblock_t *block);
 void codegen_backend_epilogue(codeblock_t *block);
+extern void (*codegen_enter_jit)(void *entry_ptr);
 
 struct ir_data_t;
 struct uop_t;

@@ -34,6 +34,7 @@
 #include "codegen_ops_jit_wrappers.h"
 
 uint8_t *block_write_data = NULL;
+void    (*codegen_enter_jit)(void *entry_ptr) = NULL;
 
 int      codegen_flat_ds;
 int      codegen_flat_ss;

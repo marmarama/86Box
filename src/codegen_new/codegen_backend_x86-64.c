@@ -347,7 +347,7 @@ codegen_backend_init(void)
     block_write_data                        = codeblock[block_current].data;
     build_loadstore_routines(&codeblock[block_current]);
 
-    codegen_alloc_bytes(block, 256);
+    codegen_alloc_bytes(block, 512);
     codegen_gpf_rout = &block_write_data[block_pos];
 #    if _WIN64
     host_x86_XOR32_REG_REG(block, REG_ECX, REG_ECX);
@@ -421,10 +421,42 @@ codegen_backend_init(void)
     host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, last_block_nr_disp, 0);
     host_x86_JMP(block, codegen_exit_rout);
 
+    /* Persistent JIT Entry Trampoline:
+       Takes target block entry address in first argument (RDI on SysV, RCX on Win64).
+       Saves host callee-saved registers, sets up host stack frame, sets RBP to cpu_state+128
+       and R12 to readlookup2, then jumps directly to the target block's direct_entry_pos.
+       When any block executes codegen_exit_rout, it unwinds this frame and returns to C. */
+    codegen_enter_jit = (void (*)(void *)) &block_write_data[block_pos];
+    host_x86_PUSH(block, REG_RBX);
+    host_x86_PUSH(block, REG_RBP);
+#ifdef _WIN64
+    host_x86_PUSH(block, REG_RSI);
+    host_x86_PUSH(block, REG_RDI);
+#endif
+    host_x86_PUSH(block, REG_R12);
+    host_x86_PUSH(block, REG_R13);
+    host_x86_PUSH(block, REG_R14);
+    host_x86_PUSH(block, REG_R15);
+#ifdef _WIN64
+    host_x86_SUB64_REG_IMM(block, REG_RSP, CODEGEN_WIN64_FRAME);
+    host_x86_MOVDQU_BASE_OFFSET_XREG(block, REG_RSP, CODEGEN_XMM6_SAVE, REG_XMM6);
+    host_x86_MOVDQU_BASE_OFFSET_XREG(block, REG_RSP, CODEGEN_XMM7_SAVE, REG_XMM7);
+#else
+    host_x86_SUB64_REG_IMM(block, REG_RSP, 0x48);
+#endif
+    host_x86_MOV64_REG_IMM(block, REG_RBP, ((uintptr_t) &cpu_state) + 128);
+    host_x86_MOV64_REG_IMM(block, REG_R12, (uint64_t) (uintptr_t) readlookup2);
+#ifdef _WIN64
+    host_x86_JMP_REG(block, REG_RCX);
+#else
+    host_x86_JMP_REG(block, REG_RDI);
+#endif
+
     if (codegen_dump_perf_map_active()) {
         codegen_dump_perf_map_symbol((uintptr_t) codegen_gpf_rout, (uintptr_t) codegen_exit_rout - (uintptr_t) codegen_gpf_rout, "jit_gpf_rout");
         codegen_dump_perf_map_symbol((uintptr_t) codegen_exit_rout, (uintptr_t) codegen_event_stub - (uintptr_t) codegen_exit_rout, "jit_exit_rout");
-        codegen_dump_perf_map_symbol((uintptr_t) codegen_event_stub, (uintptr_t) &block_write_data[block_pos] - (uintptr_t) codegen_event_stub, "jit_event_stub");
+        codegen_dump_perf_map_symbol((uintptr_t) codegen_event_stub, (uintptr_t) codegen_enter_jit - (uintptr_t) codegen_event_stub, "jit_event_stub");
+        codegen_dump_perf_map_symbol((uintptr_t) codegen_enter_jit, (uintptr_t) &block_write_data[block_pos] - (uintptr_t) codegen_enter_jit, "jit_enter_trampoline");
     }
 
     block_write_data = NULL;

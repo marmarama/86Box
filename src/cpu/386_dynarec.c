@@ -812,7 +812,10 @@ exec386_dynarec_dyn(void)
             uint64_t t_now = host_rdtsc();
             codegen_host_profile.tsc_c_dispatcher += (t_now - t_dispatch_start);
             inrecomp = 1;
-            code();
+            if (codegen_enter_jit)
+                codegen_enter_jit(&block->data[block->direct_entry_pos]);
+            else
+                code();
 #        ifdef USE_ACYCS
             acycs = 0;
 #        endif
@@ -822,7 +825,10 @@ exec386_dynarec_dyn(void)
 #    endif
         {
             inrecomp = 1;
-            code();
+            if (codegen_enter_jit)
+                codegen_enter_jit(&block->data[block->direct_entry_pos]);
+            else
+                code();
 #    ifdef USE_ACYCS
             acycs = 0;
 #    endif
