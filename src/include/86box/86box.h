@@ -20,6 +20,8 @@
 #ifndef EMU_86BOX_H
 #define EMU_86BOX_H
 
+#include <stdbool.h>
+
 #if defined(__NetBSD__) || defined(__OpenBSD__)
 /* Doesn't compile on NetBSD/OpenBSD without this include */
 #include <stdarg.h>
@@ -333,7 +335,10 @@ extern void do_pause(int p);
 
 extern double isa_timing;
 extern int    io_delay;
+extern int    framecount;
 extern int    framecountx;
+extern int    title_update;
+extern bool   fast_forward;
 
 extern volatile int     cpu_thread_run;
 extern          uint8_t postcard_codes[POSTCARDS_NUM];

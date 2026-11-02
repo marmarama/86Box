@@ -381,6 +381,24 @@ plat_get_ticks(void)
     return (uint32_t) (plat_get_ticks_common() / 1000);
 }
 
+uint64_t
+plat_get_time_ns(void)
+{
+    return plat_get_ticks_common() * 1000ULL;
+}
+
+int
+blit_has_contention(void)
+{
+    return 0;
+}
+
+void
+plat_pacer_advance(uint32_t extra_frames)
+{
+    (void) extra_frames;
+}
+
 void
 plat_delay_ms(uint32_t count)
 {

@@ -190,12 +190,20 @@ int             blitreq = 0;
 
 volatile int cpu_thread_run = 1;
 
+static uint32_t pacer_old_time = 0;
+static int      pacer_drawits  = 0;
+
+void
+plat_pacer_reset(void)
+{
+    pacer_old_time = SDL_GetTicks();
+    pacer_drawits  = 0;
+}
+
 void
 main_thread(UNUSED(void *param))
 {
-    uint32_t old_time;
     uint32_t new_time;
-    int      drawits;
     int      frames;
 
     
@@ -208,28 +216,28 @@ main_thread(UNUSED(void *param))
 #endif
     framecountx = 0;
     // title_update = 1;
-    old_time = SDL_GetTicks();
-    drawits = frames = 0;
+    pacer_old_time = SDL_GetTicks();
+    pacer_drawits = frames = 0;
     while (!is_quit && cpu_thread_run)
     {
         /* See if it is time to run a frame of code. */
         new_time = SDL_GetTicks();
 
 #ifdef USE_GDBSTUB
-        if (gdbstub_next_asap && (drawits <= 0))
-            drawits = 10;
+        if (gdbstub_next_asap && (pacer_drawits <= 0))
+            pacer_drawits = 10;
         else
-            drawits += (new_time - old_time);
+            pacer_drawits += (new_time - pacer_old_time);
 #else
-        drawits += (new_time - old_time);
+        pacer_drawits += (new_time - pacer_old_time);
 #endif
 
-        old_time = new_time;
-        if ((drawits > 0 || fast_forward) && !dopause) {
+        pacer_old_time = new_time;
+        if ((pacer_drawits > 0 || fast_forward) && !dopause) {
             /* Yes, so do one frame now. */
-            drawits -= force_10ms ? 10 : 1;
-            if (drawits > 50 || fast_forward)
-                drawits = 0;
+            pacer_drawits -= force_10ms ? 10 : 1;
+            if (pacer_drawits > 50 || fast_forward)
+                pacer_drawits = 0;
 
             /* Run a block of code. */
             pc_run();

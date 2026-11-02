@@ -178,8 +178,11 @@ extern int      plat_dir_create(char *path);
 extern void    *plat_mmap(size_t size, uint8_t executable, uint8_t* large);
 extern void     plat_munmap(void *ptr, size_t size);
 extern uint64_t plat_timer_read(void);
+extern uint64_t plat_get_time_ns(void);
 extern uint32_t plat_get_ticks(void);
 extern void     plat_delay_ms(uint32_t count);
+extern void     plat_pacer_reset(void);
+extern void     plat_pacer_advance(uint32_t extra_frames);
 extern void     plat_pause(int p);
 extern void     plat_mouse_capture(int on);
 extern int      plat_vidapi(const char *name);
@@ -235,6 +238,7 @@ extern int64_t plat_get_block_device_size(const char *path);
 /* Other stuff. */
 extern void startblit(void);
 extern void endblit(void);
+extern int  blit_has_contention(void);
 
 /* Conversion between UTF-8 and UTF-16. */
 extern size_t mbstoc16s(uint16_t dst[], const char src[], int len);

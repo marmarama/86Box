@@ -236,6 +236,12 @@ plat_get_ticks(void)
 }
 
 uint64_t
+plat_get_time_ns(void)
+{
+    return (uint64_t) elapsed_timer.nsecsElapsed();
+}
+
+uint64_t
 plat_timer_read(void)
 {
     return elapsed_timer.elapsed();
@@ -892,6 +898,12 @@ endblit()
          */
         std::this_thread::yield();
     }
+}
+
+int
+blit_has_contention(void)
+{
+    return blitmx_contention > 1;
 }
 } /*extern "C" */
 

@@ -29,6 +29,11 @@
 #include <86box/fdd.h>
 #include <86box/fdc.h>
 #include <86box/machine.h>
+#include <86box/plat.h>
+#include <86box/mouse.h>
+#include <86box/gameport.h>
+#include <86box/video.h>
+#include <86box/nv/vid_nv_rivatimer.h>
 #include <86box/plat_fallthrough.h>
 #include <86box/plat_unused.h>
 
@@ -357,6 +362,118 @@ update_tsc(void)
 }
 
 #ifdef USE_NEW_DYNAREC
+static uint64_t jit_pacer_last_ns = 0;
+static int64_t  jit_pacer_debt_ns = 0;
+static uint32_t jit_frames_batch  = 0;
+
+static void
+jit_pacer_init(void)
+{
+    jit_pacer_last_ns = plat_get_time_ns();
+    jit_pacer_debt_ns = 0;
+    jit_frames_batch  = 0;
+}
+
+static int32_t
+codegen_pace_tick_in_jit(void)
+{
+    static int jit_consecutive_frames = 0;
+
+    /* If exit or outer event requested, exit to C now so pc_run handles it */
+    if (is_quit || !cpu_thread_run || dopause || hard_reset_pending || title_update) {
+        jit_consecutive_frames = 0;
+        jit_pacer_last_ns      = 0;
+        jit_pacer_debt_ns      = 0;
+        return 0;
+    }
+
+    /* Bound continuous in-JIT execution to 50 frames (~50 ms) before graceful C return */
+    if (++jit_consecutive_frames >= 50) {
+        jit_consecutive_frames = 0;
+        return 0;
+    }
+
+    /* 1. Housekeeping for the completed 1 ms frame */
+    ack_pause();
+    rivatimer_update_all();
+    if (!mouse_timed)
+        mouse_process();
+    joystick_process(0);
+    framecount++;
+    if (++framecountx >= (force_10ms ? 100 : 1000)) {
+        framecountx = 0;
+        frames      = 0;
+    }
+
+    /* 2. Contention-gated blitmx handoff: only pulse endblit/startblit if UI thread is waiting */
+    if (blit_has_contention()) {
+        endblit();
+        startblit();
+    }
+
+    /* 3. Real-time host pacing */
+    const uint64_t quantum_ns = force_10ms ? 10000000ULL : 1000000ULL;
+    if (!fast_forward) {
+        uint64_t now_ns = plat_get_time_ns();
+        if (jit_pacer_last_ns == 0) {
+            jit_pacer_last_ns = now_ns;
+            jit_pacer_debt_ns = 0;
+        }
+        jit_pacer_debt_ns += (int64_t) (now_ns - jit_pacer_last_ns);
+        jit_pacer_last_ns = now_ns;
+
+        /* Clamp max debt to 50 ms */
+        if (jit_pacer_debt_ns > 50000000LL)
+            jit_pacer_debt_ns = 50000000LL;
+
+        /* If we are ahead of real-time schedule, wait */
+        if (jit_pacer_debt_ns < (int64_t) quantum_ns) {
+            int64_t remaining_ns = (int64_t) quantum_ns - jit_pacer_debt_ns;
+            /* OS sleep path if ahead by >= 1.5 ms */
+            if (remaining_ns >= 1500000LL) {
+                plat_delay_ms((uint32_t) (remaining_ns / 1000000ULL));
+                now_ns = plat_get_time_ns();
+                jit_pacer_debt_ns += (int64_t) (now_ns - jit_pacer_last_ns);
+                jit_pacer_last_ns = now_ns;
+                remaining_ns = (int64_t) quantum_ns - jit_pacer_debt_ns;
+            }
+            /* Sub-millisecond spin-wait path using pause/yield polling loop */
+            if (remaining_ns > 0) {
+                uint64_t target_ns = plat_get_time_ns() + (uint64_t) remaining_ns;
+                while (plat_get_time_ns() < target_ns) {
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+                    __builtin_ia32_pause();
+#elif defined(__aarch64__)
+                    __asm__ __volatile__("yield");
+#endif
+                }
+                now_ns = plat_get_time_ns();
+                jit_pacer_debt_ns += (int64_t) (now_ns - jit_pacer_last_ns);
+                jit_pacer_last_ns = now_ns;
+            }
+        }
+
+        if (jit_pacer_debt_ns >= (int64_t) quantum_ns)
+            jit_pacer_debt_ns -= quantum_ns;
+        else
+            jit_pacer_debt_ns = 0;
+    } else {
+        jit_pacer_debt_ns = 0;
+    }
+
+    /* 4. Replenish cycles_main and cpu_state._cycles for the next 1 ms slice */
+    int32_t new_cycs = (int32_t) (cpu_s->rspeed / (force_10ms ? 100 : 1000));
+    cycles_main += new_cycs;
+    int32_t next_slice = (cycles_main > dyn_cyc_period) ? dyn_cyc_period : cycles_main;
+    cpu_state._cycles += next_slice;
+    dyn_cycles_start   = cpu_state._cycles;
+    cycles_old         = cpu_state._cycles;
+    dyn_oldcyc         = cpu_state._cycles;
+
+    jit_frames_batch++;
+    return 1;
+}
+
 int32_t
 codegen_handle_jit_event(void)
 {
@@ -414,6 +531,19 @@ codegen_handle_jit_event(void)
         dyn_cycles_start   = cpu_state._cycles;
         cycles_old         = cpu_state._cycles;
         dyn_oldcyc         = cpu_state._cycles;
+        if (codegen_hang_detect_active)
+            codegen_dump_notify_event();
+        if (codegen_profile_active) {
+            uint64_t elapsed = host_rdtsc() - t_event_start;
+            codegen_host_profile.tsc_c_timers_devices += elapsed;
+            if (codegen_current_executing_block)
+                codegen_current_executing_block->host_tsc_callouts += elapsed;
+        }
+        return 1;
+    }
+
+    /* 7. Quantum (1 ms) exhausted: In-JIT real-time host pacing & housekeeping */
+    if (codegen_pace_tick_in_jit()) {
         if (codegen_hang_detect_active)
             codegen_dump_notify_event();
         if (codegen_profile_active) {
@@ -1116,6 +1246,7 @@ exec386_dynarec(int32_t cycs)
     int32_t cyc_period = cycs / (force_10ms ? 2000 : 200); /*5us*/
 #ifdef USE_NEW_DYNAREC
     dyn_cyc_period = cyc_period;
+    jit_pacer_init();
 #endif
 
 #    ifdef USE_ACYCS
@@ -1275,8 +1406,15 @@ exec386_dynarec(int32_t cycs)
             }
 
 #    ifdef USE_GDBSTUB
-            if (gdbstub_instruction())
+            if (gdbstub_instruction()) {
+#        ifdef USE_NEW_DYNAREC
+                if (jit_frames_batch > 0) {
+                    plat_pacer_advance(jit_frames_batch);
+                    jit_frames_batch = 0;
+                }
+#        endif
                 return;
+            }
 #    endif
         }
 
@@ -1287,6 +1425,12 @@ exec386_dynarec(int32_t cycs)
 #    endif
         cycles_main -= (cycles_start - cycles);
     }
+#ifdef USE_NEW_DYNAREC
+    if (jit_frames_batch > 0) {
+        plat_pacer_advance(jit_frames_batch);
+        jit_frames_batch = 0;
+    }
+#endif
 }
 #endif
 

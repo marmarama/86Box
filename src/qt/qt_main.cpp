@@ -446,6 +446,28 @@ emu_LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 static HHOOK llhook = NULL;
 #endif
 
+static qint64 pacer_old_ns  = 0;
+static qint64 pacer_debt_ns = 0;
+
+extern "C" void
+plat_pacer_reset(void)
+{
+    pacer_old_ns  = elapsed_timer.nsecsElapsed();
+    pacer_debt_ns = 0;
+}
+
+extern "C" void
+plat_pacer_advance(uint32_t extra_frames)
+{
+    if (extra_frames > 0) {
+        qint64 credit_ns = (qint64) extra_frames * (force_10ms ? 10000000LL : 1000000LL);
+        if (pacer_debt_ns >= credit_ns)
+            pacer_debt_ns -= credit_ns;
+        else
+            pacer_debt_ns = 0;
+    }
+}
+
 void
 main_thread_fn()
 {
@@ -461,25 +483,24 @@ main_thread_fn()
     plat_set_thread_name(nullptr, "main_thread");
     framecountx = 0;
     // title_update = 1;
-    qint64 old_ns = elapsed_timer.nsecsElapsed();
-    qint64 debt_ns;
+    pacer_old_ns = elapsed_timer.nsecsElapsed();
     const qint64 quantum_ns  = force_10ms ? 10000000LL : 1000000LL;
     const qint64 max_debt_ns = 50000000LL;
     frames                   = 0;
-    debt_ns                  = 0;
+    pacer_debt_ns            = 0;
     is_cpu_thread            = 1;
     while (!is_quit && cpu_thread_run) {
         /* See if it is time to run a frame of code. */
         const qint64 new_ns = elapsed_timer.nsecsElapsed();
-        debt_ns += (new_ns - old_ns);
-        old_ns = new_ns;
-        if (debt_ns > max_debt_ns)
-            debt_ns = max_debt_ns;
+        pacer_debt_ns += (new_ns - pacer_old_ns);
+        pacer_old_ns = new_ns;
+        if (pacer_debt_ns > max_debt_ns)
+            pacer_debt_ns = max_debt_ns;
 #ifdef USE_GDBSTUB
-        if (gdbstub_next_asap && (debt_ns < quantum_ns))
-            debt_ns = quantum_ns;
+        if (gdbstub_next_asap && (pacer_debt_ns < quantum_ns))
+            pacer_debt_ns = quantum_ns;
 #endif
-        if (((debt_ns >= quantum_ns) || fast_forward) && !dopause) {
+        if (((pacer_debt_ns >= quantum_ns) || fast_forward) && !dopause) {
             /*
              * Pace with one pc_run() per scheduler pass.
              * We intentionally avoid burst catch-up (multi-frame loop) because it can
@@ -496,7 +517,7 @@ main_thread_fn()
                 uint64_t total_elapsed_ms = (uint64_t) ((double) tsc / cpu_s->rspeed * 1000);
                 printf("[instrument] %llu, %llu\n", total_elapsed_ms, elapsed_us);
                 if (instru_run_ms && total_elapsed_ms >= instru_run_ms)
-                    debt_ns = 0;
+                    pacer_debt_ns = 0;
             }
 #endif
             /* Every 2 emulated seconds we save the machine status. */
@@ -506,10 +527,10 @@ main_thread_fn()
                 frames     = 0;
             }
 
-            if (!fast_forward && debt_ns >= quantum_ns)
-                debt_ns -= quantum_ns;
+            if (!fast_forward && pacer_debt_ns >= quantum_ns)
+                pacer_debt_ns -= quantum_ns;
             else
-                debt_ns = 0;
+                pacer_debt_ns = 0;
         } else {
             /* Just so we dont overload the host OS. */
 
@@ -520,10 +541,24 @@ main_thread_fn()
                 pc_reset_hard_init();
             }
 
-            if (dopause)
+            if (dopause) {
                 ack_pause();
-
-            plat_delay_ms(1);
+                plat_delay_ms(1);
+            } else {
+                qint64 remaining_ns = quantum_ns - pacer_debt_ns;
+                if (remaining_ns >= 1500000LL) {
+                    plat_delay_ms((uint32_t) (remaining_ns / 1000000ULL));
+                } else if (remaining_ns > 0) {
+                    uint64_t target_ns = elapsed_timer.nsecsElapsed() + remaining_ns;
+                    while ((qint64) elapsed_timer.nsecsElapsed() < (qint64) target_ns) {
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+                        __builtin_ia32_pause();
+#elif defined(__aarch64__)
+                        __asm__ __volatile__("yield");
+#endif
+                    }
+                }
+            }
         }
     }
 
