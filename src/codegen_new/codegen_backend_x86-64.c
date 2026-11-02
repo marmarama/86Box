@@ -421,12 +421,165 @@ codegen_backend_init(void)
     host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, last_block_nr_disp, 0);
     host_x86_JMP(block, codegen_exit_rout);
 
-    /* In-JIT Dispatch Stub (Proposal 2.2):
+    /* In-JIT Dispatch Stub (Proposal 2.2 / Phase 8.2):
        Invoked from block exits (unpredicted RET, indirect branches, block epilogue).
-       Calls codegen_handle_dispatch() to look up the next block in the codeblock cache.
-       If hit, jumps directly to target_block->direct_entry_pos (in RAX) without leaving JIT.
-       If miss, compiles needed, or event pending, jumps to codegen_exit_rout to return to C. */
+       Executes inlined native assembly hash probe on fast path without leaving JIT:
+         1. Validates cycles > 0, exit_request == 0, and last_block_nr == 0.
+         2. Verifies codegen_code_write_pending == 0 and codegen_profile_active == 0.
+         3. Calculates target linear PC: cs + cpu_state.pc.
+         4. Probes non-faulting TLB array readlookup2[pc >> 12] (or rammask in non-paged mode).
+         5. Computes HASH(phys_addr) and fetches codeblock_hash[hash].
+         6. Validates codeblock tags: valid, pc, _cs, phys, status, clean dirty mask,
+            single page (page_mask2 == 0), and integer flags (no FPU / dirty list).
+         7. On hit: direct jump to block->data + block->direct_entry_pos.
+         8. On miss / event / compile needed: falls back to codegen_handle_dispatch(). */
     codegen_dispatch_stub = &block_write_data[block_pos];
+
+    int cycles_disp        = (int) offsetof(cpu_state_t, _cycles) - 128;
+    int exit_disp          = (int) offsetof(cpu_state_t, exit_request) - 128;
+    int pc_disp            = (int) offsetof(cpu_state_t, pc) - 128;
+    int cs_base_disp       = (int) offsetof(cpu_state_t, seg_cs.base) - 128;
+
+    /* 1. Cycle & asynchronous event checks */
+    host_x86_CMP32_BASE_OFFSET_IMM(block, REG_RBP, cycles_disp, 0);
+    uint32_t *miss_cycles = host_x86_JLE_long(block);
+
+    host_x86_CMP32_BASE_OFFSET_IMM(block, REG_RBP, exit_disp, 0);
+    uint32_t *miss_exit = host_x86_JNZ_long(block);
+
+    host_x86_CMP32_BASE_OFFSET_IMM(block, REG_RBP, last_block_nr_disp, 0);
+    uint32_t *miss_last_block = host_x86_JNZ_long(block);
+
+    /* 2. Buffering and profiling checks */
+    host_x86_MOV64_REG_IMM(block, REG_R11, (uint64_t) (uintptr_t) &codegen_code_write_pending);
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_EAX, REG_R11, 0);
+    host_x86_TEST32_REG(block, REG_EAX, REG_EAX);
+    uint32_t *miss_cwp = host_x86_JNZ_long(block);
+
+    host_x86_MOV64_REG_IMM(block, REG_R11, (uint64_t) (uintptr_t) &codegen_profile_active);
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_EAX, REG_R11, 0);
+    host_x86_TEST32_REG(block, REG_EAX, REG_EAX);
+    uint32_t *miss_prof = host_x86_JNZ_long(block);
+
+    /* 3. Compute linear PC: RDX = pc = cs + cpu_state.pc */
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_EDX, REG_RBP, cs_base_disp);
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_EAX, REG_RBP, pc_disp);
+    host_x86_ADD32_REG_REG(block, REG_EDX, REG_EAX);
+
+    /* 4. Physical address translation */
+    host_x86_MOV64_REG_IMM(block, REG_R11, (uint64_t) (uintptr_t) &cr0);
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_EAX, REG_R11, 0);
+    host_x86_TEST32_REG_IMM(block, REG_EAX, 0x80000000);
+    uint8_t *is_not_paged = host_x86_JZ_short(block);
+
+    /* Paged translation via readlookup2 (in R12) */
+    host_x86_MOV32_REG_REG(block, REG_EAX, REG_EDX);
+    host_x86_SHR32_IMM(block, REG_EAX, 12);
+    host_x86_MOV64_REG_BASE_INDEX_SHIFT(block, REG_RAX, REG_R12, REG_RAX, 3);
+    host_x86_CMP64_REG_IMM(block, REG_RAX, (uint64_t) -1);
+    uint32_t *miss_tlb = host_x86_JZ_long(block);
+    host_x86_ADD64_REG_REG(block, REG_RAX, REG_RDX);
+    host_x86_MOV64_REG_IMM(block, REG_R11, (uint64_t) (uintptr_t) &ram);
+    host_x86_MOV64_REG_BASE_OFFSET(block, REG_RCX, REG_R11, 0);
+    host_x86_SUB64_REG_REG(block, REG_RAX, REG_RCX);
+    uint8_t *paged_done = host_x86_JMP_short(block);
+
+    /* Real / unpaged mode */
+    *is_not_paged = (uint8_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) (is_not_paged + 1));
+    host_x86_MOV32_REG_REG(block, REG_EAX, REG_EDX);
+    host_x86_MOV64_REG_IMM(block, REG_R11, (uint64_t) (uintptr_t) &rammask);
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_ECX, REG_R11, 0);
+    host_x86_AND32_REG_REG(block, REG_EAX, REG_ECX);
+
+    *paged_done = (uint8_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) (paged_done + 1));
+    host_x86_MOV32_REG_REG(block, REG_EAX, REG_EAX);
+
+    /* 5. Compute HASH(phys_addr) */
+    host_x86_MOV32_REG_REG(block, REG_ECX, REG_EAX);
+    host_x86_SHR32_IMM(block, REG_ECX, 12);
+    host_x86_XOR32_REG_REG(block, REG_ECX, REG_EAX);
+    host_x86_MOV32_REG_REG(block, REG_R8, REG_EAX);
+    host_x86_SHR32_IMM(block, REG_R8, 20);
+    host_x86_XOR32_REG_REG(block, REG_ECX, REG_R8);
+    host_x86_AND32_REG_IMM(block, REG_ECX, HASH_MASK);
+
+    /* 6. Probe codeblock_hash table */
+    host_x86_MOV64_REG_IMM(block, REG_R11, (uint64_t) (uintptr_t) &codeblock_hash);
+    host_x86_MOV64_REG_BASE_OFFSET(block, REG_R11, REG_R11, 0);
+    host_x86_ADD32_REG_REG(block, REG_ECX, REG_ECX);
+    host_x86_MOVZX_BASE_INDEX_32_16(block, REG_ECX, REG_R11, REG_ECX);
+
+    /* 7. Load target codeblock */
+    host_x86_MOV64_REG_IMM(block, REG_R10, (uint64_t) (uintptr_t) &codeblock);
+    host_x86_MOV64_REG_BASE_OFFSET(block, REG_R10, REG_R10, 0);
+    host_x86_IMUL32_REG_REG_IMM(block, REG_ECX, REG_ECX, sizeof(codeblock_t));
+    host_x86_ADD64_REG_REG(block, REG_R10, REG_RCX);
+
+    /* 8. Validate block tags and invariants */
+    host_x86_CMP32_BASE_OFFSET_IMM(block, REG_R10, offsetof(codeblock_t, valid), 0);
+    uint32_t *miss_valid = host_x86_JZ_long(block);
+
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_ECX, REG_R10, offsetof(codeblock_t, pc));
+    host_x86_CMP32_REG_REG(block, REG_ECX, REG_EDX);
+    uint32_t *miss_pc = host_x86_JNZ_long(block);
+
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_ECX, REG_R10, offsetof(codeblock_t, _cs));
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_R8, REG_RBP, cs_base_disp);
+    host_x86_CMP32_REG_REG(block, REG_ECX, REG_R8);
+    uint32_t *miss_cs = host_x86_JNZ_long(block);
+
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_ECX, REG_R10, offsetof(codeblock_t, phys));
+    host_x86_CMP32_REG_REG(block, REG_ECX, REG_EAX);
+    uint32_t *miss_phys = host_x86_JNZ_long(block);
+
+    host_x86_MOV16_REG_BASE_OFFSET(block, REG_CX, REG_R10, offsetof(codeblock_t, status));
+    host_x86_MOV64_REG_IMM(block, REG_R11, (uint64_t) (uintptr_t) &cpu_cur_status);
+    host_x86_MOV16_REG_BASE_OFFSET(block, REG_R8, REG_R11, 0);
+    host_x86_CMP16_REG_REG(block, REG_CX, REG_R8);
+    uint32_t *miss_status = host_x86_JNZ_long(block);
+
+    host_x86_MOV64_REG_BASE_OFFSET(block, REG_RCX, REG_R10, offsetof(codeblock_t, page_mask2));
+    host_x86_TEST64_REG(block, REG_RCX, REG_RCX);
+    uint32_t *miss_pm2 = host_x86_JNZ_long(block);
+
+    host_x86_MOV64_REG_BASE_OFFSET(block, REG_RCX, REG_R10, offsetof(codeblock_t, dirty_mask));
+    host_x86_MOV64_REG_BASE_OFFSET(block, REG_RCX, REG_RCX, 0);
+    host_x86_MOV64_REG_BASE_OFFSET(block, REG_R8, REG_R10, offsetof(codeblock_t, page_mask));
+    host_x86_TEST64_REG(block, REG_RCX, REG_R8);
+    uint32_t *miss_dirty = host_x86_JNZ_long(block);
+
+    host_x86_MOV16_REG_BASE_OFFSET(block, REG_CX, REG_R10, offsetof(codeblock_t, flags));
+    host_x86_MOVZX_REG_32_16(block, REG_ECX, REG_CX);
+    host_x86_TEST32_REG_IMM(block, REG_ECX, CODEBLOCK_STATIC_TOP | CODEBLOCK_IN_DIRTY_LIST | CODEBLOCK_BYTE_MASK | CODEBLOCK_HAS_FPU);
+    uint32_t *miss_flags1 = host_x86_JNZ_long(block);
+    host_x86_TEST32_REG_IMM(block, REG_ECX, CODEBLOCK_WAS_RECOMPILED);
+    uint32_t *miss_flags2 = host_x86_JZ_long(block);
+
+    /* Fast-path Hit: jump directly to block->data[block->direct_entry_pos] */
+    host_x86_MOV64_REG_BASE_OFFSET(block, REG_RAX, REG_R10, offsetof(codeblock_t, data));
+    host_x86_MOV16_REG_BASE_OFFSET(block, REG_CX, REG_R10, offsetof(codeblock_t, direct_entry_pos));
+    host_x86_MOVZX_REG_32_16(block, REG_ECX, REG_CX);
+    host_x86_ADD64_REG_REG(block, REG_RAX, REG_RCX);
+    host_x86_JMP_REG(block, REG_RAX);
+
+    /* Slow-path Miss / Fallback */
+    uint8_t *dispatch_slow = &block_write_data[block_pos];
+    patch_disp32(miss_cycles, dispatch_slow);
+    patch_disp32(miss_exit, dispatch_slow);
+    patch_disp32(miss_last_block, dispatch_slow);
+    patch_disp32(miss_cwp, dispatch_slow);
+    patch_disp32(miss_prof, dispatch_slow);
+    patch_disp32(miss_tlb, dispatch_slow);
+    patch_disp32(miss_valid, dispatch_slow);
+    patch_disp32(miss_pc, dispatch_slow);
+    patch_disp32(miss_cs, dispatch_slow);
+    patch_disp32(miss_phys, dispatch_slow);
+    patch_disp32(miss_status, dispatch_slow);
+    patch_disp32(miss_pm2, dispatch_slow);
+    patch_disp32(miss_dirty, dispatch_slow);
+    patch_disp32(miss_flags1, dispatch_slow);
+    patch_disp32(miss_flags2, dispatch_slow);
+
 #ifdef _WIN64
     host_x86_SUB64_REG_IMM(block, REG_RSP, 0x20);
     host_x86_CALL(block, (void *) codegen_handle_dispatch);

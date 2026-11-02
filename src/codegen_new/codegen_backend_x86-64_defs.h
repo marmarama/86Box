@@ -1,3 +1,9 @@
+#ifndef CODEGEN_BACKEND_X86_64_DEFS_H
+#define CODEGEN_BACKEND_X86_64_DEFS_H
+
+#include <assert.h>
+#include <string.h>
+
 /*RBP = cpu_state + 128
   R12 = ram + 2147483648 (if block->flags & CODEBLOCK_NO_IMMEDIATES)*/
 #define REG_AX               0
@@ -67,3 +73,14 @@ extern void *codegen_gpf_rout;
 extern void *codegen_exit_rout;
 extern void *codegen_event_stub;
 extern void *codegen_dispatch_stub;
+
+static inline void
+patch_disp32(uint32_t *disp_ptr, const void *target)
+{
+    intptr_t delta = (intptr_t) ((const uint8_t *) target - ((const uint8_t *) disp_ptr + 4));
+    assert(delta >= INT32_MIN && delta <= INT32_MAX);
+    uint32_t disp = (uint32_t) delta;
+    memcpy(disp_ptr, &disp, sizeof(disp));
+}
+
+#endif /* CODEGEN_BACKEND_X86_64_DEFS_H */

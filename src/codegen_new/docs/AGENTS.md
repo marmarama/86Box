@@ -1,6 +1,6 @@
 # `codegen_new` Agent & Debugging Guide
 
-This document captures essential architectural knowledge, debugging workflows, test harnesses, and hard-won post-mortem lessons for AI pair-programmers and engineers working on the `codegen_new` (New Dynarec) codebase in 86Box.
+This document captures essential architectural knowledge, debugging workflows, test harnesses, work tracking (Taskwarrior), and hard-won post-mortem lessons for AI pair-programmers and engineers working on the `codegen_new` (New Dynarec) codebase in 86Box.
 
 ---
 
@@ -167,3 +167,31 @@ Runtime policy can be configured without recompiling using the `BOX86_LINK_MASK`
 - `0x37`: Protected-mode policy without `LINK_REAL` (`LINK_JMP | LINK_JCC | LINK_LOOP | LINK_PMODE | LINK_SAME_PAGE`).
 - `0x3f`: **Standard Default Policy** (`LINK_JMP | LINK_JCC | LINK_LOOP | LINK_REAL | LINK_PMODE | LINK_SAME_PAGE`). Verified 100% stable on Windows 98 and DOS benchmarks.
 - `BOX86_LINK_LIMIT=N`: Cuts off linking after N links and logs the Nth link details to identify diverging or corrupting blocks.
+
+---
+
+## 6. Work Tracking & Task Management (Taskwarrior)
+
+All branch initiatives, roadmap phases, architectural proposals, optimization work items, test milestones, and upstream PR staging tasks are tracked via **Taskwarrior** (`task`).
+
+### Core Commands
+- `task list`: List all pending branch tasks ordered by urgency and priority.
+- `task active`: Show tasks currently being worked on.
+- `task summary`: Display progress overview across project categories (`86box.phase4`, `86box.phase7`, `86box.phase8`, `86box.proposals`, `86box.testing`, `86box.upstream`).
+- `task <id> info`: View complete task details, architecture doc citations, requirements, and historical annotations.
+- `task start <id>` / `task stop <id>`: Mark a task as actively being worked on.
+- `task <id> done`: Mark a task completed after implementation and regression verification.
+
+### Projects & Organization
+- `86box.phase4`: Direct Block Chaining, Near Call/Ret linking, and SMC handling.
+- `86box.phase7`: Regression fixes, architectural audit, cycle precision, and backend fixes.
+- `86box.phase8`: Host register pinning (RBX = cycles), inlined assembly dispatch stub, and fast paths.
+- `86box.proposals`: Long-term compiler innovations (DSL, IR liveness/DSE, pmode segment caching).
+- `86box.testing`: Automated test suites (Google Benchmark, CTest, deterministic telemetry).
+- `86box.upstream`: Staged PR groupings for upstreaming to `86Box/86Box`.
+
+### Agent Guidelines
+1. **Check active and pending work**: Run `task list` or `task active` before starting tasks to maintain alignment with current branch priorities.
+2. **Track status dynamically**: Run `task start <id>` when actively coding a work item, and `task <id> done` once verified with the test suite.
+3. **Database & Scripts**: The Taskwarrior configuration and database live in `~/.taskrc` and `~/.task/`. Authoritative task definitions and annotations can be viewed or reloaded via [`scratch/populate_taskwarrior_annotated.py`](file:///home/marm/src/86Box/scratch/populate_taskwarrior_annotated.py).
+4. **Sandbox Note**: Taskwarrior database files live in the host user directory (`~/.task`); run `task` commands with `BypassSandbox: true` (or ensure `TASKDATA`/`TASKRC` point to host storage).

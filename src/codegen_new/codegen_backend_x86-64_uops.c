@@ -995,15 +995,6 @@ codegen_JMP(codeblock_t *block, uop_t *uop)
     return 0;
 }
 
-static inline void
-patch_disp32(uint32_t *disp_ptr, const void *target)
-{
-    intptr_t delta = (intptr_t) ((const uint8_t *) target - ((const uint8_t *) disp_ptr + 4));
-    assert(delta >= INT32_MIN && delta <= INT32_MAX);
-    uint32_t disp = (uint32_t) delta;
-    memcpy(disp_ptr, &disp, sizeof(disp));
-}
-
 static int
 codegen_EXIT_BLOCK(codeblock_t *block, uop_t *uop)
 {
