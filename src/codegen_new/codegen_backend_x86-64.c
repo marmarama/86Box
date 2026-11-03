@@ -57,10 +57,10 @@ host_reg_def_t codegen_host_reg_list[CODEGEN_HOST_REGS] = {
     { REG_EAX, 0 },
     { REG_EBX, 0 },
     { REG_EDX, 0 },
-    { REG_R10, 0 },
-    { REG_R11, 0 },
-    { REG_R13, 0 },
-    { REG_R15, 0 }
+    { REG_R10, HOST_REG_FLAG_NO_BH },
+    { REG_R11, HOST_REG_FLAG_NO_BH },
+    { REG_R13, HOST_REG_FLAG_NO_BH },
+    { REG_R15, HOST_REG_FLAG_NO_BH }
 };
 
 /* The Windows x64 frame: 0x38 bytes of block temporaries as before, then
