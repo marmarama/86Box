@@ -571,6 +571,10 @@ static int uop_has_bh = 0;
 static void
 alloc_reg(ir_reg_t ir_reg)
 {
+#ifdef CODEGEN_BACKEND_PINS_CYCLES
+    if (IREG_GET_REG(ir_reg.reg) == IREG_cycles)
+        return;
+#endif
     host_reg_set_t *reg_set = get_reg_set(ir_reg);
     int             nr_regs = (reg_set == &host_reg_set) ? CODEGEN_HOST_REGS : CODEGEN_HOST_FP_REGS;
 
@@ -591,6 +595,10 @@ alloc_reg(ir_reg_t ir_reg)
 static void
 alloc_dest_reg(ir_reg_t ir_reg, int dest_reference)
 {
+#ifdef CODEGEN_BACKEND_PINS_CYCLES
+    if (IREG_GET_REG(ir_reg.reg) == IREG_cycles)
+        return;
+#endif
     host_reg_set_t *reg_set = get_reg_set(ir_reg);
     int             nr_regs = (reg_set == &host_reg_set) ? CODEGEN_HOST_REGS : CODEGEN_HOST_FP_REGS;
 
@@ -662,6 +670,13 @@ codegen_reg_alloc_register(ir_reg_t dest_reg_a, ir_reg_t src_reg_a, ir_reg_t src
 ir_host_reg_t
 codegen_reg_alloc_read_reg(codeblock_t *block, ir_reg_t ir_reg, int *host_reg_idx)
 {
+#ifdef CODEGEN_BACKEND_PINS_CYCLES
+    if (IREG_GET_REG(ir_reg.reg) == IREG_cycles) {
+        if (host_reg_idx)
+            *host_reg_idx = -1;
+        return REG_CYCLES | IREG_GET_SIZE(ir_reg.reg);
+    }
+#endif
     host_reg_set_t *reg_set = get_reg_set(ir_reg);
     int             c;
 
@@ -735,6 +750,11 @@ codegen_reg_alloc_read_reg(codeblock_t *block, ir_reg_t ir_reg, int *host_reg_id
 ir_host_reg_t
 codegen_reg_alloc_write_reg(codeblock_t *block, ir_reg_t ir_reg)
 {
+#ifdef CODEGEN_BACKEND_PINS_CYCLES
+    if (IREG_GET_REG(ir_reg.reg) == IREG_cycles) {
+        return REG_CYCLES | IREG_GET_SIZE(ir_reg.reg);
+    }
+#endif
     host_reg_set_t *reg_set = get_reg_set(ir_reg);
     int             c;
 
@@ -819,6 +839,10 @@ codegen_reg_alloc_write_reg(codeblock_t *block, ir_reg_t ir_reg)
 int
 codegen_reg_is_loaded(ir_reg_t ir_reg)
 {
+#ifdef CODEGEN_BACKEND_PINS_CYCLES
+    if (IREG_GET_REG(ir_reg.reg) == IREG_cycles)
+        return 1;
+#endif
     const host_reg_set_t *reg_set = get_reg_set(ir_reg);
 
     /*Search for previous version in host register*/
@@ -840,6 +864,10 @@ codegen_reg_is_loaded(ir_reg_t ir_reg)
 void
 codegen_reg_rename(codeblock_t *block, ir_reg_t src, ir_reg_t dst)
 {
+#ifdef CODEGEN_BACKEND_PINS_CYCLES
+    if (IREG_GET_REG(src.reg) == IREG_cycles || IREG_GET_REG(dst.reg) == IREG_cycles)
+        return;
+#endif
     host_reg_set_t *reg_set = get_reg_set(src);
     int             c;
     int             target;

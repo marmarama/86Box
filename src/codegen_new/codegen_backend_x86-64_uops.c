@@ -260,7 +260,10 @@ codegen_ANDN(codeblock_t *block, uop_t *uop)
 static int
 codegen_CALL_FUNC(codeblock_t *block, uop_t *uop)
 {
+    int cycles_disp = (int) offsetof(cpu_state_t, _cycles) - 128;
+    host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, cycles_disp, REG_R14);
     host_x86_CALL(block, uop->p);
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_R14, REG_RBP, cycles_disp);
 
     return 0;
 }
@@ -268,14 +271,17 @@ codegen_CALL_FUNC(codeblock_t *block, uop_t *uop)
 static int
 codegen_CALL_FUNC_RESULT(codeblock_t *block, uop_t *uop)
 {
-    int dest_reg = HOST_REG_GET(uop->dest_reg_a_real);
+    int dest_reg    = HOST_REG_GET(uop->dest_reg_a_real);
+    int cycles_disp = (int) offsetof(cpu_state_t, _cycles) - 128;
 
 #    ifdef RECOMPILER_DEBUG
     int dest_size = IREG_GET_SIZE(uop->dest_reg_a_real);
     if (!REG_IS_L(dest_size))
         fatal("CALL_FUNC_RESULT %02x\n", uop->dest_reg_a_real);
 #    endif
+    host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, cycles_disp, REG_R14);
     host_x86_CALL(block, uop->p);
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_R14, REG_RBP, cycles_disp);
     host_x86_MOV32_REG_REG(block, dest_reg, REG_EAX);
 
     return 0;
@@ -284,6 +290,8 @@ codegen_CALL_FUNC_RESULT(codeblock_t *block, uop_t *uop)
 static int
 codegen_CALL_INSTRUCTION_FUNC(codeblock_t *block, uop_t *uop)
 {
+    int cycles_disp = (int) offsetof(cpu_state_t, _cycles) - 128;
+    host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, cycles_disp, REG_R14);
     if (codegen_profile_active) {
 #    if _WIN64
         host_x86_MOV32_REG_IMM(block, REG_ECX, uop->imm_data);
@@ -301,6 +309,7 @@ codegen_CALL_INSTRUCTION_FUNC(codeblock_t *block, uop_t *uop)
 #    endif
         host_x86_CALL(block, uop->p);
     }
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_R14, REG_RBP, cycles_disp);
     host_x86_TEST32_REG(block, REG_EAX, REG_EAX);
     host_x86_JNZ(block, codegen_exit_rout);
 
@@ -1011,11 +1020,10 @@ codegen_EXIT_BLOCK(codeblock_t *block, uop_t *uop)
     host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, pc_disp, target_pc);
 
     /* 1. Cycle check:
-          cmp dword ptr [rbp + (offsetof(cpu_state_t, _cycles) - 128)], 0
+          cmp r14d, 0
           jle .Lexit_cycles
     */
-    int cycles_disp = (int) offsetof(cpu_state_t, _cycles) - 128;
-    host_x86_CMP32_BASE_OFFSET_IMM(block, REG_RBP, cycles_disp, 0);
+    host_x86_CMP32_REG_IMM(block, REG_R14, 0);
     uint32_t *jle_disp = host_x86_JLE_long(block);
 
     /* 2. Asynchronous event check (NMI, SMI, trap flag, reset, abrt, etc.):
@@ -1092,8 +1100,7 @@ codegen_EXIT_BLOCK_RET(codeblock_t *block, uop_t *uop)
     uint32_t *jne_unlinked = host_x86_JNZ_long(block);
 
     /* 2. Cycle check: */
-    int cycles_disp = (int) offsetof(cpu_state_t, _cycles) - 128;
-    host_x86_CMP32_BASE_OFFSET_IMM(block, REG_RBP, cycles_disp, 0);
+    host_x86_CMP32_REG_IMM(block, REG_R14, 0);
     uint32_t *jle_disp = host_x86_JLE_long(block);
 
     /* 3. Asynchronous event check: */

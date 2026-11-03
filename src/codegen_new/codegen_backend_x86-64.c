@@ -51,14 +51,15 @@ void *codegen_event_stub;
 host_reg_def_t codegen_host_reg_list[CODEGEN_HOST_REGS] = {
     /* Note: while EAX, EDX, R10, R11 are normally volatile registers under x86
        calling conventions, the recompiler will explicitly save and restore
-       them across memory helper calls on the slow path */
+       them across memory helper calls on the slow path.
+       EBX, R13, R15 are callee-saved and preserved across calls by ABI.
+       R14 is pinned permanently across blocks to hold cpu_state._cycles. */
     { REG_EAX, 0 },
     { REG_EBX, 0 },
     { REG_EDX, 0 },
     { REG_R10, HOST_REG_FLAG_NO_BH },
     { REG_R11, HOST_REG_FLAG_NO_BH },
     { REG_R13, HOST_REG_FLAG_NO_BH },
-    { REG_R14, HOST_REG_FLAG_NO_BH },
     { REG_R15, HOST_REG_FLAG_NO_BH }
 };
 
@@ -143,9 +144,10 @@ build_load_routine(codeblock_t *block, int size, int is_float)
     host_x86_PUSH(block, REG_RDX);
     host_x86_PUSH(block, REG_R10);
     host_x86_PUSH(block, REG_R11);
+    int cycles_disp = (int) offsetof(cpu_state_t, _cycles) - 128;
+    host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, cycles_disp, REG_R14);
 #    if _WIN64
     host_x86_SUB64_REG_IMM(block, REG_RSP, 0x28);
-    // host_x86_MOV32_REG_REG(block, REG_ECX, uop->imm_data);
 #    else
     /* Align RSP to 16: entry RSP%16=8 (after CALL from JIT block), four PUSHes
        (RAX, RDX, R10, R11) subtract 32 (multiple of 16), so RSP%16 is still 8;
@@ -170,6 +172,7 @@ build_load_routine(codeblock_t *block, int size, int is_float)
         host_x86_CALL(block, codegen_profile_active ? (void *) codegen_profile_readmemql : (void *) readmemql);
         host_x86_MOVQ_XREG_REG(block, REG_XMM_TEMP, REG_RAX);
     }
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_R14, REG_RBP, cycles_disp);
 #    if _WIN64
     host_x86_ADD64_REG_IMM(block, REG_RSP, 0x28);
 #    else
@@ -247,6 +250,8 @@ build_store_routine(codeblock_t *block, int size, int is_float)
     host_x86_PUSH(block, REG_RDX);
     host_x86_PUSH(block, REG_R10);
     host_x86_PUSH(block, REG_R11);
+    int cycles_disp = (int) offsetof(cpu_state_t, _cycles) - 128;
+    host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, cycles_disp, REG_R14);
 #    if _WIN64
     host_x86_SUB64_REG_IMM(block, REG_RSP, 0x28);
     if (size == 4 && is_float)
@@ -261,7 +266,6 @@ build_store_routine(codeblock_t *block, int size, int is_float)
        (RAX, RDX, R10, R11) subtract 32 (multiple of 16), so RSP%16 is still 8;
        subtract 8 more to satisfy the SysV ABI before calling C. */
     host_x86_SUB64_REG_IMM(block, REG_RSP, 0x8);
-    // host_x86_MOV32_REG_REG(block, REG_EDI, REG_ECX);  //address
     if (size == 4 && is_float)
         host_x86_MOVD_REG_XREG(block, REG_ESI, REG_XMM_TEMP); // data
     else if (size == 8)
@@ -277,6 +281,7 @@ build_store_routine(codeblock_t *block, int size, int is_float)
         host_x86_CALL(block, codegen_profile_active ? (void *) codegen_profile_writememll : (void *) writememll);
     else if (size == 8)
         host_x86_CALL(block, codegen_profile_active ? (void *) codegen_profile_writememql : (void *) writememql);
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_R14, REG_RBP, cycles_disp);
 #    if _WIN64
     host_x86_ADD64_REG_IMM(block, REG_RSP, 0x28);
 #    else
@@ -358,6 +363,8 @@ codegen_backend_init(void)
 #    endif
     host_x86_CALL(block, (void *) x86gpf);
     codegen_exit_rout = &block_write_data[block_pos];
+    int cycles_disp = (int) offsetof(cpu_state_t, _cycles) - 128;
+    host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, cycles_disp, REG_R14);
 #ifdef _WIN64
     /* XMM6 and XMM7 hold guest FPU/MMX values in blocks, and the Windows
        x64 ABI makes them the caller's: put back what the caller had. */
@@ -389,6 +396,7 @@ codegen_backend_init(void)
     host_x86_PUSH(block, REG_RDX);
     host_x86_PUSH(block, REG_R10);
     host_x86_PUSH(block, REG_R11);
+    host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, cycles_disp, REG_R14);
 #ifdef _WIN64
     host_x86_SUB64_REG_IMM(block, REG_RSP, 0x28);
 #else
@@ -400,6 +408,7 @@ codegen_backend_init(void)
 #else
     host_x86_ADD64_REG_IMM(block, REG_RSP, 0x8);
 #endif
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_R14, REG_RBP, cycles_disp);
     host_x86_TEST32_REG(block, REG_EAX, REG_EAX);
     uint8_t *cold_exit_branch = host_x86_JZ_short(block);
 
@@ -435,13 +444,12 @@ codegen_backend_init(void)
          8. On miss / event / compile needed: falls back to codegen_handle_dispatch(). */
     codegen_dispatch_stub = &block_write_data[block_pos];
 
-    int cycles_disp        = (int) offsetof(cpu_state_t, _cycles) - 128;
     int exit_disp          = (int) offsetof(cpu_state_t, exit_request) - 128;
     int pc_disp            = (int) offsetof(cpu_state_t, pc) - 128;
     int cs_base_disp       = (int) offsetof(cpu_state_t, seg_cs.base) - 128;
 
     /* 1. Cycle & asynchronous event checks */
-    host_x86_CMP32_BASE_OFFSET_IMM(block, REG_RBP, cycles_disp, 0);
+    host_x86_CMP32_REG_IMM(block, REG_R14, 0);
     uint32_t *miss_cycles = host_x86_JLE_long(block);
 
     host_x86_CMP32_BASE_OFFSET_IMM(block, REG_RBP, exit_disp, 0);
@@ -582,10 +590,14 @@ codegen_backend_init(void)
 
 #ifdef _WIN64
     host_x86_SUB64_REG_IMM(block, REG_RSP, 0x20);
+    host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, cycles_disp, REG_R14);
     host_x86_CALL(block, (void *) codegen_handle_dispatch);
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_R14, REG_RBP, cycles_disp);
     host_x86_ADD64_REG_IMM(block, REG_RSP, 0x20);
 #else
+    host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, cycles_disp, REG_R14);
     host_x86_CALL(block, (void *) codegen_handle_dispatch);
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_R14, REG_RBP, cycles_disp);
 #endif
     host_x86_TEST64_REG(block, REG_RAX, REG_RAX);
     uint8_t *dispatch_miss = host_x86_JZ_short(block);
@@ -620,6 +632,7 @@ codegen_backend_init(void)
 #endif
     host_x86_MOV64_REG_IMM(block, REG_RBP, ((uintptr_t) &cpu_state) + 128);
     host_x86_MOV64_REG_IMM(block, REG_R12, (uint64_t) (uintptr_t) readlookup2);
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_R14, REG_RBP, cycles_disp);
 #ifdef _WIN64
     host_x86_JMP_REG(block, REG_RCX);
 #else
@@ -654,6 +667,8 @@ codegen_backend_prologue(codeblock_t *block)
     block_pos = BLOCK_START; /*Entry code*/
     block->direct_entry_pos = block_pos;
     if (codegen_dump_is_active() || codegen_profile_active || codegen_hang_detect_active) {
+        int cycles_disp = (int) offsetof(cpu_state_t, _cycles) - 128;
+        host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, cycles_disp, REG_R14);
 #ifdef _WIN64
         host_x86_MOV64_REG_IMM(block, REG_RCX, (uint64_t) (uintptr_t) block);
 #else
