@@ -541,24 +541,10 @@ main_thread_fn()
                 pc_reset_hard_init();
             }
 
-            if (dopause) {
+            if (dopause)
                 ack_pause();
-                plat_delay_ms(1);
-            } else {
-                qint64 remaining_ns = quantum_ns - pacer_debt_ns;
-                if (remaining_ns >= 1500000LL) {
-                    plat_delay_ms((uint32_t) (remaining_ns / 1000000ULL));
-                } else if (remaining_ns > 0) {
-                    uint64_t target_ns = elapsed_timer.nsecsElapsed() + remaining_ns;
-                    while ((qint64) elapsed_timer.nsecsElapsed() < (qint64) target_ns) {
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
-                        __builtin_ia32_pause();
-#elif defined(__aarch64__)
-                        __asm__ __volatile__("yield");
-#endif
-                    }
-                }
-            }
+
+            plat_delay_ms(1);
         }
     }
 

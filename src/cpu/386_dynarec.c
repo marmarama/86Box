@@ -429,16 +429,19 @@ codegen_pace_tick_in_jit(void)
         /* If we are ahead of real-time schedule, wait */
         if (jit_pacer_debt_ns < (int64_t) quantum_ns) {
             int64_t remaining_ns = (int64_t) quantum_ns - jit_pacer_debt_ns;
-            /* OS sleep path if ahead by >= 1.5 ms */
-            if (remaining_ns >= 1500000LL) {
-                plat_delay_ms((uint32_t) (remaining_ns / 1000000ULL));
+            /* OS sleep path if ahead by > 100 us or if CPU is halted */
+            if (remaining_ns > 100000LL || cpu_is_halted) {
+                uint32_t ms_to_sleep = (uint32_t) (remaining_ns / 1000000ULL);
+                if (ms_to_sleep == 0)
+                    ms_to_sleep = 1;
+                plat_delay_ms(ms_to_sleep);
                 now_ns = plat_get_time_ns();
                 jit_pacer_debt_ns += (int64_t) (now_ns - jit_pacer_last_ns);
                 jit_pacer_last_ns = now_ns;
                 remaining_ns = (int64_t) quantum_ns - jit_pacer_debt_ns;
             }
-            /* Sub-millisecond spin-wait path using pause/yield polling loop */
-            if (remaining_ns > 0) {
+            /* Sub-millisecond spin-wait path: ONLY for small tail fractions (<= 100 us) and NOT halted */
+            if (remaining_ns > 0 && remaining_ns <= 100000LL && !cpu_is_halted) {
                 uint64_t target_ns = plat_get_time_ns() + (uint64_t) remaining_ns;
                 while (plat_get_time_ns() < target_ns) {
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
