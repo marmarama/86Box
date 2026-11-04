@@ -694,6 +694,7 @@ codegen_set_rounding_mode(int mode)
 void
 codegen_backend_prologue(codeblock_t *block)
 {
+    codegen_mem_slowpath_reset();
     block_pos = BLOCK_START; /*Entry code*/
     block->direct_entry_pos = block_pos;
     if (codegen_dump_is_active() || codegen_profile_active || codegen_hang_detect_active) {
@@ -727,5 +728,7 @@ codegen_backend_epilogue(codeblock_t *block)
         host_x86_JMP(block, codegen_dispatch_stub);
     else
         host_x86_JMP(block, codegen_exit_rout);
+
+    codegen_mem_emit_slowpaths(block);
 }
 #endif

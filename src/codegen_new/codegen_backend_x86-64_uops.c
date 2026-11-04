@@ -1332,12 +1332,105 @@ codegen_LOAD_SEG(codeblock_t *block, uop_t *uop)
     return 0;
 }
 
+#define MAX_MEM_SLOWPATHS 1024
+
+typedef struct mem_slowpath_stub_t {
+    uint8_t   is_load;     /* 1 for load, 0 for store */
+    int       dest_size;   /* IREG_SIZE_B, W, L, BH */
+    int       dest_reg;    /* destination host register (for load) */
+    uint32_t *misaligned_offset;
+    uint32_t *branch_offset;
+    uint8_t  *resume_target;
+} mem_slowpath_stub_t;
+
+static mem_slowpath_stub_t mem_slowpath_stubs[MAX_MEM_SLOWPATHS];
+static int mem_slowpath_count = 0;
+
+void
+codegen_mem_slowpath_reset(void)
+{
+    mem_slowpath_count = 0;
+}
+
+static void
+codegen_mem_record_slowpath(uint8_t is_load, int dest_reg, int dest_size,
+                            uint32_t *misaligned_offset, uint32_t *branch_offset,
+                            uint8_t *resume_target)
+{
+    if (mem_slowpath_count >= MAX_MEM_SLOWPATHS) {
+        fatal("codegen_mem_record_slowpath: exceeded MAX_MEM_SLOWPATHS (%d)\n", MAX_MEM_SLOWPATHS);
+    }
+
+    mem_slowpath_stub_t *stub = &mem_slowpath_stubs[mem_slowpath_count++];
+    stub->is_load           = is_load;
+    stub->dest_reg          = dest_reg;
+    stub->dest_size         = dest_size;
+    stub->misaligned_offset = misaligned_offset;
+    stub->branch_offset     = branch_offset;
+    stub->resume_target     = resume_target;
+}
+
+void
+codegen_mem_emit_slowpaths(codeblock_t *block)
+{
+    for (int i = 0; i < mem_slowpath_count; i++) {
+        mem_slowpath_stub_t *stub = &mem_slowpath_stubs[i];
+
+        codegen_alloc_bytes(block, 64);
+
+        uint8_t *stub_target = &block_write_data[block_pos];
+        patch_disp32(stub->branch_offset, stub_target);
+        if (stub->misaligned_offset) {
+            patch_disp32(stub->misaligned_offset, stub_target);
+        }
+
+        if (stub->is_load) {
+            if (REG_IS_B(stub->dest_size) || REG_IS_BH(stub->dest_size)) {
+                host_x86_CALL(block, codegen_mem_load_byte);
+            } else if (REG_IS_W(stub->dest_size)) {
+                host_x86_CALL(block, codegen_mem_load_word);
+            } else {
+                host_x86_CALL(block, codegen_mem_load_long);
+            }
+
+            host_x86_TEST32_REG(block, REG_ESI, REG_ESI);
+            host_x86_JNZ(block, codegen_exit_rout);
+
+            if (REG_IS_BH(stub->dest_size)) {
+                host_x86_ROL16_IMM(block, stub->dest_reg, 8);
+                host_x86_MOV8_REG_REG(block, stub->dest_reg, REG_ECX);
+                host_x86_ROL16_IMM(block, stub->dest_reg, 8);
+            } else if (REG_IS_B(stub->dest_size)) {
+                host_x86_MOV8_REG_REG(block, stub->dest_reg, REG_ECX);
+            } else if (REG_IS_W(stub->dest_size)) {
+                host_x86_MOV16_REG_REG(block, stub->dest_reg, REG_ECX);
+            } else if (REG_IS_L(stub->dest_size)) {
+                host_x86_MOV32_REG_REG(block, stub->dest_reg, REG_ECX);
+            }
+        } else {
+            if (REG_IS_B(stub->dest_size) || REG_IS_BH(stub->dest_size)) {
+                host_x86_CALL(block, codegen_mem_store_byte);
+            } else if (REG_IS_W(stub->dest_size)) {
+                host_x86_CALL(block, codegen_mem_store_word);
+            } else {
+                host_x86_CALL(block, codegen_mem_store_long);
+            }
+
+            host_x86_TEST32_REG(block, REG_ESI, REG_ESI);
+            host_x86_JNZ(block, codegen_exit_rout);
+        }
+
+        host_x86_JMP(block, stub->resume_target);
+    }
+
+    mem_slowpath_count = 0;
+}
+
 static void
 codegen_mem_load_fastpath(codeblock_t *block, int dest_reg, int dest_size)
 {
     uint32_t *misaligned_offset = NULL;
     uint32_t *branch_offset;
-    uint32_t *done_offset;
 
     /* Ensure entire inlined load sequence fits contiguously in the current block */
     codegen_alloc_bytes(block, 64);
@@ -1357,47 +1450,23 @@ codegen_mem_load_fastpath(codeblock_t *block, int dest_reg, int dest_size)
     host_x86_CMP64_REG_IMM(block, REG_RDI, (uint32_t) -1);
     branch_offset = host_x86_JZ_long(block);
 
-    if (REG_IS_B(dest_size) || REG_IS_BH(dest_size)) {
-        host_x86_MOVZX_BASE_INDEX_32_8(block, REG_ECX, REG_RDI, REG_RSI);
+    if (REG_IS_L(dest_size)) {
+        host_x86_MOV32_REG_BASE_INDEX(block, dest_reg, REG_RDI, REG_RSI);
     } else if (REG_IS_W(dest_size)) {
         host_x86_MOVZX_BASE_INDEX_32_16(block, REG_ECX, REG_RDI, REG_RSI);
-    } else {
-        host_x86_MOV32_REG_BASE_INDEX(block, REG_ECX, REG_RDI, REG_RSI);
-    }
-
-    done_offset = host_x86_JMP_long(block);
-
-    /* Slow path */
-    *branch_offset = (uint32_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) branch_offset) - 4;
-    if (misaligned_offset) {
-        *misaligned_offset = (uint32_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) misaligned_offset) - 4;
-    }
-
-    if (REG_IS_B(dest_size) || REG_IS_BH(dest_size)) {
-        host_x86_CALL(block, codegen_mem_load_byte);
-    } else if (REG_IS_W(dest_size)) {
-        host_x86_CALL(block, codegen_mem_load_word);
-    } else {
-        host_x86_CALL(block, codegen_mem_load_long);
-    }
-
-    host_x86_TEST32_REG(block, REG_ESI, REG_ESI);
-    host_x86_JNZ(block, codegen_exit_rout);
-
-    /* Done */
-    *done_offset = (uint32_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) done_offset) - 4;
-
-    if (REG_IS_BH(dest_size)) {
-        host_x86_ROL16_IMM(block, dest_reg, 8);
-        host_x86_MOV8_REG_REG(block, dest_reg, REG_ECX);
-        host_x86_ROL16_IMM(block, dest_reg, 8);
-    } else if (REG_IS_B(dest_size)) {
-        host_x86_MOV8_REG_REG(block, dest_reg, REG_ECX);
-    } else if (REG_IS_W(dest_size)) {
         host_x86_MOV16_REG_REG(block, dest_reg, REG_ECX);
-    } else if (REG_IS_L(dest_size)) {
-        host_x86_MOV32_REG_REG(block, dest_reg, REG_ECX);
+    } else if (REG_IS_BH(dest_size)) {
+        host_x86_MOVZX_BASE_INDEX_32_8(block, REG_ECX, REG_RDI, REG_RSI);
+        host_x86_ROL16_IMM(block, dest_reg, 8);
+        host_x86_MOV8_REG_REG(block, dest_reg, REG_ECX);
+        host_x86_ROL16_IMM(block, dest_reg, 8);
+    } else { /* REG_IS_B */
+        host_x86_MOVZX_BASE_INDEX_32_8(block, REG_ECX, REG_RDI, REG_RSI);
+        host_x86_MOV8_REG_REG(block, dest_reg, REG_ECX);
     }
+
+    uint8_t *resume_target = &block_write_data[block_pos];
+    codegen_mem_record_slowpath(1, dest_reg, dest_size, misaligned_offset, branch_offset, resume_target);
 }
 
 static int
@@ -1493,7 +1562,6 @@ codegen_mem_store_fastpath(codeblock_t *block, int src_size)
 {
     uint32_t *misaligned_offset = NULL;
     uint32_t *branch_offset;
-    uint32_t *done_offset;
     intptr_t  write_offset = (intptr_t) writelookup2 - (intptr_t) readlookup2;
 
     /* Ensure entire inlined store sequence fits contiguously in the current block */
@@ -1527,27 +1595,8 @@ codegen_mem_store_fastpath(codeblock_t *block, int src_size)
         host_x86_MOV32_BASE_INDEX_REG(block, REG_RDI, REG_RSI, REG_ECX);
     }
 
-    done_offset = host_x86_JMP_long(block);
-
-    /* Slow path */
-    *branch_offset = (uint32_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) branch_offset) - 4;
-    if (misaligned_offset) {
-        *misaligned_offset = (uint32_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) misaligned_offset) - 4;
-    }
-
-    if (REG_IS_B(src_size) || REG_IS_BH(src_size)) {
-        host_x86_CALL(block, codegen_mem_store_byte);
-    } else if (REG_IS_W(src_size)) {
-        host_x86_CALL(block, codegen_mem_store_word);
-    } else {
-        host_x86_CALL(block, codegen_mem_store_long);
-    }
-
-    host_x86_TEST32_REG(block, REG_ESI, REG_ESI);
-    host_x86_JNZ(block, codegen_exit_rout);
-
-    /* Done */
-    *done_offset = (uint32_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) done_offset) - 4;
+    uint8_t *resume_target = &block_write_data[block_pos];
+    codegen_mem_record_slowpath(0, 0, src_size, misaligned_offset, branch_offset, resume_target);
 }
 
 static int

@@ -80,6 +80,9 @@ extern void *codegen_exit_rout;
 extern void *codegen_event_stub;
 extern void *codegen_dispatch_stub;
 
+void codegen_mem_slowpath_reset(void);
+void codegen_mem_emit_slowpaths(codeblock_t *block);
+
 static inline void
 patch_disp32(uint32_t *disp_ptr, const void *target)
 {
