@@ -399,7 +399,14 @@ codegen_CALL_FUNC(codeblock_t *block, uop_t *uop)
 {
     int cycles_disp = (int) offsetof(cpu_state_t, _cycles) - 128;
     host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, cycles_disp, REG_R14);
+#ifdef CODEGEN_BACKEND_PINS_ESP
+    int esp_disp = (int) offsetof(cpu_state_t, regs[4].l) - 128;
+    host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, esp_disp, REG_PINNED_ESP);
+#endif
     host_x86_CALL(block, uop->p);
+#ifdef CODEGEN_BACKEND_PINS_ESP
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_PINNED_ESP, REG_RBP, esp_disp);
+#endif
     host_x86_MOV32_REG_BASE_OFFSET(block, REG_R14, REG_RBP, cycles_disp);
 
     return 0;
@@ -417,7 +424,14 @@ codegen_CALL_FUNC_RESULT(codeblock_t *block, uop_t *uop)
         fatal("CALL_FUNC_RESULT %02x\n", uop->dest_reg_a_real);
 #    endif
     host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, cycles_disp, REG_R14);
+#ifdef CODEGEN_BACKEND_PINS_ESP
+    int esp_disp = (int) offsetof(cpu_state_t, regs[4].l) - 128;
+    host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, esp_disp, REG_PINNED_ESP);
+#endif
     host_x86_CALL(block, uop->p);
+#ifdef CODEGEN_BACKEND_PINS_ESP
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_PINNED_ESP, REG_RBP, esp_disp);
+#endif
     host_x86_MOV32_REG_BASE_OFFSET(block, REG_R14, REG_RBP, cycles_disp);
     host_x86_MOV32_REG_REG(block, dest_reg, REG_EAX);
 
@@ -429,6 +443,10 @@ codegen_CALL_INSTRUCTION_FUNC(codeblock_t *block, uop_t *uop)
 {
     int cycles_disp = (int) offsetof(cpu_state_t, _cycles) - 128;
     host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, cycles_disp, REG_R14);
+#ifdef CODEGEN_BACKEND_PINS_ESP
+    int esp_disp = (int) offsetof(cpu_state_t, regs[4].l) - 128;
+    host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, esp_disp, REG_PINNED_ESP);
+#endif
     if (codegen_profile_active) {
 #    if _WIN64
         host_x86_MOV32_REG_IMM(block, REG_ECX, uop->imm_data);
@@ -446,6 +464,9 @@ codegen_CALL_INSTRUCTION_FUNC(codeblock_t *block, uop_t *uop)
 #    endif
         host_x86_CALL(block, uop->p);
     }
+#ifdef CODEGEN_BACKEND_PINS_ESP
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_PINNED_ESP, REG_RBP, esp_disp);
+#endif
     host_x86_MOV32_REG_BASE_OFFSET(block, REG_R14, REG_RBP, cycles_disp);
     host_x86_TEST32_REG(block, REG_EAX, REG_EAX);
     host_x86_JNZ(block, codegen_exit_rout);
@@ -941,12 +962,19 @@ codegen_FP_ENTER(codeblock_t *block, uop_t *uop)
     host_x86_TEST32_REG_IMM(block, REG_ECX, 0xc);
     branch_offset = host_x86_JZ_long(block);
     host_x86_MOV32_ABS_IMM(block, &cpu_state.oldpc, uop->imm_data);
+#ifdef CODEGEN_BACKEND_PINS_ESP
+    int esp_disp = (int) offsetof(cpu_state_t, regs[4].l) - 128;
+    host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, esp_disp, REG_PINNED_ESP);
+#endif
 #    if _WIN64
     host_x86_MOV32_REG_IMM(block, REG_ECX, 7);
 #    else
     host_x86_MOV32_REG_IMM(block, REG_EDI, 7);
 #    endif
     host_x86_CALL(block, x86_int);
+#ifdef CODEGEN_BACKEND_PINS_ESP
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_PINNED_ESP, REG_RBP, esp_disp);
+#endif
     host_x86_JMP(block, codegen_exit_rout);
     *branch_offset = (uint32_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) branch_offset) - 4;
 
@@ -961,12 +989,19 @@ codegen_MMX_ENTER(codeblock_t *block, uop_t *uop)
     host_x86_TEST32_REG_IMM(block, REG_ECX, 0xc);
     branch_offset = host_x86_JZ_long(block);
     host_x86_MOV32_ABS_IMM(block, &cpu_state.oldpc, uop->imm_data);
+#ifdef CODEGEN_BACKEND_PINS_ESP
+    int esp_disp = (int) offsetof(cpu_state_t, regs[4].l) - 128;
+    host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, esp_disp, REG_PINNED_ESP);
+#endif
 #    if _WIN64
     host_x86_MOV32_REG_IMM(block, REG_ECX, 7);
 #    else
     host_x86_MOV32_REG_IMM(block, REG_EDI, 7);
 #    endif
     host_x86_CALL(block, x86_int);
+#ifdef CODEGEN_BACKEND_PINS_ESP
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_PINNED_ESP, REG_RBP, esp_disp);
+#endif
     host_x86_JMP(block, codegen_exit_rout);
     *branch_offset = (uint32_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) branch_offset) - 4;
     host_x86_MOV32_ABS_IMM(block, &cpu_state.tag[0], 0x01010101);
@@ -1283,7 +1318,14 @@ codegen_LOAD_SEG(codeblock_t *block, uop_t *uop)
     host_x86_MOV16_REG_REG(block, REG_DI, src_reg);
     host_x86_MOV64_REG_IMM(block, REG_ESI, (uint64_t) uop->p);
 #    endif
+#ifdef CODEGEN_BACKEND_PINS_ESP
+    int esp_disp = (int) offsetof(cpu_state_t, regs[4].l) - 128;
+    host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, esp_disp, REG_PINNED_ESP);
+#endif
     host_x86_CALL(block, (void *) loadseg);
+#ifdef CODEGEN_BACKEND_PINS_ESP
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_PINNED_ESP, REG_RBP, esp_disp);
+#endif
     host_x86_TEST32_REG(block, REG_EAX, REG_EAX);
     host_x86_JNZ(block, codegen_exit_rout);
 
