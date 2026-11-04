@@ -115,6 +115,12 @@ ropCALL_r16(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(ui
     uop_MOV_IMM(ir, IREG_pc, dest_addr);
 
     codegen_mark_code_present(block, cs + op_pc, 2);
+
+    if (!stack32) {
+        block->exit_type          = BLOCK_EXIT_DIRECT_1;
+        block->links[0].target_pc = dest_addr;
+    }
+
     return -1;
 }
 uint32_t
@@ -170,7 +176,7 @@ ropCALL_far_32(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED
 }
 
 uint32_t
-ropRET_16(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), UNUSED(uint32_t op_pc))
+ropRET_16(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), UNUSED(uint32_t op_pc))
 {
     uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
 
@@ -182,6 +188,11 @@ ropRET_16(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNU
     }
     ADD_SP(ir, 2);
     uop_MOVZX(ir, IREG_pc, IREG_temp0_W);
+
+    if (!stack32) {
+        block->exit_type          = BLOCK_EXIT_RET;
+        block->links[0].target_pc = BLOCK_PC_INVALID;
+    }
 
     return -1;
 }
@@ -223,6 +234,12 @@ ropRET_imm_16(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(
     uop_MOVZX(ir, IREG_pc, IREG_temp0_W);
 
     codegen_mark_code_present(block, cs + op_pc, 2);
+
+    if (!stack32) {
+        block->exit_type          = BLOCK_EXIT_RET;
+        block->links[0].target_pc = BLOCK_PC_INVALID;
+    }
+
     return -1;
 }
 uint32_t
