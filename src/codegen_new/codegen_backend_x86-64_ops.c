@@ -74,7 +74,7 @@ host_x86_ADD8_REG_IMM(codeblock_t *block, int dst_reg, uint8_t imm_data)
         codegen_addbyte2(block, 0x04, imm_data); /*ADD EAX, imm_data*/
     } else {
         codegen_alloc_bytes(block, 4);
-        if (dst_reg & 8)
+        if (dst_reg >= 4)
             codegen_addbyte(block, rex_byte(0, 0, 0, dst_reg));
         codegen_addbyte3(block, 0x80, 0xc0 | RM_OP_ADD | (dst_reg & 7), imm_data); /*ADD dst_reg, imm_data*/
     }
@@ -134,7 +134,7 @@ void
 host_x86_ADD8_REG_REG(codeblock_t *block, int dst_reg, int src_reg)
 {
     codegen_alloc_bytes(block, 3);
-    if ((dst_reg & 8) || (src_reg & 8))
+    if ((dst_reg >= 4) || (src_reg >= 4))
         codegen_addbyte(block, rex_byte(0, src_reg, 0, dst_reg));
     codegen_addbyte2(block, 0x00, 0xc0 | (dst_reg & 7) | ((src_reg & 7) << 3)); /*ADD dst_reg, src_reg*/
 }
@@ -171,7 +171,7 @@ host_x86_AND8_REG_IMM(codeblock_t *block, int dst_reg, uint8_t imm_data)
         codegen_addbyte2(block, 0x24, imm_data); /*AND EAX, imm_data*/
     } else {
         codegen_alloc_bytes(block, 4);
-        if (dst_reg & 8)
+        if (dst_reg >= 4)
             codegen_addbyte(block, rex_byte(0, 0, 0, dst_reg));
         codegen_addbyte3(block, 0x80, 0xc0 | RM_OP_AND | (dst_reg & 7), imm_data); /*AND dst_reg, imm_data*/
     }
@@ -222,7 +222,7 @@ void
 host_x86_AND8_REG_REG(codeblock_t *block, int dst_reg, int src_reg)
 {
     codegen_alloc_bytes(block, 3);
-    if ((dst_reg & 8) || (src_reg & 8))
+    if ((dst_reg >= 4) || (src_reg >= 4))
         codegen_addbyte(block, rex_byte(0, src_reg, 0, dst_reg));
     codegen_addbyte2(block, 0x20, 0xc0 | (dst_reg & 7) | ((src_reg & 7) << 3)); /*AND dst_reg, src_reg*/
 }
@@ -360,7 +360,7 @@ void
 host_x86_CMP8_REG_REG(codeblock_t *block, int src_reg_a, int src_reg_b)
 {
     codegen_alloc_bytes(block, 3);
-    if ((src_reg_a & 8) || (src_reg_b & 8))
+    if ((src_reg_a >= 4) || (src_reg_b >= 4))
         codegen_addbyte(block, rex_byte(0, src_reg_b, 0, src_reg_a));
     codegen_addbyte2(block, 0x38, 0xc0 | (src_reg_a & 7) | ((src_reg_b & 7) << 3)); /*CMP src_reg_a, src_reg_b*/
 }
@@ -688,12 +688,12 @@ host_x86_MOV8_ABS_REG(codeblock_t *block, void *p, int src_reg)
 
     if (offset >= -128 && offset <= 127) {
         codegen_alloc_bytes(block, 4);
-        if (src_reg & 8)
+        if (src_reg >= 4)
             codegen_addbyte(block, rex_byte(0, src_reg, 0, 0));
         codegen_addbyte3(block, 0x88, 0x45 | ((src_reg & 7) << 3), offset); /*MOVB offset[RBP], src_reg*/
     } else if (offset < (1ULL << 32)) {
         codegen_alloc_bytes(block, 7);
-        if (src_reg & 8)
+        if (src_reg >= 4)
             codegen_addbyte(block, rex_byte(0, src_reg, 0, 0));
         codegen_addbyte2(block, 0x88, 0x85 | ((src_reg & 7) << 3)); /*MOVB offset[RBP], src_reg*/
         codegen_addlong(block, offset);
@@ -701,7 +701,7 @@ host_x86_MOV8_ABS_REG(codeblock_t *block, void *p, int src_reg)
         if ((uintptr_t) p >> 32)
             fatal("host_x86_MOV8_ABS_REG - out of range %p\n", p);
         codegen_alloc_bytes(block, 7);
-        if (src_reg & 8)
+        if (src_reg >= 4)
             codegen_addbyte(block, rex_byte(0, src_reg, 0, 0));
         codegen_addbyte(block, 0x88); /*MOVB [p], src_reg*/
         codegen_addbyte(block, 0x05 | ((src_reg & 7) << 3));
@@ -784,12 +784,12 @@ host_x86_MOV8_ABS_REG_REG_SHIFT_REG(codeblock_t *block, uint32_t addr, int base_
 {
     if (addr < 0x80 || addr >= 0xffffff80) {
         codegen_alloc_bytes(block, 5);
-        if ((src_reg & 8) || (base_reg & 8) || (index_reg & 8))
+        if ((src_reg >= 4) || (base_reg & 8) || (index_reg & 8))
             codegen_addbyte(block, rex_byte(0, src_reg, index_reg, base_reg));
         codegen_addbyte4(block, 0x88, 0x44 | ((src_reg & 7) << 3), (base_reg & 7) | ((index_reg & 7) << 3) | (shift << 6), addr & 0xff); /*MOV addr[base_reg + idx_reg << shift], src_reg*/
     } else {
         codegen_alloc_bytes(block, 8);
-        if ((src_reg & 8) || (base_reg & 8) || (index_reg & 8))
+        if ((src_reg >= 4) || (base_reg & 8) || (index_reg & 8))
             codegen_addbyte(block, rex_byte(0, src_reg, index_reg, base_reg));
         codegen_addbyte3(block, 0x88, 0x84 | ((src_reg & 7) << 3), (base_reg & 7) | ((index_reg & 7) << 3) | (shift << 6)); /*MOV addr[base_reg + idx_reg << shift], src_reg*/
         codegen_addlong(block, addr);
@@ -800,7 +800,7 @@ void
 host_x86_MOV8_BASE_INDEX_REG(codeblock_t *block, int base_reg, int index_reg, int src_reg)
 {
     codegen_alloc_bytes(block, 5);
-    if ((src_reg & 8) || (base_reg & 8) || (index_reg & 8))
+    if ((src_reg >= 4) || (base_reg & 8) || (index_reg & 8))
         codegen_addbyte(block, rex_byte(0, src_reg, index_reg, base_reg));
     if ((base_reg & 7) == 5) {
         codegen_addbyte4(block, 0x88, 0x44 | ((src_reg & 7) << 3),
@@ -847,12 +847,12 @@ host_x86_MOV8_REG_ABS(codeblock_t *block, int dst_reg, void *p)
 
     if (offset >= -128 && offset <= 127) {
         codegen_alloc_bytes(block, 4);
-        if (dst_reg & 8)
+        if (dst_reg >= 4)
             codegen_addbyte(block, rex_byte(0, dst_reg, 0, 0));
         codegen_addbyte3(block, 0x8a, 0x45 | ((dst_reg & 7) << 3), offset); /*MOV dst_reg, offset[RBP]*/
     } else if (offset < (1ULL << 32)) {
         codegen_alloc_bytes(block, 7);
-        if (dst_reg & 8)
+        if (dst_reg >= 4)
             codegen_addbyte(block, rex_byte(0, dst_reg, 0, 0));
         codegen_addbyte2(block, 0x8a, 0x85 | ((dst_reg & 7) << 3)); /*MOV dst_reg, offset[RBP]*/
         codegen_addlong(block, offset);
@@ -933,12 +933,12 @@ host_x86_MOV8_REG_ABS_REG_REG_SHIFT(codeblock_t *block, int dst_reg, uint32_t ad
 {
     if (addr < 0x80 || addr >= 0xffffff80) {
         codegen_alloc_bytes(block, 5);
-        if ((dst_reg & 8) || (base_reg & 8) || (index_reg & 8))
+        if ((dst_reg >= 4) || (base_reg & 8) || (index_reg & 8))
             codegen_addbyte(block, rex_byte(0, dst_reg, index_reg, base_reg));
         codegen_addbyte4(block, 0x8a, 0x44 | ((dst_reg & 7) << 3), (base_reg & 7) | ((index_reg & 7) << 3) | (shift << 6), addr & 0xff); /*MOV addr[base_reg + idx_reg << shift], src_reg*/
     } else {
         codegen_alloc_bytes(block, 8);
-        if ((dst_reg & 8) || (base_reg & 8) || (index_reg & 8))
+        if ((dst_reg >= 4) || (base_reg & 8) || (index_reg & 8))
             codegen_addbyte(block, rex_byte(0, dst_reg, index_reg, base_reg));
         codegen_addbyte3(block, 0x8a, 0x84 | ((dst_reg & 7) << 3), (base_reg & 7) | ((index_reg & 7) << 3) | (shift << 6)); /*MOV addr[base_reg + idx_reg << shift], src_reg*/
         codegen_addlong(block, addr);
@@ -1138,7 +1138,7 @@ void
 host_x86_MOV8_REG_IMM(codeblock_t *block, int reg, uint16_t imm_data)
 {
     codegen_alloc_bytes(block, 3);
-    if (reg & 8)
+    if (reg >= 4)
         codegen_addbyte(block, rex_byte(0, 0, 0, reg));
     codegen_addbyte2(block, 0xb0 | (reg & 7), imm_data); /*MOV reg, imm_data*/
 }
@@ -1180,7 +1180,7 @@ void
 host_x86_MOV8_REG_REG(codeblock_t *block, int dst_reg, int src_reg)
 {
     codegen_alloc_bytes(block, 3);
-    if ((dst_reg & 8) || (src_reg & 8))
+    if ((dst_reg >= 4) || (src_reg >= 4))
         codegen_addbyte(block, rex_byte(0, src_reg, 0, dst_reg));
     codegen_addbyte2(block, 0x88, 0xc0 | (dst_reg & 7) | ((src_reg & 7) << 3));
 }
@@ -1233,7 +1233,7 @@ host_x86_MOVSX_REG_16_8(codeblock_t *block, int dst_reg, int src_reg)
 {
     codegen_alloc_bytes(block, 5);
     codegen_addbyte(block, 0x66);
-    if ((dst_reg & 8) || (src_reg & 8))
+    if ((dst_reg & 8) || (src_reg >= 4))
         codegen_addbyte(block, rex_byte(0, dst_reg, 0, src_reg));
     codegen_addbyte3(block, 0x0f, 0xbe, 0xc0 | ((dst_reg & 7) << 3) | (src_reg & 7)); /*MOVSX dst_reg, src_reg*/
 }
@@ -1241,7 +1241,7 @@ void
 host_x86_MOVSX_REG_32_8(codeblock_t *block, int dst_reg, int src_reg)
 {
     codegen_alloc_bytes(block, 4);
-    if ((dst_reg & 8) || (src_reg & 8))
+    if ((dst_reg & 8) || (src_reg >= 4))
         codegen_addbyte(block, rex_byte(0, dst_reg, 0, src_reg));
     codegen_addbyte3(block, 0x0f, 0xbe, 0xc0 | ((dst_reg & 7) << 3) | (src_reg & 7)); /*MOVSX dst_reg, src_reg*/
 }
@@ -1286,7 +1286,7 @@ host_x86_MOVZX_REG_16_8(codeblock_t *block, int dst_reg, int src_reg)
 {
     codegen_alloc_bytes(block, 5);
     codegen_addbyte(block, 0x66);
-    if ((dst_reg & 8) || (src_reg & 8))
+    if ((dst_reg & 8) || (src_reg >= 4))
         codegen_addbyte(block, rex_byte(0, dst_reg, 0, src_reg));
     codegen_addbyte3(block, 0x0f, 0xb6, 0xc0 | ((dst_reg & 7) << 3) | (src_reg & 7)); /*MOVZX dst_reg, src_reg*/
 }
@@ -1294,7 +1294,7 @@ void
 host_x86_MOVZX_REG_32_8(codeblock_t *block, int dst_reg, int src_reg)
 {
     codegen_alloc_bytes(block, 4);
-    if ((dst_reg & 8) || (src_reg & 8))
+    if ((dst_reg & 8) || (src_reg >= 4))
         codegen_addbyte(block, rex_byte(0, dst_reg, 0, src_reg));
     codegen_addbyte3(block, 0x0f, 0xb6, 0xc0 | ((dst_reg & 7) << 3) | (src_reg & 7)); /*MOVZX dst_reg, src_reg*/
 }
@@ -1380,7 +1380,7 @@ host_x86_OR8_REG_IMM(codeblock_t *block, int dst_reg, uint8_t imm_data)
         codegen_addbyte2(block, 0x0c, imm_data); /*OR EAX, imm_data*/
     } else {
         codegen_alloc_bytes(block, 4);
-        if (dst_reg & 8)
+        if (dst_reg >= 4)
             codegen_addbyte(block, rex_byte(0, 0, 0, dst_reg));
         codegen_addbyte3(block, 0x80, 0xc0 | RM_OP_OR | (dst_reg & 7), imm_data); /*OR dst_reg, imm_data*/
     }
@@ -1431,7 +1431,7 @@ void
 host_x86_OR8_REG_REG(codeblock_t *block, int dst_reg, int src_reg)
 {
     codegen_alloc_bytes(block, 3);
-    if ((dst_reg & 8) || (src_reg & 8))
+    if ((dst_reg >= 4) || (src_reg >= 4))
         codegen_addbyte(block, rex_byte(0, src_reg, 0, dst_reg));
     codegen_addbyte2(block, 0x08, 0xc0 | (dst_reg & 7) | ((src_reg & 7) << 3)); /*OR dst_reg, src_reg*/
 }
@@ -1488,7 +1488,7 @@ void
 host_x86_ROL8_CL(codeblock_t *block, int dst_reg)
 {
     codegen_alloc_bytes(block, 3);
-    if (dst_reg & 8)
+    if (dst_reg >= 4)
         codegen_addbyte(block, rex_byte(0, 0, 0, dst_reg));
     codegen_addbyte2(block, 0xd2, 0xc0 | RM_OP_ROL | (dst_reg & 7)); /*ROL dst_reg, CL*/
 }
@@ -1514,7 +1514,7 @@ void
 host_x86_ROL8_IMM(codeblock_t *block, int dst_reg, int shift)
 {
     codegen_alloc_bytes(block, 4);
-    if (dst_reg & 8)
+    if (dst_reg >= 4)
         codegen_addbyte(block, rex_byte(0, 0, 0, dst_reg));
     codegen_addbyte3(block, 0xc0, 0xc0 | RM_OP_ROL | (dst_reg & 7), shift); /*ROL dst_reg, shift*/
 }
@@ -1540,7 +1540,7 @@ void
 host_x86_ROR8_CL(codeblock_t *block, int dst_reg)
 {
     codegen_alloc_bytes(block, 3);
-    if (dst_reg & 8)
+    if (dst_reg >= 4)
         codegen_addbyte(block, rex_byte(0, 0, 0, dst_reg));
     codegen_addbyte2(block, 0xd2, 0xc0 | RM_OP_ROR | (dst_reg & 7)); /*ROR dst_reg, CL*/
 }
@@ -1566,7 +1566,7 @@ void
 host_x86_ROR8_IMM(codeblock_t *block, int dst_reg, int shift)
 {
     codegen_alloc_bytes(block, 4);
-    if (dst_reg & 8)
+    if (dst_reg >= 4)
         codegen_addbyte(block, rex_byte(0, 0, 0, dst_reg));
     codegen_addbyte3(block, 0xc0, 0xc0 | RM_OP_ROR | (dst_reg & 7), shift); /*ROR dst_reg, shift*/
 }
@@ -1592,7 +1592,7 @@ void
 host_x86_SAR8_CL(codeblock_t *block, int dst_reg)
 {
     codegen_alloc_bytes(block, 3);
-    if (dst_reg & 8)
+    if (dst_reg >= 4)
         codegen_addbyte(block, rex_byte(0, 0, 0, dst_reg));
     codegen_addbyte2(block, 0xd2, 0xc0 | RM_OP_SAR | (dst_reg & 7)); /*SAR dst_reg, CL*/
 }
@@ -1618,7 +1618,7 @@ void
 host_x86_SAR8_IMM(codeblock_t *block, int dst_reg, int shift)
 {
     codegen_alloc_bytes(block, 4);
-    if (dst_reg & 8)
+    if (dst_reg >= 4)
         codegen_addbyte(block, rex_byte(0, 0, 0, dst_reg));
     codegen_addbyte3(block, 0xc0, 0xc0 | RM_OP_SAR | (dst_reg & 7), shift); /*SAR dst_reg, shift*/
 }
@@ -1644,7 +1644,7 @@ void
 host_x86_SHL8_CL(codeblock_t *block, int dst_reg)
 {
     codegen_alloc_bytes(block, 3);
-    if (dst_reg & 8)
+    if (dst_reg >= 4)
         codegen_addbyte(block, rex_byte(0, 0, 0, dst_reg));
     codegen_addbyte2(block, 0xd2, 0xc0 | RM_OP_SHL | (dst_reg & 7)); /*SHL dst_reg, CL*/
 }
@@ -1670,7 +1670,7 @@ void
 host_x86_SHL8_IMM(codeblock_t *block, int dst_reg, int shift)
 {
     codegen_alloc_bytes(block, 4);
-    if (dst_reg & 8)
+    if (dst_reg >= 4)
         codegen_addbyte(block, rex_byte(0, 0, 0, dst_reg));
     codegen_addbyte3(block, 0xc0, 0xc0 | RM_OP_SHL | (dst_reg & 7), shift); /*SHL dst_reg, shift*/
 }
@@ -1696,7 +1696,7 @@ void
 host_x86_SHR8_CL(codeblock_t *block, int dst_reg)
 {
     codegen_alloc_bytes(block, 3);
-    if (dst_reg & 8)
+    if (dst_reg >= 4)
         codegen_addbyte(block, rex_byte(0, 0, 0, dst_reg));
     codegen_addbyte2(block, 0xd2, 0xc0 | RM_OP_SHR | (dst_reg & 7)); /*SHR dst_reg, CL*/
 }
@@ -1722,7 +1722,7 @@ void
 host_x86_SHR8_IMM(codeblock_t *block, int dst_reg, int shift)
 {
     codegen_alloc_bytes(block, 4);
-    if (dst_reg & 8)
+    if (dst_reg >= 4)
         codegen_addbyte(block, rex_byte(0, 0, 0, dst_reg));
     codegen_addbyte3(block, 0xc0, 0xc0 | RM_OP_SHR | (dst_reg & 7), shift); /*SHR dst_reg, shift*/
 }
@@ -1752,7 +1752,7 @@ host_x86_SUB8_REG_IMM(codeblock_t *block, int dst_reg, uint8_t imm_data)
         codegen_addbyte2(block, 0x2c, imm_data); /*SUB EAX, imm_data*/
     } else {
         codegen_alloc_bytes(block, 4);
-        if (dst_reg & 8)
+        if (dst_reg >= 4)
             codegen_addbyte(block, rex_byte(0, 0, 0, dst_reg));
         codegen_addbyte3(block, 0x80, 0xc0 | RM_OP_SUB | (dst_reg & 7), imm_data); /*SUB dst_reg, imm_data*/
     }
@@ -1812,7 +1812,7 @@ void
 host_x86_SUB8_REG_REG(codeblock_t *block, int dst_reg, int src_reg)
 {
     codegen_alloc_bytes(block, 3);
-    if ((dst_reg & 8) || (src_reg & 8))
+    if ((dst_reg >= 4) || (src_reg >= 4))
         codegen_addbyte(block, rex_byte(0, src_reg, 0, dst_reg));
     codegen_addbyte2(block, 0x28, 0xc0 | (dst_reg & 7) | ((src_reg & 7) << 3)); /*SUB dst_reg, src_reg*/
 }
@@ -1845,7 +1845,7 @@ void
 host_x86_TEST8_REG(codeblock_t *block, int src_host_reg, int dst_host_reg)
 {
     codegen_alloc_bytes(block, 3);
-    if ((dst_host_reg & 8) || (src_host_reg & 8))
+    if ((dst_host_reg >= 4) || (src_host_reg >= 4))
         codegen_addbyte(block, rex_byte(0, dst_host_reg, 0, src_host_reg));
     codegen_addbyte2(block, 0x84, 0xc0 | ((dst_host_reg & 7) << 3) | (src_host_reg & 7)); /*TEST dst_host_reg, src_host_reg*/
 }
@@ -1897,7 +1897,7 @@ host_x86_XOR8_REG_IMM(codeblock_t *block, int dst_reg, uint8_t imm_data)
         codegen_addbyte2(block, 0x34, imm_data); /*XOR EAX, imm_data*/
     } else {
         codegen_alloc_bytes(block, 4);
-        if (dst_reg & 8)
+        if (dst_reg >= 4)
             codegen_addbyte(block, rex_byte(0, 0, 0, dst_reg));
         codegen_addbyte3(block, 0x80, 0xc0 | RM_OP_XOR | (dst_reg & 7), imm_data); /*XOR dst_reg, imm_data*/
     }
@@ -1948,7 +1948,7 @@ void
 host_x86_XOR8_REG_REG(codeblock_t *block, int dst_reg, int src_reg)
 {
     codegen_alloc_bytes(block, 3);
-    if ((dst_reg & 8) || (src_reg & 8))
+    if ((dst_reg >= 4) || (src_reg >= 4))
         codegen_addbyte(block, rex_byte(0, src_reg, 0, dst_reg));
     codegen_addbyte2(block, 0x30, 0xc0 | (dst_reg & 7) | ((src_reg & 7) << 3)); /*XOR dst_reg, src_reg*/
 }

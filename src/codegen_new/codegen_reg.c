@@ -566,8 +566,6 @@ codegen_reg_write_imm(codeblock_t *block, ir_reg_t ir_reg, uint32_t imm_data)
 }
 #endif
 
-static int uop_has_bh = 0;
-
 static void
 alloc_reg(ir_reg_t ir_reg)
 {
@@ -580,8 +578,6 @@ alloc_reg(ir_reg_t ir_reg)
 
     for (int c = 0; c < nr_regs; c++) {
         if (IREG_GET_REG(reg_set->regs[c].reg) == IREG_GET_REG(ir_reg.reg)) {
-            if (uop_has_bh && (reg_set->reg_list[c].flags & HOST_REG_FLAG_NO_BH))
-                continue;
 #ifndef RELEASE_BUILD
             if (reg_set->regs[c].version != ir_reg.version)
                 fatal("alloc_reg - host_regs[c].version != ir_reg.version  %i %p %p  %i %i\n", c, reg_set, &host_reg_set, reg_set->regs[c].reg, ir_reg.reg);
@@ -604,8 +600,6 @@ alloc_dest_reg(ir_reg_t ir_reg, int dest_reference)
 
     for (int c = 0; c < nr_regs; c++) {
         if (IREG_GET_REG(reg_set->regs[c].reg) == IREG_GET_REG(ir_reg.reg)) {
-            if (uop_has_bh && (reg_set->reg_list[c].flags & HOST_REG_FLAG_NO_BH))
-                continue;
             if (reg_set->regs[c].version == ir_reg.version) {
                 reg_set->locked |= (1 << c);
             } else {
@@ -636,18 +630,6 @@ codegen_reg_alloc_register(ir_reg_t dest_reg_a, ir_reg_t src_reg_a, ir_reg_t src
 
     host_reg_set.locked    = 0;
     host_fp_reg_set.locked = 0;
-
-    uop_has_bh = (IREG_GET_SIZE(dest_reg_a.reg) == IREG_SIZE_BH) ||
-                 (IREG_GET_SIZE(src_reg_a.reg) == IREG_SIZE_BH) ||
-                 (IREG_GET_SIZE(src_reg_b.reg) == IREG_SIZE_BH) ||
-                 (IREG_GET_SIZE(src_reg_c.reg) == IREG_SIZE_BH);
-
-    if (uop_has_bh) {
-        for (int c = 0; c < host_reg_set.nr_regs; c++) {
-            if (host_reg_set.reg_list[c].flags & HOST_REG_FLAG_NO_BH)
-                host_reg_set.locked |= (1 << c);
-        }
-    }
 
     if (!ir_reg_is_invalid(dest_reg_a)) {
         if (!ir_reg_is_invalid(src_reg_a) && IREG_GET_REG(src_reg_a.reg) == IREG_GET_REG(dest_reg_a.reg) && src_reg_a.version == dest_reg_a.version - 1)
@@ -683,14 +665,10 @@ codegen_reg_alloc_read_reg(codeblock_t *block, ir_reg_t ir_reg, int *host_reg_id
     /*Search for required register*/
     for (c = 0; c < reg_set->nr_regs; c++) {
         if (!ir_reg_is_invalid(reg_set->regs[c]) && IREG_GET_REG(reg_set->regs[c].reg) == IREG_GET_REG(ir_reg.reg) && reg_set->regs[c].version == ir_reg.version) {
-            if (uop_has_bh && (reg_set->reg_list[c].flags & HOST_REG_FLAG_NO_BH))
-                continue;
             break;
         }
 
         if (!ir_reg_is_invalid(reg_set->regs[c]) && IREG_GET_REG(reg_set->regs[c].reg) == IREG_GET_REG(ir_reg.reg) && reg_set->regs[c].version <= ir_reg.version) {
-            if (uop_has_bh && (reg_set->reg_list[c].flags & HOST_REG_FLAG_NO_BH))
-                continue;
             reg_version[IREG_GET_REG(reg_set->regs[c].reg)][reg_set->regs[c].version].refcount++;
             break;
         }
@@ -784,8 +762,6 @@ codegen_reg_alloc_write_reg(codeblock_t *block, ir_reg_t ir_reg)
     /*Search for previous version in host register*/
     for (c = 0; c < reg_set->nr_regs; c++) {
         if (!ir_reg_is_invalid(reg_set->regs[c]) && IREG_GET_REG(reg_set->regs[c].reg) == IREG_GET_REG(ir_reg.reg)) {
-            if (uop_has_bh && (reg_set->reg_list[c].flags & HOST_REG_FLAG_NO_BH))
-                continue;
             if (reg_set->regs[c].version <= ir_reg.version - 1) {
 #ifndef RELEASE_BUILD
                 if (reg_version[IREG_GET_REG(reg_set->regs[c].reg)][reg_set->regs[c].version].refcount != 0)

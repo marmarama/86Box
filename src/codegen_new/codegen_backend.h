@@ -30,7 +30,7 @@ extern const uOpFn uop_handlers[];
 /*Register will not be preserved across function calls*/
 #define HOST_REG_FLAG_VOLATILE (1 << 0)
 /*Register cannot access high-byte subregisters (AH, BH, CH, DH) or mix with them*/
-#define HOST_REG_FLAG_NO_BH    (1 << 1)
+#define HOST_REG_FLAG_NO_BH    0
 
 typedef struct host_reg_def_t {
     int reg;
