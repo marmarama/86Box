@@ -10,6 +10,7 @@ This document collects long-term architectural proposals, middle-end/backend des
 | **Proposal 2: Persistent JIT Execution Region & Pinned State** | Execution Model, Allocator & Backend (`codegen_block.c`, `codegen_backend_*`) | Replace per-block C function boundaries (`void (*)(void)`) with a persistent JIT region, pinned guest GPRs, and an in-JIT assembly dispatch stub. | **22.17%** of all JIT instructions are currently prologue/spill/reload glue; **6.58%** of host CPU time is C dispatcher overhead (**199M** C returns). |
 | **Proposal 3: Middle-End IR Liveness & Barrier Refinement** | IR Optimizer (`codegen_ir.c`, `codegen_reg.c`) | Decouple fault barriers from full register flushes; eliminate dead lazy-flag writes and redundant `pc`/`oldpc` stores via an $O(N)$ backward pass. | **961M host cycles** (**115,176** static sites) wasted on dead flag materialization; **137.7M** redundant `pc`/`oldpc` writes. |
 | **Proposal 4: Protected-Mode Segment Descriptor Caching** | Segment & Control-Flow Helpers (`x86seg.c`, `codegen_ops_mov.c`, `codegen_ops_jump.c`) | Cache validated GDT/LDT entries and inline fast-path selector reloads (`MOV seg, r/m`, `IRET`/`LCALL`/`LJMP`). | Top #1 and #2 hottest blocks in Windows 98 (`blk#55748`, `blk#58507`) spend **>1,100 host cycles/exec** in C `loadseg()` / `op_pmodeiret()`. |
+| **Proposal 5: IR Orthogonalization, Sub-Register Canonicalization & Cross-Backend Unification** | IR, Register Allocator, Frontend & Backends (`codegen_ir_defs.h`, `codegen_reg.c`, `codegen_backend_*`) | Canonicalize 8/16-bit sub-registers via explicit `UOP_BFX`/`UOP_BFI`, collapse redundant IR opcodes, template frontend R/M decoding, and share runtime stubs and uOp lowering across `x86-64`, `arm64`, and `loongarch64`. | Eliminates ~60–70% of backend handler code (~10,000+ LOC across 3 backends) and ~5,000 LOC of frontend repetition while unlocking full SSA optimizations on 8/16-bit ops and feature parity across all architectures. |
 
 ---
 
@@ -711,5 +712,168 @@ Increment `cpu_state.seg_cache_gen++` (O(1) invalidation) whenever:
 ### 2.3 Expected Impact
 - Reduces protected-mode `MOV DS/ES/FS/GS/SS, sel` from ~200+ host cycles (two `readmeml` calls + `writememb` + complex branching) to **~12–15 host cycles** (a single cache tag comparison and three 64-bit struct copies).
 - Directly accelerates Windows 98 16/32-bit GDI/USER thunking, `HIMEM.SYS` extended memory block moves, and protected-mode BIOS/VxD dispatch (`blk#58507`, `blk#55748`, `blk#55771`).
+
+---
+
+# Proposal 5: IR Orthogonalization, Sub-Register Canonicalization & Cross-Backend Unification
+
+## 1. Diagnosis: Where Complexity & Duplication Live in `codegen_new`
+
+Across `src/codegen_new/` (~43,600 LOC spanning the frontend, IR, register allocator, and three backends: `x86-64`, `arm64`, and `loongarch64`), the primary drivers of complexity and code duplication stem from **leaky abstraction boundaries**:
+
+1. **Non-Orthogonal IR (`codegen_ir_defs.h`)**:
+   - The IR leaks x86 sub-register widths (`IREG_SIZE_B`, `IREG_SIZE_BH`, `IREG_SIZE_W`) directly into every backend operation and duplicates opcodes across immediate vs. register forms, condition codes (17 separate conditional jump opcodes), and jump target types.
+2. **Backend Handlers Doing Middle-End Work (`codegen_backend_*_uops.c`)**:
+   - Each backend (~4,126 LOC on x86-64, ~4,051 LOC on ARM64, ~2,594 LOC on LoongArch64) independently implements the Cartesian product of sub-register sizes (`L`, `W`, `B`, `BH`), bitfield extraction/insertion, TLB lookup sequences, and control-flow trampolines.
+3. **Hand-Expanded Frontend Cross-Products (`codegen_ops_*.c`)**:
+   - ~11,500 LOC of handwritten C expand `(opcode) × (8/16/32-bit) × (reg/mem/imm) × (a16/a32)` inline rather than composing shared ModR/M operand decoders and size-parameterized emitters.
+4. **Asymmetric Runtime Infrastructure (`codegen_backend_*.c`)**:
+   - Execution-model advances implemented on x86-64 (`codegen_enter_jit`, `codegen_dispatch_stub`, `codegen_event_stub`, inline TLB fast paths, direct block chaining) must be hand-ported in assembly to `arm64` and `loongarch64`.
+
+```mermaid
+flowchart TD
+    subgraph Current["Current Architecture (~43.6k LOC)"]
+        FE1["Frontend (codegen_ops_*.c)\n~11.5k LOC hand-expanded 8/16/32-bit R/M"] --> IR1["Non-Orthogonal IR (~140 uOPs)\nLeaks B / BH / W sub-registers\n17 branch uOPs, split IMM/REG"]
+        IR1 --> BE_X86["x86-64 Backend (~7.6k LOC)\nEMIT_ALU8_*, ROL16 8, custom stubs"]
+        IR1 --> BE_ARM["ARM64 Backend (~7.5k LOC)\n6-12 BFI/UBFX branches per uOP"]
+        IR1 --> BE_LA["LoongArch64 Backend (~4.5k LOC)\n6-10 bstrins/bstrpick branches per uOP"]
+    end
+
+    subgraph Unified["Orthogonalized Three-Tier Architecture"]
+        FE2["Tier 1: Guest Lifter (codegen_ops_*.c or x86gen)\nDecomposes x86 quirks & CPU models into canonical 32/64-bit IR"] --> IR2["Tier 2: Middleware (SSA IR + Optimizer + RegAlloc + JIT Semantics)\nExplicit UOP_BFX / UOP_BFI, UOP_BR_COND, shared TLB & dispatch stubs"]
+        IR2 --> EMIT["Tier 3: Thin Target Emitter (~2k LOC per arch)\ncodegen_emit.h (~25 primitives) + SIMD/FPU"]
+    end
+```
+
+### 1.1 Formalizing a Strict Three-Tier Compiler Architecture (and Synergy with Proposal 1)
+
+While `codegen_new` nominally has separate files for the frontend (`codegen_ops_*.c`), IR (`codegen_ir.c`, `codegen_reg.c`), and backends (`codegen_backend_*.c`), historically those layers evolved with blurred boundaries: guest x86 sub-register quirks (`IREG_SIZE_BH`, `is_a16`) leaked all the way into Tier 3, while JIT runtime semantics (`EXIT_BLOCK`, cycle accounting, inline TLB fast paths, dispatch stubs) were re-implemented inside each backend.
+
+Proposal 5 formalizes `codegen_new` into three strict, orthogonal compiler tiers:
+
+| Tier | Layer & Files | Strict Architectural Contract |
+| :--- | :--- | :--- |
+| **Tier 1: Frontend (Guest x86 Lifter)** | `codegen.c`, `codegen_ops_*.c` (or autogenerated by **Proposal 1 `x86gen`**) | Decodes x86 instruction bytes, handles CPU family gating/timings (386/486/Pentium/K6/Cyrix), and decomposes all x86 quirks (`AL`/`AH`/`AX` sub-registers, `0x66`/`0x67` prefixes, ModR/M EA, segment limit checks, lazy flags) into canonical, width-normalized 32/64-bit IR uOps. **Nothing downstream of Tier 1 ever sees an `AH` register, an `is_a16` flag, or a ModR/M byte.** |
+| **Tier 2: Middleware (SSA IR, Optimizer, RegAlloc & JIT Semantics)** | `codegen_ir.c`, `codegen_reg.c`, `codegen_backend_common.c` | Operates on pure 32/64-bit SSA values (`UOP_BFX`/`UOP_BFI` make partial-register merges explicit SSA dependencies). Performs constant folding, copy/bitfield forwarding, and dead-store elimination uniformly across 8/16/32-bit guest ops; allocates abstract host registers (`0..N-1`); and lowers JIT runtime mechanics (TLB fast paths, cycle checks, direct block chaining, `codegen_enter_jit`, `codegen_dispatch_stub`, `codegen_event_stub`) **once** for all architectures. |
+| **Tier 3: Backend (Target Code Emitter)** | `codegen_backend_x86-64`, `arm64`, `loongarch64` (`codegen_emit.h`) | A thin, stateless machine-code encoder (~1,500–2,000 LOC per target). Translates already-allocated 32/64-bit ALU/shift uOps, `UOP_BFX`/`UOP_BFI`, table-driven `UOP_BR_COND`/`UOP_SETCC`, and 64-bit FPU/SIMD vector ops into host bytes. Never makes control-flow policy decisions or juggles sub-register widths. |
+
+#### Direct Synergy with Proposal 1 (`x86gen`)
+Formalizing the Tier 1 $\rightarrow$ Tier 2 boundary makes **Proposal 1 (`x86gen`)** and **Proposal 5** snap together seamlessly:
+1. **Declarative CPU & ISA Specs Target Tier 1 Exclusively**: If we move to a declarative model (`x86_isa.spec` + `x86gen.py`) for defining CPU families and instruction sets, all generated code lives strictly in Tier 1 (and the C interpreter). Tier 2 and Tier 3 do not care whether the `uop_t` stream was emitted by handwritten C or synthesized from a `.spec` file.
+2. **Simpler Code Generation in `x86gen`**: Because Tier 2's IR is canonicalized around 32-bit operations + `UOP_BFX`/`UOP_BFI` and a single `UOP_BR_COND(cond)`, `x86gen` does not need special sub-register rules or 17 branch emitters—its `read(operand)` and `write(operand, val)` intrinsics simply emit `UOP_BFX` and `UOP_BFI` around standard 32-bit uOps.
+3. **Complete Decoupling of Guest ISA vs. Host Targets**: Adding a new guest instruction set extension in Tier 1 requires zero backend changes in Tier 3, and adding a new Tier 2 optimization pass or Tier 3 host architecture (e.g., `riscv64`) requires zero changes to the guest CPU specifications.
+
+---
+
+## 2. Core Simplification Workstreams
+
+### 5.1 Sub-Register Canonicalization (`UOP_BFX` / `UOP_BFI` & Native 32/64-Bit ALU)
+
+#### The Problem
+Currently, every backend uOp handler in [`codegen_backend_arm64_uops.c`](file:///home/marm/src/86Box/src/codegen_new/codegen_backend_arm64_uops.c#L33-L176), [`codegen_backend_loongarch64_uops.c`](file:///home/marm/src/86Box/src/codegen_new/codegen_backend_loongarch64_uops.c#L55-L235), and [`codegen_backend_x86-64_uops.c`](file:///home/marm/src/86Box/src/codegen_new/codegen_backend_x86-64_uops.c#L44-L240) must handle 6 to 12 combinations of `(dest_size, src_size_a, src_size_b)` across `IREG_SIZE_L`, `IREG_SIZE_W`, `IREG_SIZE_B`, and `IREG_SIZE_BH`.
+- Worse, because writing to `IREG_AL` (`IREG_SIZE_B`), `IREG_AH` (`IREG_SIZE_BH`), or `IREG_AX` (`IREG_SIZE_W`) preserves the upper bits of `EAX` without declaring the previous version of `EAX` as an SSA source operand, [`codegen_ir_peephole()`](file:///home/marm/src/86Box/src/codegen_new/codegen_ir.c#L284-L318) and [`codegen_ir_optimize_liveness()`](file:///home/marm/src/86Box/src/codegen_new/codegen_ir.c#L145-L200) must bail out whenever `!reg_is_native_size(reg)`.
+
+#### The Design
+Restrict all integer ALU, logical, shift, and comparison uOps to operate **exclusively on native 32-bit (or 64-bit) values**, and represent sub-register reads and partial-register merges explicitly via two bitfield uOps:
+- **`UOP_BFX(dest32, src32, lsb, width, is_signed)`**:
+  - Extracts `width` bits (`8` or `16`) starting at `lsb` (`0` or `8`), zero- or sign-extending to 32 bits.
+  - Emits `UBFX`/`SBFX` (`UXTB`/`UXTH`/`SXTB`/`SXTH`) on ARM64, `bstrpick.w`/`ext.w.b`/`ext.w.h` on LoongArch64, and `MOVZX`/`MOVSX` (or `SHR 8` for `BH`) on x86-64.
+- **`UOP_BFI(dest32, prev_dest32, val32, lsb, width)`**:
+  - Merges `val32[width-1:0]` into `prev_dest32` at `[lsb + width - 1 : lsb]`, producing a new 32-bit SSA version `dest32`.
+  - Emits `BFI` on ARM64, `bstrins.w` on LoongArch64, and `mov reg8, val8` / `mov reg16, val16` (for `lsb == 0`) or mask-and-OR (for `lsb == 8`, avoiding legacy `ROL16 8` length-changing prefixes) on x86-64.
+- **Seamless Frontend Compatibility**:
+  - The `uop_*` emitter helpers (or an IR lowering pass at the start of `codegen_ir_compile()`) can automatically wrap any sub-register source operand in `UOP_BFX` and any sub-register destination write in `UOP_BFI`, requiring zero disruptive rewrites of `codegen_ops_*.c` while immediately simplifying all backends.
+
+#### Why x86-64 Performance Is a Wash (or Slight Net Win) & How It Expands the Host Register Pool
+1. **Guest flags are already 32-bit lazy values**: `codegen_new` never uses host x86 `RFLAGS` to compute 8/16-bit guest flags; it populates 32-bit `IREG_flags_op1`, `IREG_flags_op2`, and `IREG_flags_res`.
+2. **Eliminates the x86-64 REX Prefix vs. High-Byte (`AH`/`BH`/`CH`/`DH`) Encoding Conflict**:
+   - On 32-bit i386, only `EAX`, `ECX`, `EDX`, `EBX` had 8-bit sub-registers (`AL`/`AH`..`BL`/`BH`); `ESI`, `EDI`, `EBP`, `ESP` could not perform 8-bit operations at all.
+   - On x86-64, AMD added low-byte access (`SIL`, `DIL`, `BPL`, `SPL`, `R8B`–`R15B`) via the REX prefix (`0x40`–`0x4F`), **but repurposed register indices `4..7`**: without a REX prefix, 8-bit indices `4..7` encode `AH`, `CH`, `DH`, `BH`; with *any* REX prefix, indices `4..7` encode `SPL`, `BPL`, `SIL`, `DIL` instead.
+   - Consequently, **it is physically impossible on x86-64 to encode an instruction that accesses `AH`/`BH`/`CH`/`DH` when the other operand is in `R8`–`R15` (or `SIL`/`DIL`/`BPL`/`SPL`)**, and `R8`–`R15` have no high-byte sub-register at all. Because [`codegen_host_reg_list`](file:///home/marm/src/86Box/src/codegen_new/codegen_backend_x86-64.c#L51-L64) maps guest registers to `R10`, `R11`, `R13`, `R15`, [`EMIT_ALU8_BINARY`](file:///home/marm/src/86Box/src/codegen_new/codegen_backend_x86-64_uops.c#L44-L91) already cannot use native high-byte encodings and emits multi-instruction `MOVZX` + `SHR 8` + `ROL16 8` sequences.
+3. **Frees `REG_R8` (and `REG_R9`) to Join the Host Register Allocator Pool (`7` $\rightarrow$ `8+` GPRs)**:
+   - Currently, [`codegen_host_reg_list`](file:///home/marm/src/86Box/src/codegen_new/codegen_backend_x86-64.c#L51-L64) only exposes **7** host GPRs (`EAX`, `EBX`, `EDX`, `R10`, `R11`, `R13`, `R15`) to the register allocator because `REG_R8` is reserved behind the allocator's back as a **second dedicated scratch register alongside `REG_ECX`** specifically for `IREG_SIZE_BH` operations:
+     - [`EMIT_ALU8_BINARY`](file:///home/marm/src/86Box/src/codegen_new/codegen_backend_x86-64_uops.c#L66-L84) and [`codegen_CMP_*`](file:///home/marm/src/86Box/src/codegen_new/codegen_backend_x86-64_uops.c#L615-L617) require two simultaneous scratch registers (`REG_ECX` for `src_b` and `REG_R8` for `src_a`) when both operands are `IREG_SIZE_BH`.
+     - [`EMIT_SHIFT8_CL`](file:///home/marm/src/86Box/src/codegen_new/codegen_backend_x86-64_uops.c#L158-L165) reserves `REG_R8` for `IREG_SIZE_BH` because `REG_ECX` (`CL`) is occupied by the shift count.
+   - With `UOP_BFX` / `UOP_BFI`, each bitfield extraction is a normal unary uOp whose destination is allocated by the register allocator itself rather than hardcoded to `REG_ECX` + `REG_R8`. This frees `REG_R8` (and `REG_R9`) to be added directly to `codegen_host_reg_list`, allowing the x86-64 allocator to hold **all 8 guest GPRs (`EAX`–`EDI`) simultaneously without spilling**.
+4. **Eliminates false partial-register dependencies on temporaries**: Today, `IREG_temp0_B` and `IREG_temp0_W` emit 8/16-bit moves and ALU ops on host registers, creating false dependencies on the upper 16/24 bits on Intel P-cores and AMD Zen 1–5 and preventing 3-operand `LEA` usage.
+5. **Unlocks BMI2 (`SHLX`/`SHRX`/`SARX`/`RORX`) and future X86-S / Intel APX**: BMI2 flagless shifts only exist in 32/64-bit forms, and Intel APX (`R16–R31`, 3-operand `NDD`) deprecates `AH`–`DH` and favors 32/64-bit zero-extending operations.
+6. **Unlocks IR Peephole & DSE on 8/16-Bit Code**: Because `UOP_BFI` makes `prev_dest32` an explicit SSA input, all `reg_is_native_size()` bailouts in `codegen_ir.c` disappear. Back-to-back updates to `AL` or `AX` dead-store-eliminate intermediate `UOP_BFI` merges automatically.
+
+---
+
+### 5.2 Orthogonalizing the IR (`codegen_ir_defs.h`)
+
+Currently [`codegen_ir_defs.h`](file:///home/marm/src/86Box/src/codegen_new/codegen_ir_defs.h) defines ~140 uOps with significant redundancy. We can collapse the IR down to ~55 orthogonal uOps:
+
+1. **Unify All 17 Conditional Branch uOps into `UOP_BR_COND`**:
+   - Replace `UOP_CMP_IMM_JZ`, `UOP_CMP_JB`, `UOP_CMP_JNBE`, `UOP_CMP_IMM_JZ_DEST`, `UOP_CMP_IMM_JNZ_DEST`, `UOP_CMP_IMM_JLE_DEST`, `UOP_CMP_JB_DEST` .. `UOP_CMP_JNLE_DEST`, `UOP_TEST_JS_DEST`, `UOP_TEST_JNS_DEST` with a single conditional branch opcode parameterized by `COND_*` (matching `UOP_SETCC`!):
+     ```c
+     UOP_BR_COND(cond, src_a, src_b_or_imm, target)
+     ```
+   - Unify intra-block `jump_dest_uop` targets and external pointer targets (`codegen_gpf_rout`, `codegen_exit_rout`) behind a single target representation so each backend implements **1** conditional branch handler instead of 17.
+2. **Unify Host-Memory Accesses (`UOP_HOST_LOAD` / `UOP_HOST_STORE`)**:
+   - Collapse `UOP_MOV_REG_PTR`, `UOP_MOVZX_REG_PTR_8`, `UOP_MOVZX_REG_PTR_16`, `UOP_STORE_P_IMM`, `UOP_STORE_P_IMM_8`, `UOP_STORE_P_IMM_16` into width-parameterized `UOP_HOST_LOAD` and `UOP_HOST_STORE`.
+3. **Unify Guest-Memory Accesses (`UOP_GUEST_LOAD` / `UOP_GUEST_STORE`)**:
+   - Parameterize `UOP_MEM_LOAD_*` and `UOP_MEM_STORE_*` by access width (`1, 2, 4, 8`) and register file (`INT` vs `FP`) instead of maintaining 11 separate opcodes and 11 separate handler functions per backend.
+4. **Normalize Immediate vs. Register Operands**:
+   - Allow source operand B on binary ALU/shift/compare uOps to be tagged as either an `ir_reg_t` or `uop->imm_data`, cutting the number of ALU and shift uOp definitions and backend dispatch functions in half.
+
+---
+
+### 5.3 Composable Frontend Operand & ALU Templates (`codegen_ops_*.c`)
+
+Independent of Proposal 1 (`x86gen`), the existing C frontend (~11,500 LOC across `codegen_ops_*.c`) can be cut nearly in half by factoring out repeated ModR/M and operand-size boilerplate:
+
+1. **Composable ModR/M Operand Fetch & Commit (`emit_rm_read` / `emit_rm_write`)**:
+   - Today, every `rop*_b_rm`, `rop*_w_rm`, `rop*_l_rm`, `rop*_b_rmw`, `rop*_w_rmw`, `rop*_l_rmw` repeats the same 20-line `if ((fetchdat & 0xc0) == 0xc0) { ... } else { uop_MOV_IMM(ir, IREG_oldpc, ...); target_seg = codegen_generate_ea(...); codegen_check_seg_read/write(...); uop_MEM_LOAD_REG(...); }` block.
+   - Extracting `codegen_emit_rm_read(block, ir, size, is_rmw, fetchdat, op_32, &op_pc, &rm_op)` and `codegen_emit_rm_write(block, ir, &rm_op, result_reg)` centralizes EA generation, segment limit checks, and fault-safe store ordering in one place.
+2. **Size-Parameterized ALU / Shift / Bit-Op Emitters**:
+   - A single parameterized helper `rop_alu_rmw(block, ir, alu_op, size, fetchdat, op_32, op_pc)` replaces 48 separate functions across `ADD`, `OR`, `ADC`, `SBB`, `AND`, `SUB`, `XOR`, `CMP` in [`codegen_ops_arith.c`](file:///home/marm/src/86Box/src/codegen_new/codegen_ops_arith.c) and [`codegen_ops_logic.c`](file:///home/marm/src/86Box/src/codegen_new/codegen_ops_logic.c).
+
+---
+
+### 5.4 Portable Macro-Assembler (`codegen_emit.h`) & Shared Runtime Stubs (`codegen_backend_common.c`)
+
+#### The Problem
+Currently, runtime trampolines (`build_load_routine`, `build_store_routine`, `codegen_gpf_rout`, `codegen_exit_rout`, `codegen_enter_jit`, `codegen_dispatch_stub`, `codegen_event_stub`) and high-level composite uOps (`UOP_EXIT_BLOCK`, `UOP_EXIT_BLOCK_RET`, `UOP_MEM_LOAD_*`, `UOP_MEM_STORE_*`, `UOP_LOAD_SEG`, `UOP_CALL_INSTRUCTION_FUNC`) are written separately in each backend, even though their control flow and algorithms are 100% identical:
+- Compare [`build_load_routine()` in `codegen_backend_arm64.c`](file:///home/marm/src/86Box/src/codegen_new/codegen_backend_arm64.c#L76-L142), [`codegen_backend_loongarch64.c`](file:///home/marm/src/86Box/src/codegen_new/codegen_backend_loongarch64.c), and [`codegen_backend_x86-64.c`](file:///home/marm/src/86Box/src/codegen_new/codegen_backend_x86-64.c#L91-L165): every backend shifts the linear address right by 12, indexes `readlookup2`, tests alignment, compares the TLB entry against `-1`, loads from `[base + addr]`, and otherwise calls `readmem*l` and checks `cpu_state.abrt`.
+
+#### The Design
+Introduce a lightweight, zero-overhead header [`codegen_emit.h`](file:///home/marm/src/86Box/src/codegen_new/codegen_backend.h) providing ~25 inline macro-assembler primitives implemented by each backend:
+- **Data Movement & ALU**: `emit_mov_reg`, `emit_mov_imm`, `emit_add_reg`, `emit_add_imm`, `emit_sub_imm`, `emit_and_imm`, `emit_shl_imm`, `emit_shr_imm`, `emit_bfx`, `emit_bfi`
+- **Memory & `cpu_state` Access**: `emit_ldr_cpustate(size, dst, offset)`, `emit_str_cpustate(size, src, offset)`, `emit_ldr_indexed(size, dst, base, idx, scale)`, `emit_str_indexed(size, src, base, idx, scale)`
+- **Branches & Calls**: `emit_cmp_reg`, `emit_cmp_imm`, `emit_tst_imm`, `emit_b_cond_forward(cond)`, `emit_patch_branch(label)`, `emit_b_abs(target)`, `emit_br_reg(reg)`, `emit_call_c(fn_ptr)`, `emit_ret()`
+
+With `codegen_emit.h`, a shared **`codegen_backend_common.c`** directly implements:
+1. **`build_loadstore_routines()`**: Generates all integer and FP fast/slow TLB helpers for all architectures from a single implementation.
+2. **Unified Execution Trampolines (`codegen_enter_jit`, `codegen_dispatch_stub`, `codegen_event_stub`, `codegen_exit_rout`, `codegen_gpf_rout`)**: Gives `arm64` and `loongarch64` instant feature parity with `x86-64`'s in-JIT dispatch, block chaining, and in-JIT event loop.
+3. **Shared Composite uOp Handlers**: `codegen_EXIT_BLOCK`, `codegen_EXIT_BLOCK_RET`, `codegen_MEM_LOAD_*`, `codegen_MEM_STORE_*`, `codegen_LOAD_SEG`, `codegen_CALL_INSTRUCTION_FUNC`, `codegen_FP_ENTER`, `codegen_MMX_ENTER`, and all standard 32-bit integer ALU/shift/branch uOps move out of `codegen_backend_*_uops.c` into `codegen_backend_common.c`, leaving only FPU/SIMD and architecture-specific emitter definitions in each backend.
+
+---
+
+### 5.5 Decoupling Host ABI & Stack-Frame Assumptions (`codegen_reg.c` & `codegen_backend.h`)
+
+A few small cleanups in [`codegen_reg.c`](file:///home/marm/src/86Box/src/codegen_new/codegen_reg.c) and [`codegen_ir.c`](file:///home/marm/src/86Box/src/codegen_new/codegen_ir.c) eliminate the remaining target-specific `#ifdef`s from the middle-end:
+
+1. **Move `IREG_temp0..3` and `IREG_temp0d..1d` Spill Slots into `cpu_state` (`REG_CPUSTATE`)**:
+   - Currently, [`ireg_data[]` in `codegen_reg.c`](file:///home/marm/src/86Box/src/codegen_new/codegen_reg.c#L187-L194) hardcodes raw stack-pointer byte offsets (`(void *) 16`, `20`, `24`, `28`, `40`, `48`) for temporary register spills, implicitly coupling the register allocator to each backend's stack frame layout (`STACK_ARG_SIZE`).
+   - Placing temporary spill slots in `cpu_state` (within the `[-128, +127]` 1-byte displacement window of `REG_CPUSTATE` / `RBP`) unifies spill addressing with permanent registers (`REG_PERMANENT` vs `REG_VOLATILE` differs only in whether liveness flushes at barriers/exits) and frees the host stack pointer from fixed scratch offsets.
+2. **Eliminate Target-Specific `uop->is_a16` `#ifdef`s**:
+   - Currently [`codegen_ir.c`](file:///home/marm/src/86Box/src/codegen_new/codegen_ir.c#L66-L68) and `codegen_ops_helpers.h` guard `uop->is_a16` behind `#if defined __ARM_EABI__ || ... || defined __aarch64__ || defined __loongarch_lp64`. Expressing 16-bit effective-address zero-extension explicitly in IR (and folding it when `IREG_eaaddr` is already known to be 16-bit zero-extended) removes target `#ifdef`s from `uop_t` and `codegen_ir.c`.
+3. **Unify `UOP_LOAD_FUNC_ARG_0..3` via Backend ABI Table**:
+   - Define `static const int host_arg_regs[4]` in each backend header (`{REG_EDI, REG_ESI, REG_EDX, REG_ECX}` on SysV x86-64, `{REG_ECX, REG_EDX, REG_R8, REG_R9}` on Win64, `{REG_W0..W3}` on ARM64, `{REG_A0..A3}` on LoongArch64) and replace the 8 `codegen_LOAD_FUNC_ARG_*` functions per backend with a single shared handler indexed by `uop->type & 3`.
+
+---
+
+## 3. Summary of Expected Impact (`Proposal 5`)
+
+| Subsystem | Current State | After Proposal 5 |
+| :--- | :--- | :--- |
+| **IR (`codegen_ir_defs.h`)** | ~140 uOps, 17 branch uOps, mixed `B`/`BH`/`W`/`L` sizes | ~55 orthogonal uOps, native 32/64-bit ALU + explicit `UOP_BFX`/`UOP_BFI`, 1 `UOP_BR_COND` |
+| **IR Optimizer (`codegen_ir.c`)** | Skips all 8/16-bit ops (`!reg_is_native_size`) due to hidden partial-reg dependencies | Full SSA constant folding, copy propagation, and DSE across 8, 16, and 32-bit operations |
+| **Frontend (`codegen_ops_*.c`)** | ~11,500 LOC of hand-expanded size/mode variants | ~5,500 LOC using composable `emit_rm_read`/`write` & size-parameterized emitters |
+| **Backends (`codegen_backend_*`)** | ~7,600 LOC (`x86-64`), ~7,500 LOC (`arm64`), ~4,500 LOC (`loongarch64`) | ~2,000 LOC per backend + ~2,000 LOC shared `codegen_backend_common.c` (~9,600 LOC saved) |
+| **Cross-Arch Parity** | `x86-64` has in-JIT dispatch/events/chaining; `arm64` & `loongarch64` lag behind | All 3 backends share `codegen_enter_jit`, `codegen_dispatch_stub`, `codegen_event_stub`, and TLB stubs |
+
 
 
