@@ -1391,13 +1391,19 @@ codegen_mem_load_fastpath(codeblock_t *block, int dest_reg, int dest_size)
     uint32_t *branch_offset;
 
     /* Ensure entire inlined load sequence fits contiguously in the current block */
-    codegen_alloc_bytes(block, 64);
+    codegen_alloc_bytes(block, 80);
 
     if (REG_IS_W(dest_size)) {
-        host_x86_TEST32_REG_IMM(block, REG_ESI, 1);
+        /* Word (16-bit): crosses 4KB page boundary iff (addr & 0xFFF) == 0xFFF */
+        host_x86_LEA_REG_IMM(block, REG_EDI, REG_ESI, 1);
+        host_x86_XOR32_REG_REG(block, REG_EDI, REG_ESI);
+        host_x86_TEST32_REG_IMM(block, REG_EDI, 0xfffff000);
         misaligned_offset = host_x86_JNZ_long(block);
     } else if (REG_IS_L(dest_size)) {
-        host_x86_TEST32_REG_IMM(block, REG_ESI, 3);
+        /* Dword (32-bit): crosses 4KB page boundary iff (addr & 0xFFF) > 0xFFC */
+        host_x86_LEA_REG_IMM(block, REG_EDI, REG_ESI, 3);
+        host_x86_XOR32_REG_REG(block, REG_EDI, REG_ESI);
+        host_x86_TEST32_REG_IMM(block, REG_EDI, 0xfffff000);
         misaligned_offset = host_x86_JNZ_long(block);
     }
 
@@ -1523,13 +1529,19 @@ codegen_mem_store_fastpath(codeblock_t *block, int src_size)
     intptr_t  write_offset = (intptr_t) writelookup2 - (intptr_t) readlookup2;
 
     /* Ensure entire inlined store sequence fits contiguously in the current block */
-    codegen_alloc_bytes(block, 64);
+    codegen_alloc_bytes(block, 80);
 
     if (REG_IS_W(src_size)) {
-        host_x86_TEST32_REG_IMM(block, REG_ESI, 1);
+        /* Word (16-bit): crosses 4KB page boundary iff (addr & 0xFFF) == 0xFFF */
+        host_x86_LEA_REG_IMM(block, REG_EDI, REG_ESI, 1);
+        host_x86_XOR32_REG_REG(block, REG_EDI, REG_ESI);
+        host_x86_TEST32_REG_IMM(block, REG_EDI, 0xfffff000);
         misaligned_offset = host_x86_JNZ_long(block);
     } else if (REG_IS_L(src_size)) {
-        host_x86_TEST32_REG_IMM(block, REG_ESI, 3);
+        /* Dword (32-bit): crosses 4KB page boundary iff (addr & 0xFFF) > 0xFFC */
+        host_x86_LEA_REG_IMM(block, REG_EDI, REG_ESI, 3);
+        host_x86_XOR32_REG_REG(block, REG_EDI, REG_ESI);
+        host_x86_TEST32_REG_IMM(block, REG_EDI, 0xfffff000);
         misaligned_offset = host_x86_JNZ_long(block);
     }
 
