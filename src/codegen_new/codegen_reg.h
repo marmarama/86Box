@@ -421,20 +421,6 @@ ir_reg_is_invalid(ir_reg_t ir_reg)
 
 struct ir_data_t;
 
-static inline int
-codegen_reg_is_pinned(int reg_idx)
-{
-#ifdef CODEGEN_BACKEND_PINS_CYCLES
-    if (reg_idx == IREG_cycles)
-        return 1;
-#endif
-#ifdef CODEGEN_BACKEND_PINS_ESP
-    if (reg_idx == IREG_ESP)
-        return 1;
-#endif
-    return 0;
-}
-
 void codegen_reg_reset(void);
 /*Write back all dirty registers*/
 void codegen_reg_flush(struct ir_data_t *ir, codeblock_t *block);

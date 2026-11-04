@@ -52,15 +52,15 @@ host_reg_def_t codegen_host_reg_list[CODEGEN_HOST_REGS] = {
     /* Note: while EAX, EDX, R10, R11 are normally volatile registers under x86
        calling conventions, the recompiler will explicitly save and restore
        them across memory helper calls on the slow path.
-       EBX, R13 are callee-saved and preserved across calls by ABI.
-       R14 is pinned permanently across blocks to hold cpu_state._cycles.
-       R15 is pinned permanently across blocks to hold guest ESP. */
+       EBX, R13, R15 are callee-saved and preserved across calls by ABI.
+       R14 is pinned permanently across blocks to hold cpu_state._cycles. */
     { REG_EAX, 0 },
     { REG_EBX, 0 },
     { REG_EDX, 0 },
     { REG_R10, 0 },
     { REG_R11, 0 },
-    { REG_R13, 0 }
+    { REG_R13, 0 },
+    { REG_R15, 0 }
 };
 
 /* The Windows x64 frame: 0x38 bytes of block temporaries as before, then
@@ -353,14 +353,7 @@ codegen_backend_init(void)
     build_loadstore_routines(&codeblock[block_current]);
 
     codegen_alloc_bytes(block, 512);
-    int cycles_disp = (int) offsetof(cpu_state_t, _cycles) - 128;
-#ifdef CODEGEN_BACKEND_PINS_ESP
-    int esp_disp = (int) offsetof(cpu_state_t, regs[4].l) - 128;
-#endif
     codegen_gpf_rout = &block_write_data[block_pos];
-#ifdef CODEGEN_BACKEND_PINS_ESP
-    host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, esp_disp, REG_PINNED_ESP);
-#endif
 #    if _WIN64
     host_x86_XOR32_REG_REG(block, REG_ECX, REG_ECX);
     host_x86_XOR32_REG_REG(block, REG_EDX, REG_EDX);
@@ -370,10 +363,8 @@ codegen_backend_init(void)
 #    endif
     host_x86_CALL(block, (void *) x86gpf);
     codegen_exit_rout = &block_write_data[block_pos];
+    int cycles_disp = (int) offsetof(cpu_state_t, _cycles) - 128;
     host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, cycles_disp, REG_R14);
-#ifdef CODEGEN_BACKEND_PINS_ESP
-    host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, esp_disp, REG_PINNED_ESP);
-#endif
 #ifdef _WIN64
     /* XMM6 and XMM7 hold guest FPU/MMX values in blocks, and the Windows
        x64 ABI makes them the caller's: put back what the caller had. */
@@ -406,9 +397,6 @@ codegen_backend_init(void)
     host_x86_PUSH(block, REG_R10);
     host_x86_PUSH(block, REG_R11);
     host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, cycles_disp, REG_R14);
-#ifdef CODEGEN_BACKEND_PINS_ESP
-    host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, esp_disp, REG_PINNED_ESP);
-#endif
 #ifdef _WIN64
     host_x86_SUB64_REG_IMM(block, REG_RSP, 0x28);
 #else
@@ -419,9 +407,6 @@ codegen_backend_init(void)
     host_x86_ADD64_REG_IMM(block, REG_RSP, 0x28);
 #else
     host_x86_ADD64_REG_IMM(block, REG_RSP, 0x8);
-#endif
-#ifdef CODEGEN_BACKEND_PINS_ESP
-    host_x86_MOV32_REG_BASE_OFFSET(block, REG_PINNED_ESP, REG_RBP, esp_disp);
 #endif
     host_x86_MOV32_REG_BASE_OFFSET(block, REG_R14, REG_RBP, cycles_disp);
     host_x86_TEST32_REG(block, REG_EAX, REG_EAX);
@@ -606,24 +591,12 @@ codegen_backend_init(void)
 #ifdef _WIN64
     host_x86_SUB64_REG_IMM(block, REG_RSP, 0x20);
     host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, cycles_disp, REG_R14);
-#ifdef CODEGEN_BACKEND_PINS_ESP
-    host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, esp_disp, REG_PINNED_ESP);
-#endif
     host_x86_CALL(block, (void *) codegen_handle_dispatch);
-#ifdef CODEGEN_BACKEND_PINS_ESP
-    host_x86_MOV32_REG_BASE_OFFSET(block, REG_PINNED_ESP, REG_RBP, esp_disp);
-#endif
     host_x86_MOV32_REG_BASE_OFFSET(block, REG_R14, REG_RBP, cycles_disp);
     host_x86_ADD64_REG_IMM(block, REG_RSP, 0x20);
 #else
     host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, cycles_disp, REG_R14);
-#ifdef CODEGEN_BACKEND_PINS_ESP
-    host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, esp_disp, REG_PINNED_ESP);
-#endif
     host_x86_CALL(block, (void *) codegen_handle_dispatch);
-#ifdef CODEGEN_BACKEND_PINS_ESP
-    host_x86_MOV32_REG_BASE_OFFSET(block, REG_PINNED_ESP, REG_RBP, esp_disp);
-#endif
     host_x86_MOV32_REG_BASE_OFFSET(block, REG_R14, REG_RBP, cycles_disp);
 #endif
     host_x86_TEST64_REG(block, REG_RAX, REG_RAX);
@@ -660,9 +633,6 @@ codegen_backend_init(void)
     host_x86_MOV64_REG_IMM(block, REG_RBP, ((uintptr_t) &cpu_state) + 128);
     host_x86_MOV64_REG_IMM(block, REG_R12, (uint64_t) (uintptr_t) readlookup2);
     host_x86_MOV32_REG_BASE_OFFSET(block, REG_R14, REG_RBP, cycles_disp);
-#ifdef CODEGEN_BACKEND_PINS_ESP
-    host_x86_MOV32_REG_BASE_OFFSET(block, REG_PINNED_ESP, REG_RBP, esp_disp);
-#endif
 #ifdef _WIN64
     host_x86_JMP_REG(block, REG_RCX);
 #else
@@ -700,19 +670,12 @@ codegen_backend_prologue(codeblock_t *block)
     if (codegen_dump_is_active() || codegen_profile_active || codegen_hang_detect_active) {
         int cycles_disp = (int) offsetof(cpu_state_t, _cycles) - 128;
         host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, cycles_disp, REG_R14);
-#ifdef CODEGEN_BACKEND_PINS_ESP
-        int esp_disp = (int) offsetof(cpu_state_t, regs[4].l) - 128;
-        host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, esp_disp, REG_PINNED_ESP);
-#endif
 #ifdef _WIN64
         host_x86_MOV64_REG_IMM(block, REG_RCX, (uint64_t) (uintptr_t) block);
 #else
         host_x86_MOV64_REG_IMM(block, REG_RDI, (uint64_t) (uintptr_t) block);
 #endif
         host_x86_CALL(block, (void *) codegen_dump_enter_block);
-#ifdef CODEGEN_BACKEND_PINS_ESP
-        host_x86_MOV32_REG_BASE_OFFSET(block, REG_PINNED_ESP, REG_RBP, esp_disp);
-#endif
     }
     if (block->flags & CODEBLOCK_HAS_FPU) {
         host_x86_MOV32_REG_ABS(block, REG_EAX, &cpu_state.TOP);

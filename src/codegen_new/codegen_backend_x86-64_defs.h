@@ -52,14 +52,11 @@
 
 #define REG_XMM_TEMP         REG_XMM0
 
-#define CODEGEN_HOST_REGS    6
+#define CODEGEN_HOST_REGS    7
 #define CODEGEN_HOST_FP_REGS 7
 
 #define CODEGEN_BACKEND_PINS_CYCLES 1
 #define REG_CYCLES                  REG_R14
-
-#define CODEGEN_BACKEND_PINS_ESP    1
-#define REG_PINNED_ESP              REG_R15
 
 extern void *codegen_mem_load_byte;
 extern void *codegen_mem_load_word;

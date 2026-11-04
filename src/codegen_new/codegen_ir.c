@@ -468,11 +468,7 @@ codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
                 dump_host_ends[c] = codegen_dump_get_pos(block_pos);
         } else
 #endif
-            if ((uop->type & UOP_MASK) == (UOP_MOV & UOP_MASK) &&
-                !codegen_reg_is_pinned(IREG_GET_REG(uop->src_reg_a.reg)) &&
-                !codegen_reg_is_pinned(IREG_GET_REG(uop->dest_reg_a.reg)) &&
-                reg_version[IREG_GET_REG(uop->src_reg_a.reg)][uop->src_reg_a.version].refcount <= 1 &&
-                reg_is_native_size(uop->src_reg_a) && reg_is_native_size(uop->dest_reg_a)) {
+            if ((uop->type & UOP_MASK) == (UOP_MOV & UOP_MASK) && reg_version[IREG_GET_REG(uop->src_reg_a.reg)][uop->src_reg_a.version].refcount <= 1 && reg_is_native_size(uop->src_reg_a) && reg_is_native_size(uop->dest_reg_a)) {
             /*Special case for UOP_MOV - if source register won't be used again then
               just rename it to dest register instead of moving*/
             codegen_reg_alloc_register(invalid_ir_reg, uop->src_reg_a, invalid_ir_reg, invalid_ir_reg);
