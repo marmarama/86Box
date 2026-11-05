@@ -216,6 +216,8 @@ opMOV_CRx_r_a16(uint32_t fetchdat)
                 cpu_cur_status |= CPU_STATUS_PMODE;
             else
                 cpu_cur_status &= ~CPU_STATUS_PMODE;
+            if ((cpu_state.regs[cpu_rm].l ^ old_cr0) & 0x80000001)
+                seg_desc_cache_update_pages();
             break;
         case 2:
             cr2 = cpu_state.regs[cpu_rm].l;
@@ -285,6 +287,8 @@ opMOV_CRx_r_a32(uint32_t fetchdat)
                 cpu_cur_status |= CPU_STATUS_PMODE;
             else
                 cpu_cur_status &= ~CPU_STATUS_PMODE;
+            if ((cpu_state.regs[cpu_rm].l ^ old_cr0) & 0x80000001)
+                seg_desc_cache_update_pages();
             break;
         case 2:
             cr2 = cpu_state.regs[cpu_rm].l;

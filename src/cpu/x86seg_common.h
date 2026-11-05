@@ -51,4 +51,29 @@ extern void    x86ss(char *s, uint16_t error);
 extern void    x86ts(char *s, uint16_t error);
 extern void    do_seg_load(x86seg *s, uint16_t *segdat);
 
+#define SEG_DESC_CACHE_SIZE 64
+#define SEG_DESC_CACHE_MASK (SEG_DESC_CACHE_SIZE - 1)
+
+typedef struct seg_desc_cache_entry_t {
+    uint32_t generation;
+    uint16_t selector;
+    uint8_t  cpl;
+    uint8_t  is_ss;
+    uint8_t  stack32;
+    uint8_t  valid;
+    uint32_t base;
+    uint32_t limit;
+    uint32_t limit_low;
+    uint32_t limit_high;
+    uint8_t  access;
+    uint8_t  ar_high;
+} seg_desc_cache_entry_t;
+
+extern seg_desc_cache_entry_t seg_desc_cache[SEG_DESC_CACHE_SIZE];
+extern uint32_t seg_desc_cache_gen;
+extern int      seg_desc_setting_accessed;
+
+extern void seg_desc_cache_flush(void);
+extern void seg_desc_cache_update_pages(void);
+
 #endif /*EMU_X86SEG_COMMON_H*/

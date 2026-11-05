@@ -44,6 +44,114 @@ int cgate_task;
 
 int intgatesize;
 
+seg_desc_cache_entry_t seg_desc_cache[SEG_DESC_CACHE_SIZE];
+uint32_t               seg_desc_cache_gen        = 1;
+int                    seg_desc_setting_accessed = 0;
+
+static uint32_t tracked_desc_pages[16];
+static int      num_tracked_desc_pages = 0;
+
+void
+seg_desc_cache_flush(void)
+{
+    seg_desc_cache_gen++;
+    if (seg_desc_cache_gen == 0) {
+        seg_desc_cache_gen = 1;
+        memset(seg_desc_cache, 0, sizeof(seg_desc_cache));
+    }
+}
+
+void
+seg_desc_cache_update_pages(void)
+{
+    seg_desc_cache_flush();
+
+    if (!pages || !pages_sz)
+        return;
+
+    /* 1. Clear has_desc_table on previously tracked physical pages */
+    for (int i = 0; i < num_tracked_desc_pages; i++) {
+        uint32_t p = tracked_desc_pages[i];
+        if (p < pages_sz)
+            pages[p].has_desc_table = 0;
+    }
+    num_tracked_desc_pages = 0;
+
+    if (!(msw & 1) || (cpu_state.eflags & VM_FLAG))
+        return;
+
+    int saved_abrt = cpu_state.abrt;
+
+    /* 2. Track GDT pages */
+    if (gdt.limit > 0) {
+        uint32_t start_lin = gdt.base;
+        uint32_t end_lin   = gdt.base + gdt.limit;
+        if (end_lin < start_lin)
+            end_lin = 0xffffffff;
+        for (uint32_t lin = (start_lin & ~0xfff); lin <= end_lin; lin += 0x1000) {
+            uint32_t phys = (cr0 & 0x80000000) ? (uint32_t) mmutranslatereal(lin, 0) : lin;
+            if (cpu_state.abrt != saved_abrt) {
+                cpu_state.abrt = saved_abrt;
+                phys           = 0xffffffff;
+            }
+            if (phys != 0xffffffff) {
+                uint32_t p = (phys & rammask) >> 12;
+                if (p < pages_sz && num_tracked_desc_pages < 16) {
+                    int found = 0;
+                    for (int j = 0; j < num_tracked_desc_pages; j++) {
+                        if (tracked_desc_pages[j] == p) {
+                            found = 1;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        pages[p].has_desc_table                      = 1;
+                        tracked_desc_pages[num_tracked_desc_pages++] = p;
+                    }
+                }
+            }
+            if (lin >= 0xfffff000)
+                break;
+        }
+    }
+
+    /* 3. Track LDT pages */
+    if (ldt.limit > 0 && ldt.base != 0) {
+        uint32_t start_lin = ldt.base;
+        uint32_t end_lin   = ldt.base + ldt.limit;
+        if (end_lin < start_lin)
+            end_lin = 0xffffffff;
+        for (uint32_t lin = (start_lin & ~0xfff); lin <= end_lin; lin += 0x1000) {
+            uint32_t phys = (cr0 & 0x80000000) ? (uint32_t) mmutranslatereal(lin, 0) : lin;
+            if (cpu_state.abrt != saved_abrt) {
+                cpu_state.abrt = saved_abrt;
+                phys           = 0xffffffff;
+            }
+            if (phys != 0xffffffff) {
+                uint32_t p = (phys & rammask) >> 12;
+                if (p < pages_sz && num_tracked_desc_pages < 16) {
+                    int found = 0;
+                    for (int j = 0; j < num_tracked_desc_pages; j++) {
+                        if (tracked_desc_pages[j] == p) {
+                            found = 1;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        pages[p].has_desc_table                      = 1;
+                        tracked_desc_pages[num_tracked_desc_pages++] = p;
+                    }
+                }
+            }
+            if (lin >= 0xfffff000)
+                break;
+        }
+    }
+
+    /* Invalidate writelookup mappings so that writes to these pages route via page_lookup */
+    flushmmucache_nopc();
+}
+
 static void
 seg_reset(x86seg *s)
 {
@@ -69,6 +177,7 @@ seg_reset(x86seg *s)
 void
 x86seg_reset(void)
 {
+    seg_desc_cache_flush();
     seg_reset(&cpu_state.seg_cs);
     seg_reset(&cpu_state.seg_ds);
     seg_reset(&cpu_state.seg_es);

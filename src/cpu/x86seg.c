@@ -321,6 +321,49 @@ loadseg(uint16_t seg, x86seg *s)
             return;
 #endif
         }
+
+        uint32_t idx = ((seg >> 2) ^ (seg >> 8) ^ (s == &cpu_state.seg_ss)) & SEG_DESC_CACHE_MASK;
+        seg_desc_cache_entry_t *entry = &seg_desc_cache[idx];
+        if (entry->valid &&
+            entry->generation == seg_desc_cache_gen &&
+            entry->selector == seg &&
+            entry->cpl == CPL &&
+            entry->is_ss == (s == &cpu_state.seg_ss)) {
+
+            s->seg        = seg;
+            s->base       = entry->base;
+            s->limit      = entry->limit;
+            s->limit_low  = entry->limit_low;
+            s->limit_high = entry->limit_high;
+            s->access     = entry->access;
+            s->ar_high    = entry->ar_high;
+            s->checked    = 0;
+
+            if (s == &cpu_state.seg_ss) {
+                set_stack32(entry->stack32);
+                if ((s->base == 0) && (s->limit_low == 0) && (s->limit_high == 0xffffffff))
+                    cpu_cur_status &= ~CPU_STATUS_NOTFLATSS;
+                else
+                    cpu_cur_status |= CPU_STATUS_NOTFLATSS;
+#ifdef USE_DYNAREC
+                codegen_flat_ss = 0;
+#endif
+            } else if (s == &cpu_state.seg_ds) {
+                if ((s->base == 0) && (s->limit_low == 0) && (s->limit_high == 0xffffffff))
+                    cpu_cur_status &= ~CPU_STATUS_NOTFLATDS;
+                else
+                    cpu_cur_status |= CPU_STATUS_NOTFLATDS;
+#ifdef USE_DYNAREC
+                codegen_flat_ds = 0;
+#endif
+            }
+#ifdef USE_NEW_DYNAREC
+            return 0;
+#else
+            return;
+#endif
+        }
+
         addr = seg & 0xfff8;
         dt   = (seg & 0x0004) ? &ldt : &gdt;
         if ((addr + 7) > dt->limit) {
@@ -444,9 +487,20 @@ loadseg(uint16_t seg, x86seg *s)
         s->seg = seg;
         do_seg_load(s, segdat);
 
-        cpl_override = 1;
-        writememw(0, addr + 4, segdat[2] | 0x100); /* Set accessed bit */
-        cpl_override = 0;
+        if (!(segdat[2] & 0x100)) {
+            seg_desc_setting_accessed = 1;
+            cpl_override = 1;
+            writememw(0, addr + 4, segdat[2] | 0x100); /* Set accessed bit */
+            cpl_override = 0;
+            seg_desc_setting_accessed = 0;
+            if (cpu_state.abrt) {
+#ifdef USE_NEW_DYNAREC
+                return 1;
+#else
+                return;
+#endif
+            }
+        }
         s->checked   = 0;
 #ifdef USE_DYNAREC
         if (s == &cpu_state.seg_ds)
@@ -454,6 +508,20 @@ loadseg(uint16_t seg, x86seg *s)
         if (s == &cpu_state.seg_ss)
             codegen_flat_ss = 0;
 #endif
+
+        entry = &seg_desc_cache[idx];
+        entry->generation = seg_desc_cache_gen;
+        entry->selector   = seg;
+        entry->cpl        = CPL;
+        entry->is_ss      = (s == &cpu_state.seg_ss);
+        entry->stack32    = (segdat[3] & 0x40) ? 1 : 0;
+        entry->base       = s->base;
+        entry->limit      = s->limit;
+        entry->limit_low  = s->limit_low;
+        entry->limit_high = s->limit_high;
+        entry->access     = s->access;
+        entry->ar_high    = s->ar_high;
+        entry->valid      = 1;
     } else {
         s->access  = 0xe2;
         s->ar_high = 0x10;
@@ -2467,6 +2535,7 @@ taskswitch286(uint16_t seg, uint16_t *segdat, int is32)
             ldt.limit |= 0xfff;
         }
         ldt.base = (readmemw(0, templ + 2)) | (readmemb(0, templ + 4) << 16) | (readmemb(0, templ + 7) << 24);
+        seg_desc_cache_update_pages();
 
         if (cpu_state.eflags & VM_FLAG) {
             op_loadcs(new_cs);
@@ -2661,6 +2730,7 @@ taskswitch286(uint16_t seg, uint16_t *segdat, int is32)
             }
             ldt.base |= (readmemb(0, templ + 7) << 24);
         }
+        seg_desc_cache_update_pages();
 
         if (!(new_cs & 0xfff8) && !(new_cs & 0x0004)) {
             x86ts(NULL, 0);

@@ -232,6 +232,7 @@ static int op0F00_common(uint32_t fetchdat, UNUSED(int ea32))
             }
             ldt.base = base;
             ldt.seg  = sel;
+            seg_desc_cache_update_pages();
             CLOCK_CYCLES(20);
             PREFETCH_RUN(20, 2, rmdat, (cpu_mod == 3) ? 0 : 1, 2, 0, 0, ea32);
             break;
@@ -266,6 +267,7 @@ static int op0F00_common(uint32_t fetchdat, UNUSED(int ea32))
                 tr.limit |= 0xFFF;
             }
             tr.base = base;
+            seg_desc_cache_update_pages();
             CLOCK_CYCLES(20);
             PREFETCH_RUN(20, 2, rmdat, (cpu_mod == 3) ? 0 : 1, 2, 0, 0, ea32);
             break;
@@ -405,6 +407,7 @@ op0F01_common(UNUSED(uint32_t fetchdat), int is32, int is286, UNUSED(int ea32))
             gdt.base  = base;
             if (!is32)
                 gdt.base &= 0xffffff;
+            seg_desc_cache_update_pages();
             CLOCK_CYCLES(11);
             PREFETCH_RUN(11, 2, rmdat, 1, 1, 0, 0, ea32);
             break;

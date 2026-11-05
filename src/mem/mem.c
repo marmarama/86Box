@@ -226,6 +226,7 @@ flushmmucache(void)
 #ifdef USE_DYNAREC
     codegen_flush();
 #endif
+    seg_desc_cache_update_pages();
 }
 
 void
@@ -747,15 +748,15 @@ addwritelookup(uint32_t virt, uint32_t phys)
        code in the second page never invalidates the spanning block. */
 #ifdef USE_NEW_DYNAREC
 #    ifdef USE_DYNAREC
-    if (pages[phys >> 12].block || pages[phys >> 12].block_2 || (phys & ~0xfff) == recomp_page) {
+    if (pages[phys >> 12].block || pages[phys >> 12].block_2 || (phys & ~0xfff) == recomp_page || pages[phys >> 12].has_desc_table) {
 #    else
-    if (pages[phys >> 12].block || pages[phys >> 12].block_2) {
+    if (pages[phys >> 12].block || pages[phys >> 12].block_2 || pages[phys >> 12].has_desc_table) {
 #    endif
 #else
 #    ifdef USE_DYNAREC
-    if (pages[phys >> 12].block[0] || pages[phys >> 12].block[1] || pages[phys >> 12].block[2] || pages[phys >> 12].block[3] || (phys & ~0xfff) == recomp_page) {
+    if (pages[phys >> 12].block[0] || pages[phys >> 12].block[1] || pages[phys >> 12].block[2] || pages[phys >> 12].block[3] || (phys & ~0xfff) == recomp_page || pages[phys >> 12].has_desc_table) {
 #    else
-    if (pages[phys >> 12].block[0] || pages[phys >> 12].block[1] || pages[phys >> 12].block[2] || pages[phys >> 12].block[3]) {
+    if (pages[phys >> 12].block[0] || pages[phys >> 12].block[1] || pages[phys >> 12].block[2] || pages[phys >> 12].block[3] || pages[phys >> 12].has_desc_table) {
 #    endif
 #endif
         page_lookup[virt >> 12]  = &pages[phys >> 12];
@@ -2259,6 +2260,8 @@ mem_write_ramb_page(uint32_t addr, uint8_t val, page_t *page)
         page->byte_dirty_mask[byte_offset] |= byte_mask;
         if ((page->code_present_mask & mask) || (page->byte_code_present_mask[byte_offset] & byte_mask))
             codegen_notify_code_write(page);
+        if (page->has_desc_table && !seg_desc_setting_accessed)
+            seg_desc_cache_flush();
     }
 }
 
@@ -2294,6 +2297,8 @@ mem_write_ramw_page(uint32_t addr, uint16_t val, page_t *page)
 
         if (page->byte_code_present_mask[byte_offset] & byte_mask)
             codegen_notify_code_write(page);
+        if (page->has_desc_table && !seg_desc_setting_accessed)
+            seg_desc_cache_flush();
     }
 }
 
@@ -2326,6 +2331,8 @@ mem_write_raml_page(uint32_t addr, uint32_t val, page_t *page)
             if (page->byte_code_present_mask[byte_offset + 1] & byte_mask_2)
                 codegen_notify_code_write(page);
         }
+        if (page->has_desc_table && !seg_desc_setting_accessed)
+            seg_desc_cache_flush();
     }
 }
 #else
@@ -2343,6 +2350,8 @@ mem_write_ramb_page(uint32_t addr, uint8_t val, page_t *page)
         uint64_t mask = (uint64_t) 1 << ((addr >> PAGE_MASK_SHIFT) & PAGE_MASK_MASK);
         page->dirty_mask[(addr >> PAGE_MASK_INDEX_SHIFT) & PAGE_MASK_INDEX_MASK] |= mask;
         page->mem[addr & 0xfff] = val;
+        if (page->has_desc_table && !seg_desc_setting_accessed)
+            seg_desc_cache_flush();
     }
 }
 
@@ -2362,6 +2371,8 @@ mem_write_ramw_page(uint32_t addr, uint16_t val, page_t *page)
             mask |= (mask << 1);
         page->dirty_mask[(addr >> PAGE_MASK_INDEX_SHIFT) & PAGE_MASK_INDEX_MASK] |= mask;
         *(uint16_t *) &page->mem[addr & 0xfff] = val;
+        if (page->has_desc_table && !seg_desc_setting_accessed)
+            seg_desc_cache_flush();
     }
 }
 
@@ -2381,6 +2392,8 @@ mem_write_raml_page(uint32_t addr, uint32_t val, page_t *page)
             mask |= (mask << 1);
         page->dirty_mask[(addr >> PAGE_MASK_INDEX_SHIFT) & PAGE_MASK_INDEX_MASK] |= mask;
         *(uint32_t *) &page->mem[addr & 0xfff] = val;
+        if (page->has_desc_table && !seg_desc_setting_accessed)
+            seg_desc_cache_flush();
     }
 }
 #endif

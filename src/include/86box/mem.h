@@ -224,6 +224,8 @@ typedef struct page_t {
 
     uint64_t *byte_dirty_mask;
     uint64_t *byte_code_present_mask;
+
+    uint8_t   has_desc_table;
 } page_t;
 
 extern uint32_t purgable_page_list_head;
@@ -250,6 +252,8 @@ typedef struct _page_ {
 
     /*Head of codeblock tree associated with this page*/
     struct codeblock_t *head;
+
+    uint8_t   has_desc_table;
 } page_t;
 #endif
 
