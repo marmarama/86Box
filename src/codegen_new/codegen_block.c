@@ -1396,7 +1396,9 @@ codegen_handle_dispatch(void)
                  !((block->status ^ cpu_cur_status) & CPU_STATUS_FLAGS) &&
                  ((block->status & cpu_cur_status & CPU_STATUS_MASK) == (cpu_cur_status & CPU_STATUS_MASK)) &&
                  !(block->page_mask & *block->dirty_mask) &&
-                 !block->page_mask2 &&
+                 (!block->page_mask2 ||
+                  (block->dirty_mask2 && !(block->page_mask2 & *block->dirty_mask2) &&
+                   !((block->phys ^ block->phys_2) & ~0xfff))) &&
                  (!(block->flags & CODEBLOCK_STATIC_TOP) || block->TOP == (cpu_state.TOP & 7)));
 
     if (!valid) {
@@ -1407,7 +1409,9 @@ codegen_handle_dispatch(void)
             !((tree_block->status ^ cpu_cur_status) & CPU_STATUS_FLAGS) &&
             ((tree_block->status & cpu_cur_status & CPU_STATUS_MASK) == (cpu_cur_status & CPU_STATUS_MASK)) &&
             !(tree_block->page_mask & *tree_block->dirty_mask) &&
-            !tree_block->page_mask2 &&
+            (!tree_block->page_mask2 ||
+             (tree_block->dirty_mask2 && !(tree_block->page_mask2 & *tree_block->dirty_mask2) &&
+              !((tree_block->phys ^ tree_block->phys_2) & ~0xfff))) &&
             (!(tree_block->flags & CODEBLOCK_STATIC_TOP) || tree_block->TOP == (cpu_state.TOP & 7))) {
 
             block = tree_block;
