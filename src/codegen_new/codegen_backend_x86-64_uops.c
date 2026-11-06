@@ -2731,6 +2731,143 @@ codegen_PSRLQ_IMM(codeblock_t *block, uop_t *uop)
 }
 
 static int
+codegen_PSRLW(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg   = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_reg_b  = HOST_REG_GET(uop->src_reg_b_real);
+    int dest_size  = IREG_GET_SIZE(uop->dest_reg_a_real);
+    int src_size_b = IREG_GET_SIZE(uop->src_reg_b_real);
+
+    if (REG_IS_Q(dest_size) && REG_IS_Q(src_size_b) && uop->dest_reg_a_real == uop->src_reg_a_real) {
+        host_x86_PSRLW_XREG_XREG(block, dest_reg, src_reg_b);
+    }
+#    ifdef RECOMPILER_DEBUG
+    else
+        fatal("PSRLW %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
+#    endif
+    return 0;
+}
+static int
+codegen_PSRLD(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg   = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_reg_b  = HOST_REG_GET(uop->src_reg_b_real);
+    int dest_size  = IREG_GET_SIZE(uop->dest_reg_a_real);
+    int src_size_b = IREG_GET_SIZE(uop->src_reg_b_real);
+
+    if (REG_IS_Q(dest_size) && REG_IS_Q(src_size_b) && uop->dest_reg_a_real == uop->src_reg_a_real) {
+        host_x86_PSRLD_XREG_XREG(block, dest_reg, src_reg_b);
+    }
+#    ifdef RECOMPILER_DEBUG
+    else
+        fatal("PSRLD %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
+#    endif
+    return 0;
+}
+static int
+codegen_PSRLQ(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg   = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_reg_b  = HOST_REG_GET(uop->src_reg_b_real);
+    int dest_size  = IREG_GET_SIZE(uop->dest_reg_a_real);
+    int src_size_b = IREG_GET_SIZE(uop->src_reg_b_real);
+
+    if (REG_IS_Q(dest_size) && REG_IS_Q(src_size_b) && uop->dest_reg_a_real == uop->src_reg_a_real) {
+        host_x86_PSRLQ_XREG_XREG(block, dest_reg, src_reg_b);
+    }
+#    ifdef RECOMPILER_DEBUG
+    else
+        fatal("PSRLQ %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
+#    endif
+    return 0;
+}
+static int
+codegen_PSRAW(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg   = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_reg_b  = HOST_REG_GET(uop->src_reg_b_real);
+    int dest_size  = IREG_GET_SIZE(uop->dest_reg_a_real);
+    int src_size_b = IREG_GET_SIZE(uop->src_reg_b_real);
+
+    if (REG_IS_Q(dest_size) && REG_IS_Q(src_size_b) && uop->dest_reg_a_real == uop->src_reg_a_real) {
+        host_x86_PSRAW_XREG_XREG(block, dest_reg, src_reg_b);
+    }
+#    ifdef RECOMPILER_DEBUG
+    else
+        fatal("PSRAW %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
+#    endif
+    return 0;
+}
+static int
+codegen_PSRAD(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg   = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_reg_b  = HOST_REG_GET(uop->src_reg_b_real);
+    int dest_size  = IREG_GET_SIZE(uop->dest_reg_a_real);
+    int src_size_b = IREG_GET_SIZE(uop->src_reg_b_real);
+
+    if (REG_IS_Q(dest_size) && REG_IS_Q(src_size_b) && uop->dest_reg_a_real == uop->src_reg_a_real) {
+        host_x86_PSRAD_XREG_XREG(block, dest_reg, src_reg_b);
+    }
+#    ifdef RECOMPILER_DEBUG
+    else
+        fatal("PSRAD %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
+#    endif
+    return 0;
+}
+static int
+codegen_PSLLW(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg   = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_reg_b  = HOST_REG_GET(uop->src_reg_b_real);
+    int dest_size  = IREG_GET_SIZE(uop->dest_reg_a_real);
+    int src_size_b = IREG_GET_SIZE(uop->src_reg_b_real);
+
+    if (REG_IS_Q(dest_size) && REG_IS_Q(src_size_b) && uop->dest_reg_a_real == uop->src_reg_a_real) {
+        host_x86_PSLLW_XREG_XREG(block, dest_reg, src_reg_b);
+    }
+#    ifdef RECOMPILER_DEBUG
+    else
+        fatal("PSLLW %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
+#    endif
+    return 0;
+}
+static int
+codegen_PSLLD(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg   = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_reg_b  = HOST_REG_GET(uop->src_reg_b_real);
+    int dest_size  = IREG_GET_SIZE(uop->dest_reg_a_real);
+    int src_size_b = IREG_GET_SIZE(uop->src_reg_b_real);
+
+    if (REG_IS_Q(dest_size) && REG_IS_Q(src_size_b) && uop->dest_reg_a_real == uop->src_reg_a_real) {
+        host_x86_PSLLD_XREG_XREG(block, dest_reg, src_reg_b);
+    }
+#    ifdef RECOMPILER_DEBUG
+    else
+        fatal("PSLLD %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
+#    endif
+    return 0;
+}
+static int
+codegen_PSLLQ(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg   = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_reg_b  = HOST_REG_GET(uop->src_reg_b_real);
+    int dest_size  = IREG_GET_SIZE(uop->dest_reg_a_real);
+    int src_size_b = IREG_GET_SIZE(uop->src_reg_b_real);
+
+    if (REG_IS_Q(dest_size) && REG_IS_Q(src_size_b) && uop->dest_reg_a_real == uop->src_reg_a_real) {
+        host_x86_PSLLQ_XREG_XREG(block, dest_reg, src_reg_b);
+    }
+#    ifdef RECOMPILER_DEBUG
+    else
+        fatal("PSLLQ %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
+#    endif
+    return 0;
+}
+
+static int
 codegen_PSUBB(codeblock_t *block, uop_t *uop)
 {
     int dest_reg   = HOST_REG_GET(uop->dest_reg_a_real);
@@ -3979,7 +4116,32 @@ const uOpFn uop_handlers[UOP_MAX] = {
 
     [UOP_BSWAP &
         UOP_MASK]
-    = codegen_BSWAP
+    = codegen_BSWAP,
+
+    [UOP_PSRLW &
+        UOP_MASK]
+    = codegen_PSRLW,
+    [UOP_PSRLD &
+        UOP_MASK]
+    = codegen_PSRLD,
+    [UOP_PSRLQ &
+        UOP_MASK]
+    = codegen_PSRLQ,
+    [UOP_PSRAW &
+        UOP_MASK]
+    = codegen_PSRAW,
+    [UOP_PSRAD &
+        UOP_MASK]
+    = codegen_PSRAD,
+    [UOP_PSLLW &
+        UOP_MASK]
+    = codegen_PSLLW,
+    [UOP_PSLLD &
+        UOP_MASK]
+    = codegen_PSLLD,
+    [UOP_PSLLQ &
+        UOP_MASK]
+    = codegen_PSLLQ
 };
 
 void

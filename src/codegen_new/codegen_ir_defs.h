@@ -366,8 +366,24 @@ extern int codegen_last_flags_op;
 #define UOP_PAVGUSB (UOP_TYPE_PARAMS_REGS | 0xc8)
 /*UOP_BSWAP - dest_reg = bswap(src_reg_a)*/
 #define UOP_BSWAP (UOP_TYPE_PARAMS_REGS | 0xce)
+/*UOP_PSRLW - (packed word) dest_reg = src_reg_a >> src_reg_b*/
+#define UOP_PSRLW (UOP_TYPE_PARAMS_REGS | 0xcf)
+/*UOP_PSRLD - (packed long) dest_reg = src_reg_a >> src_reg_b*/
+#define UOP_PSRLD (UOP_TYPE_PARAMS_REGS | 0xd0)
+/*UOP_PSRLQ - (packed quad) dest_reg = src_reg_a >> src_reg_b*/
+#define UOP_PSRLQ (UOP_TYPE_PARAMS_REGS | 0xd1)
+/*UOP_PSRAW - (packed word) dest_reg = src_reg_a >> src_reg_b*/
+#define UOP_PSRAW (UOP_TYPE_PARAMS_REGS | 0xd2)
+/*UOP_PSRAD - (packed long) dest_reg = src_reg_a >> src_reg_b*/
+#define UOP_PSRAD (UOP_TYPE_PARAMS_REGS | 0xd3)
+/*UOP_PSLLW - (packed word) dest_reg = src_reg_a << src_reg_b*/
+#define UOP_PSLLW (UOP_TYPE_PARAMS_REGS | 0xd4)
+/*UOP_PSLLD - (packed long) dest_reg = src_reg_a << src_reg_b*/
+#define UOP_PSLLD (UOP_TYPE_PARAMS_REGS | 0xd5)
+/*UOP_PSLLQ - (packed quad) dest_reg = src_reg_a << src_reg_b*/
+#define UOP_PSLLQ (UOP_TYPE_PARAMS_REGS | 0xd6)
 
-#define UOP_MAX     0xcf
+#define UOP_MAX     0xd7
 
 #define UOP_INVALID 0xff
 
@@ -971,6 +987,15 @@ uop_LOOP_JMP(ir_data_t *ir, int loop_label_uop)
 #define uop_PSRLW_IMM(ir, dst_reg, src_reg, imm)                         uop_gen_reg_dst_src_imm(UOP_PSRLW_IMM, ir, dst_reg, src_reg, imm)
 #define uop_PSRLD_IMM(ir, dst_reg, src_reg, imm)                         uop_gen_reg_dst_src_imm(UOP_PSRLD_IMM, ir, dst_reg, src_reg, imm)
 #define uop_PSRLQ_IMM(ir, dst_reg, src_reg, imm)                         uop_gen_reg_dst_src_imm(UOP_PSRLQ_IMM, ir, dst_reg, src_reg, imm)
+
+#define uop_PSRLW(ir, dst_reg, src_reg_a, src_reg_b)                     uop_gen_reg_dst_src2(UOP_PSRLW, ir, dst_reg, src_reg_a, src_reg_b)
+#define uop_PSRLD(ir, dst_reg, src_reg_a, src_reg_b)                     uop_gen_reg_dst_src2(UOP_PSRLD, ir, dst_reg, src_reg_a, src_reg_b)
+#define uop_PSRLQ(ir, dst_reg, src_reg_a, src_reg_b)                     uop_gen_reg_dst_src2(UOP_PSRLQ, ir, dst_reg, src_reg_a, src_reg_b)
+#define uop_PSRAW(ir, dst_reg, src_reg_a, src_reg_b)                     uop_gen_reg_dst_src2(UOP_PSRAW, ir, dst_reg, src_reg_a, src_reg_b)
+#define uop_PSRAD(ir, dst_reg, src_reg_a, src_reg_b)                     uop_gen_reg_dst_src2(UOP_PSRAD, ir, dst_reg, src_reg_a, src_reg_b)
+#define uop_PSLLW(ir, dst_reg, src_reg_a, src_reg_b)                     uop_gen_reg_dst_src2(UOP_PSLLW, ir, dst_reg, src_reg_a, src_reg_b)
+#define uop_PSLLD(ir, dst_reg, src_reg_a, src_reg_b)                     uop_gen_reg_dst_src2(UOP_PSLLD, ir, dst_reg, src_reg_a, src_reg_b)
+#define uop_PSLLQ(ir, dst_reg, src_reg_a, src_reg_b)                     uop_gen_reg_dst_src2(UOP_PSLLQ, ir, dst_reg, src_reg_a, src_reg_b)
 
 #define uop_PSUBB(ir, dst_reg, src_reg_a, src_reg_b)                     uop_gen_reg_dst_src2(UOP_PSUBB, ir, dst_reg, src_reg_a, src_reg_b)
 #define uop_PSUBW(ir, dst_reg, src_reg_a, src_reg_b)                     uop_gen_reg_dst_src2(UOP_PSUBW, ir, dst_reg, src_reg_a, src_reg_b)

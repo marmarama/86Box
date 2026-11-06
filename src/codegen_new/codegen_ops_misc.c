@@ -728,6 +728,18 @@ ropFEMMS(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNUS
     return op_pc;
 }
 
+uint32_t
+ropEMMS(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), uint32_t op_pc)
+{
+    uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
+    uop_CALL_FUNC_RESULT(ir, IREG_temp0, codegen_femms);
+    uop_CMP_IMM_JZ(ir, IREG_temp0, 1, codegen_exit_rout);
+
+    codegen_mmx_entered = 0;
+    codegen_fpu_entered = 0;
+    return op_pc;
+}
+
 /* Blocks are keyed on protected mode but not on CPL or IOPL, so outside
    real mode the privilege check has to run with the block. CPL > IOPL takes
    the interpreter's CLI/STI, which raises #GP(0) or updates VIF under

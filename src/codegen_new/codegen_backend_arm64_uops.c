@@ -2430,6 +2430,55 @@ codegen_PSRLQ_IMM(codeblock_t *block, uop_t *uop)
 }
 
 static int
+codegen_PSRLW(codeblock_t *block, uop_t *uop)
+{
+    fatal("PSRLW %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
+    return 0;
+}
+static int
+codegen_PSRLD(codeblock_t *block, uop_t *uop)
+{
+    fatal("PSRLD %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
+    return 0;
+}
+static int
+codegen_PSRLQ(codeblock_t *block, uop_t *uop)
+{
+    fatal("PSRLQ %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
+    return 0;
+}
+static int
+codegen_PSRAW(codeblock_t *block, uop_t *uop)
+{
+    fatal("PSRAW %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
+    return 0;
+}
+static int
+codegen_PSRAD(codeblock_t *block, uop_t *uop)
+{
+    fatal("PSRAD %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
+    return 0;
+}
+static int
+codegen_PSLLW(codeblock_t *block, uop_t *uop)
+{
+    fatal("PSLLW %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
+    return 0;
+}
+static int
+codegen_PSLLD(codeblock_t *block, uop_t *uop)
+{
+    fatal("PSLLD %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
+    return 0;
+}
+static int
+codegen_PSLLQ(codeblock_t *block, uop_t *uop)
+{
+    fatal("PSLLQ %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
+    return 0;
+}
+
+static int
 codegen_PSUBB(codeblock_t *block, uop_t *uop)
 {
     int dest_reg   = HOST_REG_GET(uop->dest_reg_a_real);
@@ -3788,7 +3837,32 @@ const uOpFn uop_handlers[UOP_MAX] = {
 
     [UOP_BSWAP &
         UOP_MASK]
-    = codegen_BSWAP
+    = codegen_BSWAP,
+
+    [UOP_PSRLW &
+        UOP_MASK]
+    = codegen_PSRLW,
+    [UOP_PSRLD &
+        UOP_MASK]
+    = codegen_PSRLD,
+    [UOP_PSRLQ &
+        UOP_MASK]
+    = codegen_PSRLQ,
+    [UOP_PSRAW &
+        UOP_MASK]
+    = codegen_PSRAW,
+    [UOP_PSRAD &
+        UOP_MASK]
+    = codegen_PSRAD,
+    [UOP_PSLLW &
+        UOP_MASK]
+    = codegen_PSLLW,
+    [UOP_PSLLD &
+        UOP_MASK]
+    = codegen_PSLLD,
+    [UOP_PSLLQ &
+        UOP_MASK]
+    = codegen_PSLLQ
 };
 
 void

@@ -96,7 +96,7 @@ RecompOpFn recomp_opcodes_0f[512] = {
 /*40*/  ropCMOVcc_16,   ropCMOVcc_16,   ropCMOVcc_16,   ropCMOVcc_16,   ropCMOVcc_16,   ropCMOVcc_16,   ropCMOVcc_16,   ropCMOVcc_16,   ropCMOVcc_16,   ropCMOVcc_16,   ropCMOVcc_16,   ropCMOVcc_16,   ropCMOVcc_16,   ropCMOVcc_16,   ropCMOVcc_16,   ropCMOVcc_16,
 /*50*/  NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,
 /*60*/  ropPUNPCKLBW,   ropPUNPCKLWD,   ropPUNPCKLDQ,   ropPACKSSWB,    ropPCMPGTB,     ropPCMPGTW,     ropPCMPGTD,     ropPACKUSWB,    ropPUNPCKHBW,   ropPUNPCKHWD,   ropPUNPCKHDQ,   ropPACKSSDW,    NULL,           NULL,           ropMOVD_r_d,    ropMOVQ_r_q,
-/*70*/  NULL,           ropPSxxW_imm,   ropPSxxD_imm,   ropPSxxQ_imm,   ropPCMPEQB,     ropPCMPEQW,     ropPCMPEQD,     NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           ropMOVD_d_r,    ropMOVQ_q_r,
+/*70*/  NULL,           ropPSxxW_imm,   ropPSxxD_imm,   ropPSxxQ_imm,   ropPCMPEQB,     ropPCMPEQW,     ropPCMPEQD,     ropEMMS,        NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           ropMOVD_d_r,    ropMOVQ_q_r,
 
 /*80*/  ropJO_16,       ropJNO_16,      ropJB_16,       ropJNB_16,      ropJE_16,       ropJNE_16,      ropJBE_16,      ropJNBE_16,     ropJS_16,       ropJNS_16,      ropJP_16,       ropJNP_16,      ropJL_16,       ropJNL_16,      ropJLE_16,      ropJNLE_16,
 /*90*/  ropSETcc,       ropSETcc,       ropSETcc,       ropSETcc,       ropSETcc,       ropSETcc,       ropSETcc,       ropSETcc,       ropSETcc,       ropSETcc,       ropSETcc,       ropSETcc,       ropSETcc,       ropSETcc,       ropSETcc,       ropSETcc,
@@ -104,12 +104,12 @@ RecompOpFn recomp_opcodes_0f[512] = {
 /*b0*/  ropCMPXCHG_8,   ropCMPXCHG_16,  ropLSS_16,      ropBTR_16,      ropLFS_16,      ropLGS_16,      ropMOVZX_16_8,  NULL,           NULL,           NULL,           ropBA_16,       ropBTC_16,      ropBSF_16,      ropBSR_16,      ropMOVSX_16_8,  NULL,
 
 /*c0*/  ropXADD_8,      ropXADD_16,     NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,
-/*d0*/  NULL,           NULL,           NULL,           NULL,           NULL,           ropPMULLW,      NULL,           NULL,           ropPSUBUSB,     ropPSUBUSW,     NULL,           ropPAND,        ropPADDUSB,     ropPADDUSW,     NULL,           ropPANDN,
-/*e0*/  NULL,           NULL,           NULL,           NULL,           NULL,           ropPMULHW,      NULL,           NULL,           ropPSUBSB,      ropPSUBSW,      NULL,           ropPOR,         ropPADDSB,      ropPADDSW,      NULL,           ropPXOR,
+/*d0*/  NULL,           ropPSRLW,       ropPSRLD,       ropPSRLQ,       NULL,           ropPMULLW,      NULL,           NULL,           ropPSUBUSB,     ropPSUBUSW,     NULL,           ropPAND,        ropPADDUSB,     ropPADDUSW,     NULL,           ropPANDN,
+/*e0*/  NULL,           ropPSRAW,       ropPSRAD,       NULL,           NULL,           ropPMULHW,      NULL,           NULL,           ropPSUBSB,      ropPSUBSW,      NULL,           ropPOR,         ropPADDSB,      ropPADDSW,      NULL,           ropPXOR,
 #if defined __ARM_EABI__ || defined _ARM_ || defined _M_ARM || defined __aarch64__ || defined _M_ARM64
-/*f0*/  NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           ropPSUBB,       ropPSUBW,       ropPSUBD,       NULL,           ropPADDB,       ropPADDW,       ropPADDD,       NULL,
+/*f0*/  NULL,           ropPSLLW,       ropPSLLD,       ropPSLLQ,       NULL,           NULL,           NULL,           NULL,           ropPSUBB,       ropPSUBW,       ropPSUBD,       NULL,           ropPADDB,       ropPADDW,       ropPADDD,       NULL,
 #else
-/*f0*/  NULL,           NULL,           NULL,           NULL,           NULL,           ropPMADDWD,     NULL,           NULL,           ropPSUBB,       ropPSUBW,       ropPSUBD,       NULL,           ropPADDB,       ropPADDW,       ropPADDD,       NULL,
+/*f0*/  NULL,           ropPSLLW,       ropPSLLD,       ropPSLLQ,       NULL,           ropPMADDWD,     NULL,           NULL,           ropPSUBB,       ropPSUBW,       ropPSUBD,       NULL,           ropPADDB,       ropPADDW,       ropPADDD,       NULL,
 #endif
 
         /*32-bit data*/
@@ -122,7 +122,7 @@ RecompOpFn recomp_opcodes_0f[512] = {
 /*40*/  ropCMOVcc_32,   ropCMOVcc_32,   ropCMOVcc_32,   ropCMOVcc_32,   ropCMOVcc_32,   ropCMOVcc_32,   ropCMOVcc_32,   ropCMOVcc_32,   ropCMOVcc_32,   ropCMOVcc_32,   ropCMOVcc_32,   ropCMOVcc_32,   ropCMOVcc_32,   ropCMOVcc_32,   ropCMOVcc_32,   ropCMOVcc_32,
 /*50*/  NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,
 /*60*/  ropPUNPCKLBW,   ropPUNPCKLWD,   ropPUNPCKLDQ,   ropPACKSSWB,    ropPCMPGTB,     ropPCMPGTW,     ropPCMPGTD,     ropPACKUSWB,    ropPUNPCKHBW,   ropPUNPCKHWD,   ropPUNPCKHDQ,   ropPACKSSDW,    NULL,           NULL,           ropMOVD_r_d,    ropMOVQ_r_q,
-/*70*/  NULL,           ropPSxxW_imm,   ropPSxxD_imm,   ropPSxxQ_imm,   ropPCMPEQB,     ropPCMPEQW,     ropPCMPEQD,     NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           ropMOVD_d_r,    ropMOVQ_q_r,
+/*70*/  NULL,           ropPSxxW_imm,   ropPSxxD_imm,   ropPSxxQ_imm,   ropPCMPEQB,     ropPCMPEQW,     ropPCMPEQD,     ropEMMS,        NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           ropMOVD_d_r,    ropMOVQ_q_r,
 
 /*80*/  ropJO_32,       ropJNO_32,      ropJB_32,       ropJNB_32,      ropJE_32,       ropJNE_32,      ropJBE_32,      ropJNBE_32,     ropJS_32,       ropJNS_32,      ropJP_32,       ropJNP_32,      ropJL_32,       ropJNL_32,      ropJLE_32,      ropJNLE_32,
 /*90*/  ropSETcc,       ropSETcc,       ropSETcc,       ropSETcc,       ropSETcc,       ropSETcc,       ropSETcc,       ropSETcc,       ropSETcc,       ropSETcc,       ropSETcc,       ropSETcc,       ropSETcc,       ropSETcc,       ropSETcc,       ropSETcc,
@@ -130,12 +130,12 @@ RecompOpFn recomp_opcodes_0f[512] = {
 /*b0*/  ropCMPXCHG_8,   ropCMPXCHG_32,  ropLSS_32,      ropBTR_32,      ropLFS_32,      ropLGS_32,      ropMOVZX_32_8,  ropMOVZX_32_16, NULL,           NULL,           ropBA_32,       ropBTC_32,      ropBSF_32,      ropBSR_32,      ropMOVSX_32_8,  ropMOVSX_32_16,
 
 /*c0*/  ropXADD_8,      ropXADD_32,     NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,       ropBSWAP,
-/*d0*/  NULL,           NULL,           NULL,           NULL,           NULL,           ropPMULLW,      NULL,           NULL,           ropPSUBUSB,     ropPSUBUSW,     NULL,           ropPAND,        ropPADDUSB,     ropPADDUSW,     NULL,           ropPANDN,
-/*e0*/  NULL,           NULL,           NULL,           NULL,           NULL,           ropPMULHW,      NULL,           NULL,           ropPSUBSB,      ropPSUBSW,      NULL,           ropPOR,         ropPADDSB,      ropPADDSW,      NULL,           ropPXOR,
+/*d0*/  NULL,           ropPSRLW,       ropPSRLD,       ropPSRLQ,       NULL,           ropPMULLW,      NULL,           NULL,           ropPSUBUSB,     ropPSUBUSW,     NULL,           ropPAND,        ropPADDUSB,     ropPADDUSW,     NULL,           ropPANDN,
+/*e0*/  NULL,           ropPSRAW,       ropPSRAD,       NULL,           NULL,           ropPMULHW,      NULL,           NULL,           ropPSUBSB,      ropPSUBSW,      NULL,           ropPOR,         ropPADDSB,      ropPADDSW,      NULL,           ropPXOR,
 #if defined __ARM_EABI__ || defined _ARM_ || defined _M_ARM || defined __aarch64__ || defined _M_ARM64
-/*f0*/  NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           NULL,           ropPSUBB,       ropPSUBW,       ropPSUBD,       NULL,           ropPADDB,       ropPADDW,       ropPADDD,       NULL,
+/*f0*/  NULL,           ropPSLLW,       ropPSLLD,       ropPSLLQ,       NULL,           NULL,           NULL,           NULL,           ropPSUBB,       ropPSUBW,       ropPSUBD,       NULL,           ropPADDB,       ropPADDW,       ropPADDD,       NULL,
 #else
-/*f0*/  NULL,           NULL,           NULL,           NULL,           NULL,           ropPMADDWD,     NULL,           NULL,           ropPSUBB,       ropPSUBW,       ropPSUBD,       NULL,           ropPADDB,       ropPADDW,       ropPADDD,       NULL,
+/*f0*/  NULL,           ropPSLLW,       ropPSLLD,       ropPSLLQ,       NULL,           ropPMADDWD,     NULL,           NULL,           ropPSUBB,       ropPSUBW,       ropPSUBD,       NULL,           ropPADDB,       ropPADDW,       ropPADDD,       NULL,
 #endif
     // clang-format on
 };
