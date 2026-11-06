@@ -461,12 +461,17 @@ banshee_updatemapping(banshee_t *banshee)
 #if 0
         banshee_log("Update mapping - PCI disabled\n");
 #endif
+        if (vram_writelookup_active)
+            flushmmucache_write();
         mem_mapping_disable(&svga->mapping);
         mem_mapping_disable(&banshee->linear_mapping);
         mem_mapping_disable(&banshee->reg_mapping_low);
         mem_mapping_disable(&banshee->reg_mapping_high);
         return;
     }
+
+    if (vram_writelookup_active)
+        flushmmucache_write();
 
     banshee_log("Update mapping - bank %02X ", svga->gdcreg[6] & 0xc);
     switch (svga->gdcreg[6] & 0xc) { /*Banked framebuffer*/
@@ -830,6 +835,8 @@ banshee_ext_outl(uint16_t addr, uint32_t val, void *priv)
             voodoo->tile_stride_shift = 10 + ((val >> 13) & 7);
             voodoo->tile_x            = ((val >> 16) & 0x7f) * 128;
             voodoo->tile_x_real       = ((val >> 16) & 0x7f) * 128 * 32;
+            if (vram_writelookup_active)
+                flushmmucache_write();
             break;
 
         case Init_miscInit0:
@@ -1710,6 +1717,8 @@ banshee_cmd_write(void *priv, uint32_t addr, uint32_t val)
         case cmdBaseAddr0:
             voodoo->cmdfifo_base = (val & 0xfff) << 12;
             voodoo->cmdfifo_end  = voodoo->cmdfifo_base + (((voodoo->cmdfifo_size & 0xff) + 1) << 12);
+            if (vram_writelookup_active)
+                flushmmucache_write();
 #if 0
             banshee_log("cmdfifo_base=%08x  cmdfifo_end=%08x %08x\n", voodoo->cmdfifo_base, voodoo->cmdfifo_end, val);
 #endif
@@ -1722,6 +1731,8 @@ banshee_cmd_write(void *priv, uint32_t addr, uint32_t val)
             if (!voodoo->cmdfifo_enabled)
                 voodoo->cmdfifo_in_sub = 0; /*Not sure exactly when this should be reset*/
             voodoo->cmdfifo_in_agp = val & 0x200;
+            if (vram_writelookup_active)
+                flushmmucache_write();
 #if 0
             banshee_log("cmdfifo_base=%08x  cmdfifo_end=%08x\n", voodoo->cmdfifo_base, voodoo->cmdfifo_end);
 #endif
@@ -1750,6 +1761,8 @@ banshee_cmd_write(void *priv, uint32_t addr, uint32_t val)
         case cmdBaseAddr1:
             voodoo->cmdfifo_base_2 = (val & 0xfff) << 12;
             voodoo->cmdfifo_end_2  = voodoo->cmdfifo_base_2 + (((voodoo->cmdfifo_size_2 & 0xff) + 1) << 12);
+            if (vram_writelookup_active)
+                flushmmucache_write();
 #if 0
             banshee_log("cmdfifo_base=%08x  cmdfifo_end=%08x %08x\n", voodoo->cmdfifo_base, voodoo->cmdfifo_end, val);
 #endif
@@ -1762,6 +1775,8 @@ banshee_cmd_write(void *priv, uint32_t addr, uint32_t val)
             if (!voodoo->cmdfifo_enabled_2)
                 voodoo->cmdfifo_in_sub_2 = 0; /*Not sure exactly when this should be reset*/
             voodoo->cmdfifo_in_agp_2 = val & 0x200;
+            if (vram_writelookup_active)
+                flushmmucache_write();
 #if 0
             banshee_log("cmdfifo_base=%08x  cmdfifo_end=%08x\n", voodoo->cmdfifo_base, voodoo->cmdfifo_end);
 #endif
@@ -2054,14 +2069,42 @@ banshee_read_linear_l(uint32_t addr, void *priv)
     return *(uint32_t *) &svga->vram[addr & svga->vram_mask];
 }
 
+static inline int
+banshee_can_map_linear_page(const banshee_t *banshee, uint32_t addr)
+{
+    const voodoo_t *voodoo    = banshee->voodoo;
+    const svga_t   *svga      = &banshee->svga;
+    uint32_t        page_base = addr & ~0xfff;
+
+    if (!cpu_use_exec || mem_logical_addr == 0xffffffff)
+        return 0;
+    if ((mem_logical_addr ^ addr) & 0xfff)
+        return 0;
+    if (page_base + 0xfff >= voodoo->tile_base)
+        return 0;
+    if (page_base + 0xfff >= svga->vram_max)
+        return 0;
+    if (voodoo->cmdfifo_enabled && page_base < voodoo->cmdfifo_end && (page_base + 0x1000) > voodoo->cmdfifo_base)
+        return 0;
+    if (voodoo->cmdfifo_enabled_2 && page_base < voodoo->cmdfifo_end_2 && (page_base + 0x1000) > voodoo->cmdfifo_base_2)
+        return 0;
+    return 1;
+}
+
 static void
 banshee_write_linear(uint32_t addr, uint8_t val, void *priv)
 {
-    banshee_t      *banshee = (banshee_t *) priv;
-    const voodoo_t *voodoo  = banshee->voodoo;
-    svga_t         *svga    = &banshee->svga;
+    banshee_t *banshee = (banshee_t *) priv;
+    voodoo_t  *voodoo  = banshee->voodoo;
+    svga_t    *svga    = &banshee->svga;
+    int        timing;
 
-    cycles -= voodoo->write_time;
+    if (addr == voodoo->last_write_addr + 1)
+        timing = voodoo->burst_time;
+    else
+        timing = voodoo->write_time;
+    cycles -= timing;
+    voodoo->last_write_addr = addr;
 
 #if 0
     banshee_log("write_linear: addr=%08x val=%02x\n", addr, val);
@@ -2079,6 +2122,8 @@ banshee_write_linear(uint32_t addr, uint8_t val, void *priv)
 #if 0
         banshee_log("  Tile b %08x->%08x %i %i\n", old_addr, addr, x, y);
 #endif
+    } else if (banshee_can_map_linear_page(banshee, addr)) {
+        addwritelookup_vram(mem_logical_addr, &svga->vram[(addr & ~0xfff) & svga->vram_mask]);
     }
     if (addr >= svga->vram_max)
         return;
@@ -2092,9 +2137,10 @@ banshee_write_linear(uint32_t addr, uint8_t val, void *priv)
 static void
 banshee_write_linear_w(uint32_t addr, uint16_t val, void *priv)
 {
-    banshee_t      *banshee = (banshee_t *) priv;
-    const voodoo_t *voodoo  = banshee->voodoo;
-    svga_t         *svga    = &banshee->svga;
+    banshee_t *banshee = (banshee_t *) priv;
+    voodoo_t  *voodoo  = banshee->voodoo;
+    svga_t    *svga    = &banshee->svga;
+    int        timing;
 
     if (addr & 1) {
         banshee_write_linear(addr, val, priv);
@@ -2102,7 +2148,12 @@ banshee_write_linear_w(uint32_t addr, uint16_t val, void *priv)
         return;
     }
 
-    cycles -= voodoo->write_time;
+    if (addr == voodoo->last_write_addr + 2)
+        timing = voodoo->burst_time;
+    else
+        timing = voodoo->write_time;
+    cycles -= timing;
+    voodoo->last_write_addr = addr;
 #if 0
     banshee_log("write_linear: addr=%08x val=%02x\n", addr, val);
 #endif
@@ -2119,6 +2170,8 @@ banshee_write_linear_w(uint32_t addr, uint16_t val, void *priv)
 #if 0
         banshee_log("  Tile b %08x->%08x %i %i\n", old_addr, addr, x, y);
 #endif
+    } else if (banshee_can_map_linear_page(banshee, addr)) {
+        addwritelookup_vram(mem_logical_addr, &svga->vram[(addr & ~0xfff) & svga->vram_mask]);
     }
     if (addr >= svga->vram_max)
         return;
@@ -2167,6 +2220,8 @@ banshee_write_linear_l(uint32_t addr, uint32_t val, void *priv)
 #if 0
         banshee_log("  Tile %08x->%08x->%08x->%08x %i %i  tile_x=%i\n", old_addr, addr_off, addr2, addr, x, y, voodoo->tile_x_real);
 #endif
+    } else if (banshee_can_map_linear_page(banshee, addr)) {
+        addwritelookup_vram(mem_logical_addr, &svga->vram[(addr & ~0xfff) & svga->vram_mask]);
     }
 
     if (addr >= svga->vram_max)

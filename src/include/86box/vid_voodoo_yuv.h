@@ -387,3 +387,4 @@ voodoo_decode_uyuv422_span_16bpp(uint16_t *buf, const uint8_t *src, int byte_cou
 }
 
 #endif /*VIDEO_VOODOO_YUV_H*/
+

@@ -1669,6 +1669,8 @@ svga_poll(void *priv)
                 if (svga->changedvram[x])
                     svga->changedvram[x]--;
             }
+            if (vram_writelookup_active)
+                flushmmucache_write();
 
             if (svga->fullchange)
                 svga->fullchange--;

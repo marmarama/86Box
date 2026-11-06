@@ -123,6 +123,7 @@ int mem_a20_state   = 0;
 
 int mmuflush        = 0;
 int is_compare      = 0;
+int vram_writelookup_active = 0;
 
 #ifdef USE_NEW_DYNAREC
 uint64_t *byte_dirty_mask;
@@ -201,6 +202,7 @@ resetreadlookup(void)
     writelnext   = 0;
     pccache      = 0xffffffff;
     high_page    = 0;
+    vram_writelookup_active = 0;
 }
 
 void
@@ -219,6 +221,7 @@ flushmmucache(void)
         }
     }
     mmuflush++;
+    vram_writelookup_active = 0;
 
     pccache  = (uint32_t) 0xffffffff;
     pccache2 = (uint8_t *) 0xffffffff;
@@ -240,6 +243,7 @@ flushmmucache_write(void)
         }
     }
     mmuflush++;
+    vram_writelookup_active = 0;
 }
 
 void
@@ -270,6 +274,7 @@ flushmmucache_nopc(void)
             writelookup[c]               = 0xffffffff;
         }
     }
+    vram_writelookup_active = 0;
 }
 
 void
@@ -450,7 +455,9 @@ mmutranslatereal_normal(uint32_t addr, int rw)
             return 0xffffffffffffffffULL;
         }
 
-        rammap(addr2) |= (rw ? 0x60 : 0x20);
+        uint32_t pse_mask = rw ? 0x60 : 0x20;
+        if ((temp & pse_mask) != pse_mask)
+            rammap(addr2) |= pse_mask;
 
         uint64_t page = temp & ~0x3fffff;
         if (cpu_features & CPU_FEATURE_PSE36)
@@ -472,8 +479,11 @@ mmutranslatereal_normal(uint32_t addr, int rw)
         return 0xffffffffffffffffULL;
     }
 
-    rammap(addr2) |= 0x20;
-    rammap((temp2 & ~0xfff) + ((addr >> 10) & 0xffc)) |= (rw ? 0x60 : 0x20);
+    if (!(temp2 & 0x20))
+        rammap(addr2) |= 0x20;
+    uint32_t pte_mask = rw ? 0x60 : 0x20;
+    if ((temp & pte_mask) != pte_mask)
+        rammap((temp2 & ~0xfff) + ((addr >> 10) & 0xffc)) |= pte_mask;
 
     return (uint64_t) ((temp & ~0xfff) + (addr & 0xfff));
 }
@@ -769,6 +779,26 @@ addwritelookup(uint32_t virt, uint32_t phys)
     writelnext &= (cachesize - 1);
 
     cycles -= 9;
+}
+
+void
+addwritelookup_vram(uint32_t virt, uint8_t *vram_page_ptr)
+{
+    if (cpu_cache_enabled || virt == 0xffffffff)
+        return;
+
+    if (page_lookup[virt >> 12] || writelookup2[virt >> 12] != (uintptr_t) LOOKUP_INV)
+        return;
+
+    if (writelookup[writelnext] != -1) {
+        page_lookup[writelookup[writelnext]]  = NULL;
+        writelookup2[writelookup[writelnext]] = LOOKUP_INV;
+    }
+
+    writelookup2[virt >> 12]  = (uintptr_t) vram_page_ptr - (uintptr_t) (virt & ~0xfff);
+    writelookup[writelnext++] = virt >> 12;
+    writelnext &= (cachesize - 1);
+    vram_writelookup_active = 1;
 }
 
 /* Bus-side reads for cache fills: use the CPU's read mapping, which may be

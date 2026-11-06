@@ -360,6 +360,8 @@ extern uint64_t mmutranslatereal(uint32_t addr, int rw);
 extern uint32_t mmutranslatereal32(uint32_t addr, int rw);
 extern void     addreadlookup(uint32_t virt, uint32_t phys);
 extern void     addwritelookup(uint32_t virt, uint32_t phys);
+extern int      vram_writelookup_active;
+extern void     addwritelookup_vram(uint32_t virt, uint8_t *vram_page_ptr);
 
 extern void mem_mapping_set(mem_mapping_t *,
                             uint32_t base,
