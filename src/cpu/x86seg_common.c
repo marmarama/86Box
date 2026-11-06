@@ -16,12 +16,12 @@
  *          Copyright 2008-2018 Sarah Walker.
  *          Copyright 2016-2018 Miran Grca.
  */
+#include <inttypes.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <stdarg.h>
 #include <wchar.h>
 #define HAVE_STDARG_H
 #include <86box/86box.h>
@@ -47,13 +47,23 @@ int intgatesize;
 seg_desc_cache_entry_t seg_desc_cache[SEG_DESC_CACHE_SIZE];
 uint32_t               seg_desc_cache_gen        = 1;
 int                    seg_desc_setting_accessed = 0;
+int                    seg_desc_cache_overflow   = 0;
 
-static uint32_t tracked_desc_pages[16];
+uint64_t seg_desc_cache_hits         = 0;
+uint64_t seg_desc_cache_misses       = 0;
+uint64_t seg_desc_cache_flushes      = 0;
+uint64_t seg_desc_update_pages_calls = 0;
+uint64_t seg_desc_accessed_skips     = 0;
+
+#define MAX_TRACKED_DESC_PAGES 64
+
+static uint32_t tracked_desc_pages[MAX_TRACKED_DESC_PAGES];
 static int      num_tracked_desc_pages = 0;
 
 void
 seg_desc_cache_flush(void)
 {
+    seg_desc_cache_flushes++;
     seg_desc_cache_gen++;
     if (seg_desc_cache_gen == 0) {
         seg_desc_cache_gen = 1;
@@ -62,8 +72,20 @@ seg_desc_cache_flush(void)
 }
 
 void
+seg_desc_cache_log_stats(void)
+{
+    uint64_t total = seg_desc_cache_hits + seg_desc_cache_misses;
+    double hit_pct = total ? ((double) seg_desc_cache_hits * 100.0 / (double) total) : 0.0;
+    pclog("SEG_DESC_CACHE: hits=%" PRIu64 ", misses=%" PRIu64 " (%.1f%% hit), flushes=%" PRIu64 ", update_pages=%" PRIu64 ", accessed_skips=%" PRIu64 ", overflow=%d\n",
+          seg_desc_cache_hits, seg_desc_cache_misses, hit_pct,
+          seg_desc_cache_flushes, seg_desc_update_pages_calls,
+          seg_desc_accessed_skips, seg_desc_cache_overflow);
+}
+
+void
 seg_desc_cache_update_pages(void)
 {
+    seg_desc_update_pages_calls++;
     seg_desc_cache_flush();
 
     if (!pages || !pages_sz)
@@ -75,7 +97,8 @@ seg_desc_cache_update_pages(void)
         if (p < pages_sz)
             pages[p].has_desc_table = 0;
     }
-    num_tracked_desc_pages = 0;
+    num_tracked_desc_pages  = 0;
+    seg_desc_cache_overflow = 0;
 
     if (!(msw & 1) || (cpu_state.eflags & VM_FLAG))
         return;
@@ -96,7 +119,7 @@ seg_desc_cache_update_pages(void)
             }
             if (phys != 0xffffffff) {
                 uint32_t p = (phys & rammask) >> 12;
-                if (p < pages_sz && num_tracked_desc_pages < 16) {
+                if (p < pages_sz) {
                     int found = 0;
                     for (int j = 0; j < num_tracked_desc_pages; j++) {
                         if (tracked_desc_pages[j] == p) {
@@ -105,10 +128,17 @@ seg_desc_cache_update_pages(void)
                         }
                     }
                     if (!found) {
-                        pages[p].has_desc_table                      = 1;
-                        tracked_desc_pages[num_tracked_desc_pages++] = p;
+                        if (num_tracked_desc_pages < MAX_TRACKED_DESC_PAGES) {
+                            pages[p].has_desc_table                      = 1;
+                            tracked_desc_pages[num_tracked_desc_pages++] = p;
+                        } else {
+                            seg_desc_cache_overflow = 1;
+                        }
                     }
                 }
+            } else {
+                /* GDT page failed translation; cannot safely track modifications */
+                seg_desc_cache_overflow = 1;
             }
             if (lin >= 0xfffff000)
                 break;
@@ -116,7 +146,7 @@ seg_desc_cache_update_pages(void)
     }
 
     /* 3. Track LDT pages */
-    if (ldt.limit > 0 && ldt.base != 0) {
+    if (ldt.limit > 0 && ldt.seg != 0) {
         uint32_t start_lin = ldt.base;
         uint32_t end_lin   = ldt.base + ldt.limit;
         if (end_lin < start_lin)
@@ -129,7 +159,7 @@ seg_desc_cache_update_pages(void)
             }
             if (phys != 0xffffffff) {
                 uint32_t p = (phys & rammask) >> 12;
-                if (p < pages_sz && num_tracked_desc_pages < 16) {
+                if (p < pages_sz) {
                     int found = 0;
                     for (int j = 0; j < num_tracked_desc_pages; j++) {
                         if (tracked_desc_pages[j] == p) {
@@ -138,15 +168,25 @@ seg_desc_cache_update_pages(void)
                         }
                     }
                     if (!found) {
-                        pages[p].has_desc_table                      = 1;
-                        tracked_desc_pages[num_tracked_desc_pages++] = p;
+                        if (num_tracked_desc_pages < MAX_TRACKED_DESC_PAGES) {
+                            pages[p].has_desc_table                      = 1;
+                            tracked_desc_pages[num_tracked_desc_pages++] = p;
+                        } else {
+                            seg_desc_cache_overflow = 1;
+                        }
                     }
                 }
+            } else {
+                /* LDT page failed translation */
+                seg_desc_cache_overflow = 1;
             }
             if (lin >= 0xfffff000)
                 break;
         }
     }
+
+    if (seg_desc_cache_overflow)
+        seg_desc_cache_flush();
 
     /* Invalidate writelookup mappings so that writes to these pages route via page_lookup */
     flushmmucache_nopc();

@@ -72,8 +72,16 @@ typedef struct seg_desc_cache_entry_t {
 extern seg_desc_cache_entry_t seg_desc_cache[SEG_DESC_CACHE_SIZE];
 extern uint32_t seg_desc_cache_gen;
 extern int      seg_desc_setting_accessed;
+extern int      seg_desc_cache_overflow;
+
+extern uint64_t seg_desc_cache_hits;
+extern uint64_t seg_desc_cache_misses;
+extern uint64_t seg_desc_cache_flushes;
+extern uint64_t seg_desc_update_pages_calls;
+extern uint64_t seg_desc_accessed_skips;
 
 extern void seg_desc_cache_flush(void);
 extern void seg_desc_cache_update_pages(void);
+extern void seg_desc_cache_log_stats(void);
 
 #endif /*EMU_X86SEG_COMMON_H*/

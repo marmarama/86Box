@@ -2115,6 +2115,11 @@ pc_run(void)
 #if defined(USE_DYNAREC) && defined(USE_NEW_DYNAREC)
         codegen_dump_record_rt_sample(speed_percent, fps, elapsed_ms);
 #endif
+        static int seg_desc_log_interval = 0;
+        if (++seg_desc_log_interval >= 5) {
+            seg_desc_log_interval = 0;
+            seg_desc_cache_log_stats();
+        }
 
 #ifdef __APPLE__
         /* Needed due to modifying the UI on the non-main thread is a big no-no. */

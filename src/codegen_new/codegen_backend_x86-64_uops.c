@@ -1277,10 +1277,10 @@ codegen_LOAD_SEG(codeblock_t *block, uop_t *uop)
         fatal("LOAD_SEG %02x %p\n", uop->src_reg_a_real, uop->p);
 #    endif
 #    if _WIN64
-    host_x86_MOV16_REG_REG(block, REG_CX, src_reg);
+    host_x86_MOVZX_REG_32_16(block, REG_ECX, src_reg);
     host_x86_MOV64_REG_IMM(block, REG_EDX, (uint64_t) uop->p);
 #    else
-    host_x86_MOV16_REG_REG(block, REG_DI, src_reg);
+    host_x86_MOVZX_REG_32_16(block, REG_EDI, src_reg);
     host_x86_MOV64_REG_IMM(block, REG_ESI, (uint64_t) uop->p);
 #    endif
     host_x86_CALL(block, (void *) loadseg);

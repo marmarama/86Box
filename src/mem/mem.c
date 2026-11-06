@@ -2607,6 +2607,8 @@ mem_invalidate_range(uint32_t start_addr, uint32_t end_addr)
 
             codegen_notify_code_write(page);
         }
+        if (page && page->has_desc_table && !seg_desc_setting_accessed)
+            seg_desc_cache_flush();
     }
 #else
     uint32_t cur_addr;
@@ -2615,8 +2617,11 @@ mem_invalidate_range(uint32_t start_addr, uint32_t end_addr)
         /* Do nothing if the pages array is empty or DMA reads/writes to/from PCI device memory addresses
            may crash the emulator. */
         cur_addr = (start_addr >> 12);
-        if (cur_addr < pages_sz)
+        if (cur_addr < pages_sz) {
             memset(pages[cur_addr].dirty_mask, 0xff, sizeof(pages[cur_addr].dirty_mask));
+            if (pages[cur_addr].has_desc_table && !seg_desc_setting_accessed)
+                seg_desc_cache_flush();
+        }
     }
 #endif
 }

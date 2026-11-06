@@ -1,5 +1,8 @@
 # `codegen_new` Agent & Debugging Guide
 
+> [!NOTE]
+> This guide has been promoted to the root repository level: see [`AGENTS.md`](file:///home/marm/src/86Box/AGENTS.md) for the comprehensive repo-wide architecture, subsystem interactions, debugging workflows, and work tracking guide.
+
 This document captures essential architectural knowledge, debugging workflows, test harnesses, work tracking (Taskwarrior), and hard-won post-mortem lessons for AI pair-programmers and engineers working on the `codegen_new` (New Dynarec) codebase in 86Box.
 
 ---

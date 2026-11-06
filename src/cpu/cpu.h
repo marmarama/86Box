@@ -632,6 +632,8 @@ extern uint16_t cs_msr;
 extern uint32_t esp_msr;
 extern uint32_t eip_msr;
 
+extern void     seg_desc_cache_log_stats(void);
+
 /* For the AMD K6. */
 extern uint64_t amd_efer;
 extern uint64_t star;
