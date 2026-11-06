@@ -117,7 +117,9 @@ build_load_routine(codeblock_t *block, int size, int is_float)
     host_x86_SHR32_IMM(block, REG_ESI, 12);
     host_x86_MOV64_REG_BASE_INDEX_SHIFT(block, REG_RSI, REG_R12, REG_RSI, 3);
     if (size != 1) {
-        host_x86_TEST32_REG_IMM(block, REG_ECX, size - 1);
+        host_x86_LEA_REG_IMM(block, REG_R8, REG_ECX, size - 1);
+        host_x86_XOR32_REG_REG(block, REG_R8, REG_ECX);
+        host_x86_TEST32_REG_IMM(block, REG_R8, 0xfffff000);
         misaligned_offset = host_x86_JNZ_short(block);
     }
     host_x86_CMP64_REG_IMM(block, REG_RSI, (uint32_t) -1);
@@ -223,7 +225,9 @@ build_store_routine(codeblock_t *block, int size, int is_float)
         host_x86_MOV64_REG_BASE_INDEX_SHIFT(block, REG_RSI, REG_R8, REG_RSI, 3);
     }
     if (size != 1) {
-        host_x86_TEST32_REG_IMM(block, REG_EDI, size - 1);
+        host_x86_LEA_REG_IMM(block, REG_R8, REG_EDI, size - 1);
+        host_x86_XOR32_REG_REG(block, REG_R8, REG_EDI);
+        host_x86_TEST32_REG_IMM(block, REG_R8, 0xfffff000);
         misaligned_offset = host_x86_JNZ_short(block);
     }
     host_x86_CMP64_REG_IMM(block, REG_RSI, (uint32_t) -1);
