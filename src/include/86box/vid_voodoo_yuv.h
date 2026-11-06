@@ -18,6 +18,7 @@
 #define VIDEO_VOODOO_YUV_H
 
 #include <stdint.h>
+#include <string.h>
 
 #ifndef CLAMP
 #    define CLAMP(x) (((x) < 0) ? 0 : (((x) > 0xff) ? 0xff : (x)))
@@ -384,6 +385,61 @@ voodoo_decode_uyuv422_span_16bpp(uint16_t *buf, const uint8_t *src, int byte_cou
         voodoo_decode_uyuv422_pair_16bpp(buf + wp, src + c);
         wp += 2;
     }
+}
+
+/*
+ * Fast solid 16bpp fill with SSE2 vectorization and memset optimization.
+ */
+static inline void
+voodoo_fill_16bpp(uint16_t *dst, uint16_t col, int count)
+{
+    if ((col & 0xff) == (col >> 8)) {
+        memset(dst, col & 0xff, count * 2);
+        return;
+    }
+#if defined(VOODOO_YUV_SSE2)
+    __m128i val = _mm_set1_epi16(col);
+    int i = 0;
+    for (; i <= count - 8; i += 8) {
+        _mm_storeu_si128((__m128i *) (dst + i), val);
+    }
+    for (; i < count; i++) {
+        dst[i] = col;
+    }
+#else
+    for (int i = 0; i < count; i++) {
+        dst[i] = col;
+    }
+#endif
+}
+
+/*
+ * Fast solid 32bpp fill with SSE2 vectorization and memset optimization.
+ */
+static inline void
+voodoo_fill_32bpp(uint32_t *dst, uint32_t col, int count)
+{
+    if (col == 0 || col == 0xffffffff ||
+        ((col & 0xff) == ((col >> 8) & 0xff) &&
+         (col & 0xff) == ((col >> 16) & 0xff) &&
+         (col & 0xff) == ((col >> 24) & 0xff))) {
+        memset(dst, col & 0xff, count * 4);
+        return;
+    }
+#if defined(VOODOO_YUV_SSE2)
+    __m128i val = _mm_set1_epi32(col);
+    int i = 0;
+    for (; i <= count - 4; i += 4) {
+        _mm_storeu_si128((__m128i *) (dst + i), val);
+    }
+    for (; i < count; i++) {
+        dst[i] = col;
+    }
+#else
+    for (int i = 0; i < count; i++) {
+        dst[i] = col;
+    }
+#endif
 }
 
 #endif /*VIDEO_VOODOO_YUV_H*/
