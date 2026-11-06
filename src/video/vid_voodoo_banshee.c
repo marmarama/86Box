@@ -43,6 +43,7 @@
 #include <86box/vid_svga.h>
 #include <86box/vid_svga_render.h>
 #include <86box/vid_voodoo_common.h>
+#include <86box/vid_voodoo_yuv.h>
 #include <86box/vid_voodoo_display.h>
 #include <86box/vid_voodoo_fb.h>
 #include <86box/vid_voodoo_fifo.h>
@@ -2385,82 +2386,16 @@ banshee_hwcursor_draw(svga_t *svga, int displine)
         }                                                                                                               \
     } while (0)
 
-#define DECODE_YUYV422(buf)                                      \
-    do {                                                         \
-        int c;                                                   \
-        int wp = 0;                                              \
-                                                                 \
-        for (c = 0; c < voodoo->overlay.overlay_bytes; c += 4) { \
-            uint8_t y1, y2;                                      \
-            int8_t  Cr, Cb;                                      \
-            int     dR, dG, dB;                                  \
-            int     r, g, b;                                     \
-                                                                 \
-            y1 = src[0];                                         \
-            Cr = src[1] - 0x80;                                  \
-            y2 = src[2];                                         \
-            Cb = src[3] - 0x80;                                  \
-            src += 4;                                            \
-                                                                 \
-            dR = (359 * Cr) >> 8;                                \
-            dG = (88 * Cb + 183 * Cr) >> 8;                      \
-            dB = (453 * Cb) >> 8;                                \
-                                                                 \
-            r = y1 + dR;                                         \
-            CLAMP(r);                                            \
-            g = y1 - dG;                                         \
-            CLAMP(g);                                            \
-            b = y1 + dB;                                         \
-            CLAMP(b);                                            \
-            buf[wp++] = r | (g << 8) | (b << 16);                \
-                                                                 \
-            r = y2 + dR;                                         \
-            CLAMP(r);                                            \
-            g = y2 - dG;                                         \
-            CLAMP(g);                                            \
-            b = y2 + dB;                                         \
-            CLAMP(b);                                            \
-            buf[wp++] = r | (g << 8) | (b << 16);                \
-        }                                                        \
+#define DECODE_YUYV422(buf)                                                        \
+    do {                                                                           \
+        voodoo_decode_yuyv422_span_32bpp(buf, src, voodoo->overlay.overlay_bytes); \
+        src += voodoo->overlay.overlay_bytes;                                      \
     } while (0)
 
-#define DECODE_UYUV422(buf)                                      \
-    do {                                                         \
-        int c;                                                   \
-        int wp = 0;                                              \
-                                                                 \
-        for (c = 0; c < voodoo->overlay.overlay_bytes; c += 4) { \
-            uint8_t y1, y2;                                      \
-            int8_t  Cr, Cb;                                      \
-            int     dR, dG, dB;                                  \
-            int     r, g, b;                                     \
-                                                                 \
-            Cr = src[0] - 0x80;                                  \
-            y1 = src[1];                                         \
-            Cb = src[2] - 0x80;                                  \
-            y2 = src[3];                                         \
-            src += 4;                                            \
-                                                                 \
-            dR = (359 * Cr) >> 8;                                \
-            dG = (88 * Cb + 183 * Cr) >> 8;                      \
-            dB = (453 * Cb) >> 8;                                \
-                                                                 \
-            r = y1 + dR;                                         \
-            CLAMP(r);                                            \
-            g = y1 - dG;                                         \
-            CLAMP(g);                                            \
-            b = y1 + dB;                                         \
-            CLAMP(b);                                            \
-            buf[wp++] = r | (g << 8) | (b << 16);                \
-                                                                 \
-            r = y2 + dR;                                         \
-            CLAMP(r);                                            \
-            g = y2 - dG;                                         \
-            CLAMP(g);                                            \
-            b = y2 + dB;                                         \
-            CLAMP(b);                                            \
-            buf[wp++] = r | (g << 8) | (b << 16);                \
-        }                                                        \
+#define DECODE_UYUV422(buf)                                                        \
+    do {                                                                           \
+        voodoo_decode_uyuv422_span_32bpp(buf, src, voodoo->overlay.overlay_bytes); \
+        src += voodoo->overlay.overlay_bytes;                                      \
     } while (0)
 
 #define OVERLAY_SAMPLE(buf)                                                      \

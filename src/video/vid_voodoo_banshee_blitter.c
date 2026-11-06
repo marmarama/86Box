@@ -42,6 +42,7 @@
 #include <86box/video.h>
 #include <86box/vid_svga.h>
 #include <86box/vid_voodoo_common.h>
+#include <86box/vid_voodoo_yuv.h>
 #include <86box/vid_voodoo_banshee_blitter.h>
 #include <86box/vid_voodoo_render.h>
 
@@ -471,95 +472,13 @@ banshee_do_rectfill(voodoo_t *voodoo)
 void
 DECODE_YUYV422(uint32_t *buf, uint8_t *src)
 {
-    do {
-        int wp = 0;
-
-        uint8_t y1;
-        uint8_t y2;
-        int8_t  Cr;
-        int8_t  Cb;
-        int     dR;
-        int     dG;
-        int     dB;
-        int     r;
-        int     g;
-        int     b;
-
-        y1 = src[0];
-        Cr = src[1] - 0x80;
-        y2 = src[2];
-        Cb = src[3] - 0x80;
-
-        dR = (359 * Cr) >> 8;
-        dG = (88 * Cb + 183 * Cr) >> 8;
-        dB = (453 * Cb) >> 8;
-
-        r         = y1 + dR;
-        r         = CLAMP(r);
-        g         = y1 - dG;
-        g         = CLAMP(g);
-        b         = y1 + dB;
-        b         = CLAMP(b);
-        buf[wp++] = r | (g << 8) | (b << 16);
-
-        r         = y2 + dR;
-        r         = CLAMP(r);
-        g         = y2 - dG;
-        g         = CLAMP(g);
-        b         = y2 + dB;
-        b         = CLAMP(b);
-        buf[wp++] = r | (g << 8) | (b << 16);
-    } while (0);
+    voodoo_decode_yuyv422_pair_32bpp(buf, src);
 }
 
 void
 DECODE_YUYV422_16BPP(uint16_t *buf, uint8_t *src)
 {
-    do {
-        int wp = 0;
-
-        uint8_t y1;
-        uint8_t y2;
-        int8_t  Cr;
-        int8_t  Cb;
-        int     dR;
-        int     dG;
-        int     dB;
-        int     r;
-        int     g;
-        int     b;
-
-        y1 = src[0];
-        Cr = src[1] - 0x80;
-        y2 = src[2];
-        Cb = src[3] - 0x80;
-
-        dR = (359 * Cr) >> 8;
-        dG = (88 * Cb + 183 * Cr) >> 8;
-        dB = (453 * Cb) >> 8;
-
-        r = y1 + dR;
-        r = CLAMP(r);
-        r >>= 3;
-        g = y1 - dG;
-        g = CLAMP(g);
-        g >>= 2;
-        b = y1 + dB;
-        b = CLAMP(b);
-        b >>= 3;
-        buf[wp++] = r | (g << 5) | (b << 11);
-
-        r = y2 + dR;
-        r = CLAMP(r);
-        r >>= 3;
-        g = y2 - dG;
-        g = CLAMP(g);
-        g >>= 2;
-        b = y2 + dB;
-        b = CLAMP(b);
-        b >>= 3;
-        buf[wp++] = r | (g << 5) | (b << 11);
-    } while (0);
+    voodoo_decode_yuyv422_pair_16bpp(buf, src);
 }
 
 static void
@@ -683,6 +602,66 @@ do_screen_to_screen_line(voodoo_t *voodoo, uint8_t *src_p, const uintptr_t src_a
     } else {
         /*Conversion required*/
         if (dst_y >= clip->y_min && dst_y < clip->y_max) {
+            int is_yuv_yuyv = ((voodoo->banshee_blt.srcFormat & SRC_FORMAT_COL_MASK) == SRC_FORMAT_COL_YUYV);
+            int is_yuv_uyvy = ((voodoo->banshee_blt.srcFormat & SRC_FORMAT_COL_MASK) == SRC_FORMAT_COL_UYVY);
+            int dst_fmt     = voodoo->banshee_blt.dstFormat & DST_FORMAT_COL_MASK;
+
+            /* Vectorized fast path for straight YUV blits (no pattern, no colorkey, standard SRCCOPY, unclipped) */
+            if ((is_yuv_yuyv || is_yuv_uyvy) &&
+                !src_tiled && !voodoo->banshee_blt.dstBaseAddr_tiled &&
+                !(voodoo->banshee_blt.command & COMMAND_DX) &&
+                !use_pattern_trans && !(voodoo->banshee_blt.command & COMMAND_PATTERN_MONO) &&
+                !(voodoo->banshee_blt.commandExtra & (CMDEXTRA_SRC_COLORKEY | CMDEXTRA_DST_COLORKEY)) &&
+                (voodoo->banshee_blt.rops[0] == 0xCC) &&
+                (voodoo->banshee_blt.dstX >= clip->x_min) &&
+                (voodoo->banshee_blt.dstX + voodoo->banshee_blt.dstSizeX * 2 <= clip->x_max)) {
+
+                int            src_x_real = (src_x * voodoo->banshee_blt.src_bpp) >> 3;
+                int            byte_count = voodoo->banshee_blt.dstSizeX * 4;
+                const uint8_t *s_ptr      = &src_p[src_x_real];
+
+                if (dst_fmt == DST_FORMAT_COL_16_BPP) {
+                    uint32_t dst_addr  = (voodoo->banshee_blt.dstBaseAddr + voodoo->banshee_blt.dstX * 2 + dst_y * voodoo->banshee_blt.dst_stride) & voodoo->fb_mask;
+                    uint32_t dst_bytes = (uint32_t) byte_count;
+                    if (dst_addr + dst_bytes <= voodoo->fb_mask + 1) {
+                        uint16_t *d_ptr = (uint16_t *) &voodoo->vram[dst_addr];
+                        if (is_yuv_yuyv)
+                            voodoo_decode_yuyv422_span_16bpp(d_ptr, s_ptr, byte_count);
+                        else
+                            voodoo_decode_uyuv422_span_16bpp(d_ptr, s_ptr, byte_count);
+
+                        uint32_t page_start = dst_addr >> 12;
+                        uint32_t page_end   = (dst_addr + dst_bytes - 1) >> 12;
+                        for (uint32_t page = page_start; page <= page_end; page++)
+                            voodoo->changedvram[page] = changeframecount;
+
+                        voodoo->banshee_blt.cur_x = voodoo->banshee_blt.dstSizeX;
+                        voodoo->banshee_blt.srcY += (voodoo->banshee_blt.command & COMMAND_DY) ? -1 : 1;
+                        voodoo->banshee_blt.dstY += (voodoo->banshee_blt.command & COMMAND_DY) ? -1 : 1;
+                        return;
+                    }
+                } else if (dst_fmt == DST_FORMAT_COL_32_BPP) {
+                    uint32_t dst_addr  = (voodoo->banshee_blt.dstBaseAddr + voodoo->banshee_blt.dstX * 4 + dst_y * voodoo->banshee_blt.dst_stride) & voodoo->fb_mask;
+                    uint32_t dst_bytes = (uint32_t) byte_count * 2;
+                    if (dst_addr + dst_bytes <= voodoo->fb_mask + 1) {
+                        uint32_t *d_ptr = (uint32_t *) &voodoo->vram[dst_addr];
+                        if (is_yuv_yuyv)
+                            voodoo_decode_yuyv422_span_32bpp(d_ptr, s_ptr, byte_count);
+                        else
+                            voodoo_decode_uyuv422_span_32bpp(d_ptr, s_ptr, byte_count);
+
+                        uint32_t page_start = dst_addr >> 12;
+                        uint32_t page_end   = (dst_addr + dst_bytes - 1) >> 12;
+                        for (uint32_t page = page_start; page <= page_end; page++)
+                            voodoo->changedvram[page] = changeframecount;
+
+                        voodoo->banshee_blt.cur_x = voodoo->banshee_blt.dstSizeX;
+                        voodoo->banshee_blt.srcY += (voodoo->banshee_blt.command & COMMAND_DY) ? -1 : 1;
+                        voodoo->banshee_blt.dstY += (voodoo->banshee_blt.command & COMMAND_DY) ? -1 : 1;
+                        return;
+                    }
+                }
+            }
 #if 0
             int src_x = voodoo->banshee_blt.srcX;
 #endif
