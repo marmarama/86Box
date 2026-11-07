@@ -218,8 +218,11 @@ static const uint8_t native_requested_sizes[9][8] =
 void
 codegen_reg_mark_as_required(void)
 {
-    /* Mark the last version of all permanent registers (including EAX..EBX) as required so they are flushed at block exit. */
+    /* Mark the last version of all permanent registers (including EAX..EBX) as required so they are flushed at block exit.
+       IREG_oldpc is exclusively used for fault/exception recovery and is never needed at normal block exit. */
     for (uint8_t reg = IREG_EAX; reg < IREG_temp0; reg++) {
+        if (reg == IREG_oldpc)
+            continue;
         int last_version = reg_last_version[reg];
 
         if (last_version > 0)

@@ -451,8 +451,12 @@ uop_alloc(ir_data_t *ir, uint32_t uop_type)
     uop->jump_dest_uop  = -1;
     uop->jump_list_next = -1;
 
-    if (uop_type & (UOP_TYPE_BARRIER | UOP_TYPE_ORDER_BARRIER))
+    if (uop_type & UOP_TYPE_BARRIER)
         dirty_ir_regs[0] = dirty_ir_regs[1] = ~0ULL;
+    else if (uop_type & UOP_TYPE_ORDER_BARRIER) {
+        dirty_ir_regs[0] = ~0ULL & ~((1ull << IREG_oldpc) | (1ull << IREG_pc));
+        dirty_ir_regs[1] = ~0ULL;
+    }
 
     if ((uop_type & UOP_MASK) == (UOP_CALL_FUNC & UOP_MASK) ||
         (uop_type & UOP_MASK) == (UOP_CALL_INSTRUCTION_FUNC & UOP_MASK) ||
