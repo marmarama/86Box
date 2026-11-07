@@ -4,7 +4,7 @@ Essential knowledge for working on **86Box**, a cycle-accurate x86 PC emulator (
 
 Further docs: `src/codegen_new/docs/` (`DEBUGGING.md`, `BENCHMARKING.md`, `BUGS.md`, `ROADMAP.md`, `DEBUG-BLOCK-DUMPER.md`, `IDLE-OPTIMIZATION.md`, `CHANGELOG.md`, `PROFILE-WIN98*.md`), `benchmarks/README.md`, `tests/README.md`, `CONTRIBUTING.md` (upstream code style).
 
-Skills (`.agents/skills/`): [`run-dos-benchmarks`](.agents/skills/run-dos-benchmarks/SKILL.md), [`boot-test-guests`](.agents/skills/boot-test-guests/SKILL.md), [`bisect-dynarec-regression`](.agents/skills/bisect-dynarec-regression/SKILL.md), [`analyze-block-dump`](.agents/skills/analyze-block-dump/SKILL.md), [`commit-work`](.agents/skills/commit-work/SKILL.md).
+Skills (`.agents/skills/`): [`run-dos-benchmarks`](.agents/skills/run-dos-benchmarks/SKILL.md), [`boot-test-guests`](.agents/skills/boot-test-guests/SKILL.md), [`bisect-dynarec-regression`](.agents/skills/bisect-dynarec-regression/SKILL.md), [`analyze-block-dump`](.agents/skills/analyze-block-dump/SKILL.md), [`manage-tasks`](.agents/skills/manage-tasks/SKILL.md), [`commit-work`](.agents/skills/commit-work/SKILL.md).
 
 ## 1. Repository Map
 
@@ -123,7 +123,7 @@ Must reach the desktop (~35-42s) with network and Explorer up. Screenshot is tri
 
 ## 6. Task Tracking (Taskwarrior)
 
-All roadmap, optimization, testing and upstream-PR work is tracked with `task`. Run it with `BypassSandbox: true`. Task definitions can be reloaded via [`scratch/populate_taskwarrior_annotated.py`](file:///home/marm/src/86Box/scratch/populate_taskwarrior_annotated.py).
+All roadmap, optimization, testing and upstream-PR work is tracked with `task` (skill: [`manage-tasks`](.agents/skills/manage-tasks/SKILL.md)). Run it with `BypassSandbox: true`. Task definitions can be reloaded via [`scratch/populate_taskwarrior_annotated.py`](file:///home/marm/src/86Box/scratch/populate_taskwarrior_annotated.py).
 
 - Before starting, check `task list` / `task active`.
 - `task start <id>` when coding, `task <id> done` once verified. `task <id> info` shows details and `task summary` shows progress.
