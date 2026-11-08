@@ -41,13 +41,9 @@ opINTO(UNUSED(uint32_t fetchdat))
     int cycles_old = cycles;
     UN_USED(cycles_old);
 
-    if ((cr0 & 1) && (cpu_state.eflags & VM_FLAG) && (IOPL != 3)) {
-        x86gpf(NULL, 0);
-        return 1;
-    }
     if (VF_SET()) {
         cpu_state.oldpc = cpu_state.pc;
-        x86_int_sw(4);
+        x86_do_into();
         PREFETCH_RUN(cycles_old - cycles, 1, -1, 0, 0, 0, 0, 0);
         return 1;
     }

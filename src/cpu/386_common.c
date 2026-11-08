@@ -1764,8 +1764,98 @@ x86_int_sw(int num)
 }
 
 void
+x86_do_int_real(int num)
+{
+#ifdef USE_NEW_DYNAREC
+    if (num == 0x21 && codegen_trigger_is_armed()) {
+        if (AH == 0x4b) {
+            char exec_name[128];
+            uint32_t ptr = (DS << 4) + DX;
+            int i;
+            for (i = 0; i < 127; i++) {
+                exec_name[i] = (char) readmembl(ptr + i);
+                if (!exec_name[i])
+                    break;
+            }
+            exec_name[i] = '\0';
+            codegen_trigger_check_exec(exec_name);
+        }
+    }
+#endif
+
+    flags_rebuild();
+    cycles -= (timing_int + timing_int_rm);
+
+    uint32_t addr = (num << 2) + idt.base;
+    if ((num << 2UL) + 3UL > idt.limit) {
+        x86_int(0x0d);
+        return;
+    }
+
+    uint16_t new_pc = readmemw(0, addr);
+    uint16_t new_cs = readmemw(0, addr + 2);
+
+    if (cpu_state.abrt)
+        return;
+
+    if (!stack32) {
+        uint32_t sp = SP;
+        writememw(ss, (sp - 2) & 0xFFFF, cpu_state.flags);
+        writememw(ss, (sp - 4) & 0xFFFF, CS);
+        writememw(ss, (sp - 6) & 0xFFFF, cpu_state.pc);
+        if (cpu_state.abrt)
+            return;
+        SP = sp - 6;
+    } else {
+        writememw(ss, ESP - 2, cpu_state.flags);
+        writememw(ss, ESP - 4, CS);
+        writememw(ss, ESP - 6, cpu_state.pc);
+        if (cpu_state.abrt)
+            return;
+        ESP -= 6;
+    }
+
+    cpu_state.flags &= ~(I_FLAG | T_FLAG);
+    cpu_state.pc = new_pc;
+    cpu_use_exec ? loadcs(new_cs) : loadcs_2386(new_cs);
+#ifdef USE_DEBUG_REGS_486
+    trap &= ~1;
+#else
+    if (cpu_use_exec)
+        trap = 0;
+    else
+        trap &= ~1;
+#endif
+    CPU_BLOCK_END();
+}
+
+void
+x86_do_int3_real(void)
+{
+#ifdef USE_GDBSTUB
+    if (gdbstub_int3())
+        return;
+#endif
+    x86_do_int_real(3);
+}
+
+void
+x86_do_into_real(void)
+{
+    flags_rebuild();
+    if (cpu_state.flags & V_FLAG) {
+        x86_do_int_real(4);
+    }
+}
+
+void
 x86_do_int(int num)
 {
+    if (!(msw & 1)) {
+        x86_do_int_real(num);
+        return;
+    }
+
 #ifdef USE_NEW_DYNAREC
     if (num == 0x21 && codegen_trigger_is_armed()) {
         if (AH == 0x4b) {
@@ -1824,6 +1914,10 @@ x86_do_int3(void)
     if (gdbstub_int3())
         return;
 #endif
+    if (!(msw & 1)) {
+        x86_do_int_real(3);
+        return;
+    }
     if ((cr0 & 1) && (cpu_state.eflags & VM_FLAG) && (IOPL != 3)) {
         x86gpf(NULL, 0);
         return;
@@ -1834,6 +1928,10 @@ x86_do_int3(void)
 void
 x86_do_into(void)
 {
+    if (!(msw & 1)) {
+        x86_do_into_real();
+        return;
+    }
     if ((cr0 & 1) && (cpu_state.eflags & VM_FLAG) && (IOPL != 3)) {
         x86gpf(NULL, 0);
         return;

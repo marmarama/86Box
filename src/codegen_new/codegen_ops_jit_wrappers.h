@@ -640,6 +640,18 @@ jit_int(uint32_t vector)
 }
 
 static JIT_WRAPPER void
+jit_int_real(uint32_t vector)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        x86_do_int_real((int) vector);
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        x86_do_int_real((int) vector);
+    }
+}
+
+static JIT_WRAPPER void
 jit_int3(void)
 {
     if (codegen_profile_active) {
@@ -652,6 +664,18 @@ jit_int3(void)
 }
 
 static JIT_WRAPPER void
+jit_int3_real(void)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        x86_do_int3_real();
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        x86_do_int3_real();
+    }
+}
+
+static JIT_WRAPPER void
 jit_into(void)
 {
     if (codegen_profile_active) {
@@ -660,6 +684,18 @@ jit_into(void)
         codegen_profile_record_helper_tsc(host_rdtsc() - t0);
     } else {
         x86_do_into();
+    }
+}
+
+static JIT_WRAPPER void
+jit_into_real(void)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        x86_do_into_real();
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        x86_do_into_real();
     }
 }
 
