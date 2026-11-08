@@ -58,7 +58,7 @@ Skills (`.agents/skills/`): [`run-dos-benchmarks`](.agents/skills/run-dos-benchm
 - **Rule**: use branchless helpers or native `UOP_SETCC` / `UOP_CMOV`.
 
 ### 5. High-byte registers vs REX (x86-64)
-- ModR/M cannot encode `AH`–`DH` alongside a REX prefix. `HOST_REG_FLAG_NO_BH` in `codegen_reg.c` keeps `R10`–`R15` away from high-byte operands. Task 33 tracks emulating high bytes with shifts.
+- ModR/M cannot encode `AH`–`DH` alongside a REX prefix. `HOST_REG_FLAG_NO_BH` (`codegen_backend.h`) is currently defined as `0`, so the allocator does not mask registers; the backend uOp handlers work around high bytes with temporaries (`MOVZX` + `SHR 8` via `ECX`). Task 33 tracks emulating high bytes with shifts.
 
 ### 6. Cycle sync around C callouts
 - **Symptom**: implausible benchmark scores (PCPBench 60 → 208 FPS).
