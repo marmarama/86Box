@@ -113,7 +113,7 @@ codegen_ir_optimize_liveness(ir_data_t *ir)
 {
     int flags_live = FLAGS_ALL_LIVE;
     int pc_live = 1;
-    int oldpc_live = 1;
+    int oldpc_live = 0;
 
     for (int c = ir->wr_pos - 1; c >= 0; c--) {
         uop_t *uop = &ir->uops[c];
@@ -122,17 +122,29 @@ codegen_ir_optimize_liveness(ir_data_t *ir)
             continue;
 
         /* Invalidate liveness optimizations across barriers, branches, and loop boundaries.
-           At these points, all architectural flags and PC states must be live. */
+           At these points, architectural flags and PC states must be live unless the
+           barrier is a fast-path memory access that materializes oldpc in its cold stub
+           or a non-faulting control barrier. */
         if (uop->type & (UOP_TYPE_BARRIER | UOP_TYPE_ORDER_BARRIER | UOP_TYPE_JUMP_DEST | UOP_TYPE_JUMP)) {
             flags_live = FLAGS_ALL_LIVE;
+#if defined __amd64__ || defined _M_X64
+            if (!uop_is_mem_access(uop->type) || (uop->type & UOP_TYPE_JUMP_DEST))
+                pc_live = 1;
+            if ((uop->type & (UOP_TYPE_BARRIER | UOP_TYPE_ORDER_BARRIER)) &&
+                !uop_is_mem_access(uop->type) &&
+                !uop_is_non_faulting_barrier(uop->type))
+                oldpc_live = 1;
+#else
             pc_live = 1;
-            oldpc_live = 1;
+            if ((uop->type & (UOP_TYPE_BARRIER | UOP_TYPE_ORDER_BARRIER)) &&
+                !uop_is_non_faulting_barrier(uop->type))
+                oldpc_live = 1;
+#endif
             continue;
         }
         if ((uop->type & UOP_MASK) == (UOP_LOOP_LABEL & UOP_MASK)) {
             flags_live = FLAGS_ALL_LIVE;
             pc_live = 1;
-            oldpc_live = 1;
             continue;
         }
 

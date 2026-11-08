@@ -222,6 +222,9 @@ codegen_reg_mark_as_required(void)
     for (uint8_t reg = IREG_EAX; reg < IREG_temp0; reg++) {
         int last_version = reg_last_version[reg];
 
+        if (reg == IREG_oldpc && !(dirty_ir_regs[0] & (1ull << IREG_oldpc)))
+            continue;
+
         if (last_version > 0)
             reg_version[reg][last_version].flags |= REG_FLAGS_REQUIRED;
     }

@@ -422,6 +422,46 @@ typedef struct ir_data_t {
     uint16_t            cur_guest_pc_off;
 } ir_data_t;
 
+static inline int
+uop_is_mem_access(uint32_t uop_type)
+{
+    uint32_t m = uop_type & UOP_MASK;
+    return (m >= (UOP_MEM_LOAD_ABS & UOP_MASK) && m <= (UOP_MEM_LOAD_SINGLE & UOP_MASK)) ||
+           (m >= (UOP_MEM_LOAD_DOUBLE & UOP_MASK) && m <= (UOP_MEM_STORE_DOUBLE & UOP_MASK));
+}
+
+static inline int
+uop_is_non_faulting_barrier(uint32_t uop_type)
+{
+    if (uop_type & UOP_TYPE_JUMP)
+        return 1;
+    uint32_t m = uop_type & UOP_MASK;
+    return m == (UOP_NOP_BARRIER & UOP_MASK) ||
+           m == (UOP_EXIT_BLOCK & UOP_MASK) ||
+           m == (UOP_EXIT_BLOCK_RET & UOP_MASK) ||
+           m == (UOP_LOOP_LABEL & UOP_MASK);
+}
+
+static inline void
+uop_mark_barrier_dirty_regs(uint32_t uop_type)
+{
+    if (uop_type & (UOP_TYPE_BARRIER | UOP_TYPE_ORDER_BARRIER)) {
+#if defined __amd64__ || defined _M_X64
+        if (uop_is_mem_access(uop_type)) {
+            dirty_ir_regs[0] |= ~((1ull << IREG_oldpc) | (1ull << IREG_pc));
+            dirty_ir_regs[1] |= ~0ULL;
+        } else
+#endif
+        if (uop_is_non_faulting_barrier(uop_type)) {
+            dirty_ir_regs[0] |= ~(1ull << IREG_oldpc);
+            dirty_ir_regs[1] |= ~0ULL;
+        } else {
+            dirty_ir_regs[0] |= ~0ULL;
+            dirty_ir_regs[1] |= ~0ULL;
+        }
+    }
+}
+
 static inline uop_t *
 uop_alloc(ir_data_t *ir, uint32_t uop_type)
 {
@@ -451,8 +491,7 @@ uop_alloc(ir_data_t *ir, uint32_t uop_type)
     uop->jump_dest_uop  = -1;
     uop->jump_list_next = -1;
 
-    if (uop_type & (UOP_TYPE_BARRIER | UOP_TYPE_ORDER_BARRIER))
-        dirty_ir_regs[0] = dirty_ir_regs[1] = ~0ULL;
+    uop_mark_barrier_dirty_regs(uop_type);
 
     if ((uop_type & UOP_MASK) == (UOP_CALL_FUNC & UOP_MASK) ||
         (uop_type & UOP_MASK) == (UOP_CALL_INSTRUCTION_FUNC & UOP_MASK) ||
@@ -491,8 +530,7 @@ uop_alloc_unroll(ir_data_t *ir, uint32_t uop_type)
     uop->jump_dest_uop  = -1;
     uop->jump_list_next = -1;
 
-    if (uop_type & (UOP_TYPE_BARRIER | UOP_TYPE_ORDER_BARRIER))
-        codegen_reg_mark_as_required();
+    uop_mark_barrier_dirty_regs(uop_type);
 
     if ((uop_type & UOP_MASK) == (UOP_CALL_FUNC & UOP_MASK) ||
         (uop_type & UOP_MASK) == (UOP_CALL_INSTRUCTION_FUNC & UOP_MASK) ||
