@@ -9,6 +9,7 @@
 #include "cpu.h"
 #include <86box/mem.h>
 #include <86box/plat_unused.h>
+#include <86box/video.h>
 
 #include "x86.h"
 #include "x86seg_common.h"
@@ -315,6 +316,178 @@ codegen_dump_close(void)
         fclose(perf_map_fp);
         perf_map_fp     = NULL;
         perf_map_active = 0;
+    }
+}
+
+int
+codegen_dump_start(const char *path, uint64_t min_exec)
+{
+    if (dump_active)
+        codegen_dump_stop();
+
+    dump_fp = fopen(path, "wb");
+    if (!dump_fp) {
+        pclog("codegen_dump: failed to open %s for writing\n", path);
+        return 0;
+    }
+    dump_active = 1;
+    dump_min_exec = min_exec;
+    pclog("codegen_dump: writing binary block trace to %s\n", path);
+
+    bdump_file_header_t hdr;
+    memset(&hdr, 0, sizeof(hdr));
+    hdr.magic            = BDUMP_MAGIC;
+    hdr.version          = BDUMP_VERSION;
+    hdr.host_arch        = BDUMP_CURRENT_ARCH;
+    hdr.cpu_state_addr   = (uint64_t) (uintptr_t) &cpu_state;
+    hdr.readlookup2_addr = (uint64_t) (uintptr_t) readlookup2;
+    hdr.ram_addr         = (uint64_t) (uintptr_t) ram;
+    hdr.symbol_count     = (uint16_t) (sizeof(cpu_state_symbols) / sizeof(cpu_state_symbols[0]));
+
+    fwrite(&hdr, sizeof(hdr), 1, dump_fp);
+    fwrite(cpu_state_symbols, sizeof(cpu_state_symbols[0]), hdr.symbol_count, dump_fp);
+    fflush(dump_fp);
+
+    if (dump_min_exec > 0 && !buffered_blocks) {
+        buffered_blocks = calloc(BLOCK_SIZE, sizeof(buffered_block_t));
+    }
+
+    flight_recorder_enabled    = 1;
+    codegen_hang_detect_active = 1;
+    if (hang_spin_limit == 0)
+        hang_spin_limit = 50000000ULL;
+
+    return 1;
+}
+
+void
+codegen_dump_stop(void)
+{
+    if (!dump_active)
+        return;
+    codegen_dump_close();
+    pclog("codegen_dump: closed trace file\n");
+}
+
+codegen_dump_trigger_t codegen_trigger = { 0 };
+
+void
+codegen_trigger_arm(const codegen_dump_trigger_t *trig)
+{
+    if (trig) {
+        memcpy(&codegen_trigger, trig, sizeof(codegen_dump_trigger_t));
+        codegen_trigger.armed = 1;
+        codegen_trigger.triggered = 0;
+        codegen_trigger.blocks_dumped_since_trigger = 0;
+        pclog("codegen_trigger: armed (type=%d, pattern='%s', pc=[0x%08x, 0x%08x])\n",
+              codegen_trigger.type, codegen_trigger.pattern,
+              codegen_trigger.pc_start, codegen_trigger.pc_end);
+    }
+}
+
+void
+codegen_trigger_disarm(void)
+{
+    codegen_trigger.armed = 0;
+    codegen_trigger.triggered = 0;
+    pclog("codegen_trigger: disarmed\n");
+}
+
+int
+codegen_trigger_is_armed(void)
+{
+    return codegen_trigger.armed;
+}
+
+static int
+codegen_strcasestr(const char *haystack, const char *needle)
+{
+    if (!haystack || !needle || !needle[0])
+        return 1;
+    size_t nlen = strlen(needle);
+    for (; *haystack; haystack++) {
+        if (strncasecmp(haystack, needle, nlen) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+void
+codegen_trigger_check_exec(const char *filename)
+{
+    if (!codegen_trigger.armed || codegen_trigger.triggered)
+        return;
+
+    if (codegen_trigger.type != TRIGGER_EXEC_NAME)
+        return;
+
+    if (codegen_strcasestr(filename, codegen_trigger.pattern)) {
+        pclog("codegen_trigger: matched exec '%s' (pattern: '%s')!\n", filename, codegen_trigger.pattern);
+        codegen_trigger.triggered = 1;
+        codegen_trigger.blocks_dumped_since_trigger = 0;
+
+        if (codegen_trigger.output_path[0]) {
+            codegen_dump_start(codegen_trigger.output_path, 0);
+        }
+        if (codegen_trigger.take_screenshot) {
+            monitors[0].mon_screenshots_raw++;
+        }
+    }
+}
+
+void
+codegen_trigger_check_block(codeblock_t *block)
+{
+    if (!codegen_trigger.armed || !block)
+        return;
+
+    if (codegen_trigger.triggered) {
+        if (codegen_trigger.max_blocks > 0) {
+            codegen_trigger.blocks_dumped_since_trigger++;
+            if (codegen_trigger.blocks_dumped_since_trigger >= codegen_trigger.max_blocks) {
+                pclog("codegen_trigger: reached max_blocks (%" PRIu64 "), stopping dump\n",
+                      codegen_trigger.max_blocks);
+                codegen_dump_stop();
+                codegen_trigger.armed = 0;
+            }
+        }
+        return;
+    }
+
+    if (codegen_trigger.type == TRIGGER_PC_RANGE) {
+        if (block->pc >= codegen_trigger.pc_start && block->pc <= codegen_trigger.pc_end) {
+            pclog("codegen_trigger: matched PC 0x%08x in range [0x%08x, 0x%08x]!\n",
+                  block->pc, codegen_trigger.pc_start, codegen_trigger.pc_end);
+            codegen_trigger.triggered = 1;
+            codegen_trigger.blocks_dumped_since_trigger = 0;
+            if (codegen_trigger.output_path[0])
+                codegen_dump_start(codegen_trigger.output_path, 0);
+            if (codegen_trigger.take_screenshot)
+                monitors[0].mon_screenshots_raw++;
+        }
+    } else if (codegen_trigger.type == TRIGGER_BYTE_PATTERN) {
+        if (codegen_trigger.byte_len > 0 && codegen_trigger.byte_len <= 32) {
+            uint8_t bytes[32];
+            for (uint32_t i = 0; i < codegen_trigger.byte_len; i++)
+                bytes[i] = readmembl(block->pc + i);
+
+            int match = 1;
+            for (uint32_t i = 0; i < codegen_trigger.byte_len; i++) {
+                if ((bytes[i] & codegen_trigger.byte_mask[i]) != codegen_trigger.byte_pattern[i]) {
+                    match = 0;
+                    break;
+                }
+            }
+            if (match) {
+                pclog("codegen_trigger: matched byte pattern at PC 0x%08x!\n", block->pc);
+                codegen_trigger.triggered = 1;
+                codegen_trigger.blocks_dumped_since_trigger = 0;
+                if (codegen_trigger.output_path[0])
+                    codegen_dump_start(codegen_trigger.output_path, 0);
+                if (codegen_trigger.take_screenshot)
+                    monitors[0].mon_screenshots_raw++;
+            }
+        }
     }
 }
 
@@ -759,6 +932,9 @@ codegen_dump_enter_block(codeblock_t *block)
 {
     if (!block)
         return;
+
+    if (codegen_trigger.armed)
+        codegen_trigger_check_block(block);
 
     int is_chained = (codegen_current_executing_block != NULL);
 

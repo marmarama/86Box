@@ -119,6 +119,9 @@ add_library(plat STATIC
 add_library(ui STATIC
     qt_ui.cpp
 
+    qt_ipc_server.cpp
+    qt_ipc_server.hpp
+
     qt_mainwindow.cpp
     qt_mainwindow.hpp
     qt_mainwindow.ui

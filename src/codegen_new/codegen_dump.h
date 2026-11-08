@@ -216,8 +216,39 @@ extern int codegen_profile_active;
 extern int codegen_hang_detect_active;
 extern codeblock_t *codegen_current_executing_block;
 
+enum {
+    TRIGGER_NONE = 0,
+    TRIGGER_EXEC_NAME,
+    TRIGGER_PC_RANGE,
+    TRIGGER_BYTE_PATTERN
+};
+
+typedef struct {
+    int      type;
+    char     pattern[128];
+    uint32_t pc_start;
+    uint32_t pc_end;
+    uint8_t  byte_pattern[32];
+    uint8_t  byte_mask[32];
+    uint32_t byte_len;
+    char     output_path[256];
+    uint64_t max_blocks;
+    int      take_screenshot;
+    int      armed;
+    int      triggered;
+    uint64_t blocks_dumped_since_trigger;
+} codegen_dump_trigger_t;
+
+extern codegen_dump_trigger_t codegen_trigger;
+
 void codegen_dump_init(void);
 void codegen_dump_close(void);
+int  codegen_dump_start(const char *path, uint64_t min_exec);
+void codegen_dump_stop(void);
+void codegen_trigger_arm(const codegen_dump_trigger_t *trig);
+void codegen_trigger_disarm(void);
+void codegen_trigger_check_exec(const char *filename);
+void codegen_trigger_check_block(codeblock_t *block);
 int  codegen_dump_is_active(void);
 int  codegen_dump_perf_map_active(void);
 

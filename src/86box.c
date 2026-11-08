@@ -356,6 +356,7 @@ char  exe_path[2048]; /* path (dir) of executable */
 char  usr_path[1024]; /* path (dir) of user data */
 char  cfg_path[1024]; /* full path of config file */
 char  global_cfg_path[1024]; /* full path of config file */
+char  ipc_socket_path[1024] = { 0 }; /* local socket IPC path */
 FILE *stdlog = NULL;  /* file to log output to */
 void (*pclog_hook)(const char *) = NULL; /* optional UI log hook */
 #if 0
@@ -803,6 +804,7 @@ pc_show_usage(void)
             "-Y or --donothing\t\t- do not show any UI or run the emulation\n"
 #endif
             "-Z or --lastvmpath\t\t- the last param. is VM path rather than config\n"
+            "      --ipc [socket]\t\t- start local socket IPC control server\n"
             "\nA config file can be specified. If none is, the default file will be used.\n");
 
 #ifdef _WIN32
@@ -1053,6 +1055,12 @@ usage:
             instru_enabled = 1;
             sscanf(argv[++c], "%llu", &instru_run_ms);
 #endif
+        } else if (!strcasecmp(argv[c], "--ipc") || !strcasecmp(argv[c], "--ipc-socket")) {
+            if ((c + 1) < argc && argv[c + 1][0] != '-') {
+                strncpy(ipc_socket_path, argv[++c], sizeof(ipc_socket_path) - 1);
+            } else {
+                strncpy(ipc_socket_path, "auto", sizeof(ipc_socket_path) - 1);
+            }
         }
 
         /* Uhm... out of options here.. */

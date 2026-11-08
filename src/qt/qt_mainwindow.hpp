@@ -39,6 +39,7 @@ public:
     QSize        getRenderWidgetSize();
     void         setSendKeyboardInput(bool enabled);
     void         reloadAllRenderers();
+    bool         takeScreenshot(const QString &filePath, int monitor_index = 0, int *out_w = nullptr, int *out_h = nullptr);
     QShortcut   *windowedShortcut;
     QKeySequence FindAcceleratorSeq(const char *name);
 

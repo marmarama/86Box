@@ -100,6 +100,8 @@ public:
     /* Reload the renderer itself */
     bool reloadRendererOption() { return rendererWindow ? rendererWindow->reloadRendererOption() : false; }
 
+    bool takeScreenshot(const QString &filePath, int *out_w = nullptr, int *out_h = nullptr);
+
     void setFocusRenderer();
     void onResize(int width, int height);
 

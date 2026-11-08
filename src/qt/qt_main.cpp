@@ -36,6 +36,9 @@
 #ifdef Q_OS_MACOS
 #    include <pthread/qos.h>
 #endif
+#ifndef Q_OS_WINDOWS
+#    include <csignal>
+#endif
 
 #ifdef QT_STATIC
 /* Static builds need plugin imports */
@@ -85,6 +88,7 @@ extern "C" {
 #include "qt_util.hpp"
 #include "qt_vmmanager_clientsocket.hpp"
 #include "qt_vmmanager_mainwindow.hpp"
+#include "qt_ipc_server.hpp"
 
 #include "qt_osd.hpp"
 
@@ -570,6 +574,9 @@ WindowsDarkModeFilter *vmm_dark_mode_filter = nullptr;
 int
 main(int argc, char *argv[])
 {
+#ifndef Q_OS_WINDOWS
+    signal(SIGPIPE, SIG_IGN);
+#endif
 #ifdef Q_OS_WINDOWS
     bool wasDarkTheme = false;
     /* Check if Windows supports UTF-8 */
@@ -914,6 +921,16 @@ main(int argc, char *argv[])
         main_window->installEventFilter(&manager_socket);
 
         manager_socket.sendWinIdMessage(main_window->winId());
+    }
+
+    std::unique_ptr<IPCServer> ipc_server;
+    QString ipc_path = qgetenv("BOX86_IPC_SOCKET");
+    if (ipc_path.isEmpty() && ipc_socket_path[0] != '\0')
+        ipc_path = QString::fromUtf8(ipc_socket_path);
+
+    if (!ipc_path.isEmpty()) {
+        ipc_server = std::make_unique<IPCServer>(main_window);
+        ipc_server->start(ipc_path);
     }
 
     // pc_reset_hard_init();

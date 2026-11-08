@@ -31,6 +31,8 @@
 #include "evdev_mouse.hpp"
 
 #include <cmath>
+#include <QDir>
+#include <QFileInfo>
 
 #include <atomic>
 #include <stdexcept>
@@ -543,6 +545,37 @@ take_screenshot_clipboard_monitor(int sx, int sy, int sw, int sh, int i)
     QImage image(screenshot_rgb, sw, sh, sw * 3, QImage::Format_RGB888);
     util::copyImageToClipboard(image);
     monitors[i].mon_screenshots_raw_clipboard--;
+}
+
+bool
+RendererStack::takeScreenshot(const QString &filePath, int *out_w, int *out_h)
+{
+    const uint32_t *buf = screenshot_buf;
+    if (!buf && monitors[m_monitor_index].target_buffer)
+        buf = monitors[m_monitor_index].target_buffer->dat;
+
+    if (!buf)
+        return false;
+
+    int cur_sx = (sx >= 0 && sx < 2048) ? sx : 0;
+    int cur_sy = (sy >= 0 && sy < 2048) ? sy : 0;
+    int cur_sw = (sw > 0 && cur_sx + sw <= 2048) ? sw : (w > 0 && cur_sx + w <= 2048 ? w : 640);
+    int cur_sh = (sh > 0 && cur_sy + sh <= 2048) ? sh : (h > 0 && cur_sy + h <= 2048 ? h : 480);
+
+    QImage full_image((const uchar *) buf, 2048, 2048, 2048 * sizeof(uint32_t), QImage::Format_RGB32);
+    QImage cropped = full_image.copy(cur_sx, cur_sy, cur_sw, cur_sh);
+
+    QFileInfo fi(filePath);
+    QDir().mkpath(fi.absolutePath());
+
+    bool ok = cropped.save(filePath, "PNG");
+    if (ok) {
+        if (out_w)
+            *out_w = cur_sw;
+        if (out_h)
+            *out_h = cur_sh;
+    }
+    return ok;
 }
 
 // called from blitter thread

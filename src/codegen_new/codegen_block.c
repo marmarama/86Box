@@ -1168,6 +1168,8 @@ codegen_block_end(void)
 
     codegen_block_generate_end_mask_mark();
     add_to_block_list(block);
+    if (codegen_trigger.armed)
+        codegen_trigger_check_block(block);
 }
 
 void

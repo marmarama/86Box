@@ -2446,6 +2446,19 @@ MainWindow::toggleFullscreenUI()
     ui->toolBar->setVisible(fullscreen_ui_visible && !hide_tool_bar);
 }
 
+bool
+MainWindow::takeScreenshot(const QString &filePath, int monitor_index, int *out_w, int *out_h)
+{
+    if (monitor_index >= 1) {
+        if (monitor_index < (int) renderers.size() && renderers[monitor_index])
+            return renderers[monitor_index]->takeScreenshot(filePath, out_w, out_h);
+        return false;
+    }
+    if (ui && ui->stackedWidget)
+        return ui->stackedWidget->takeScreenshot(filePath, out_w, out_h);
+    return false;
+}
+
 void
 MainWindow::on_actionTake_screenshot_triggered()
 {

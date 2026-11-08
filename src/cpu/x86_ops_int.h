@@ -32,12 +32,36 @@ opINT1(UNUSED(uint32_t fetchdat))
     return 1;
 }
 
+#ifdef USE_NEW_DYNAREC
+extern int  codegen_trigger_is_armed(void);
+extern void codegen_trigger_check_exec(const char *filename);
+#endif
+
 static int
 opINT(uint32_t fetchdat)
 {
     int cycles_old = cycles;
     UN_USED(cycles_old);
     uint8_t temp = getbytef();
+
+#ifdef USE_NEW_DYNAREC
+    if (temp == 0x21 && codegen_trigger_is_armed()) {
+        if (AH == 0x4b) {
+            char exec_name[128];
+            uint32_t ptr = (cr0 & 1 && !(cpu_state.eflags & VM_FLAG))
+                         ? (ds + EDX)
+                         : ((DS << 4) + DX);
+            int i;
+            for (i = 0; i < 127; i++) {
+                exec_name[i] = (char) readmembl(ptr + i);
+                if (!exec_name[i])
+                    break;
+            }
+            exec_name[i] = '\0';
+            codegen_trigger_check_exec(exec_name);
+        }
+    }
+#endif
 
     if ((cr0 & 1) && (cpu_state.eflags & VM_FLAG) && (IOPL != 3)) {
         if (cr4 & CR4_VME) {
