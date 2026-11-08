@@ -628,6 +628,42 @@ jit_iretd(void)
 }
 
 static JIT_WRAPPER void
+jit_int(uint32_t vector)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        x86_do_int((int) vector);
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        x86_do_int((int) vector);
+    }
+}
+
+static JIT_WRAPPER void
+jit_int3(void)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        x86_do_int3();
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        x86_do_int3();
+    }
+}
+
+static JIT_WRAPPER void
+jit_into(void)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        x86_do_into();
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        x86_do_into();
+    }
+}
+
+static JIT_WRAPPER void
 jit_retf16(void)
 {
     if (codegen_profile_active) {

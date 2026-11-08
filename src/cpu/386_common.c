@@ -31,6 +31,12 @@
 #include "386_common.h"
 #include "x86_flags.h"
 #include <86box/plat_unused.h>
+#include <86box/gdbstub.h>
+
+#ifdef USE_NEW_DYNAREC
+extern int  codegen_trigger_is_armed(void);
+extern void codegen_trigger_check_exec(const char *filename);
+#endif
 
 #ifdef USE_DYNAREC
 #    include "codegen.h"
@@ -1755,6 +1761,87 @@ x86_int_sw(int num)
         trap &= ~1;
 #endif
     CPU_BLOCK_END();
+}
+
+void
+x86_do_int(int num)
+{
+#ifdef USE_NEW_DYNAREC
+    if (num == 0x21 && codegen_trigger_is_armed()) {
+        if (AH == 0x4b) {
+            char exec_name[128];
+            uint32_t ptr = (cr0 & 1 && !(cpu_state.eflags & VM_FLAG))
+                         ? (ds + EDX)
+                         : ((DS << 4) + DX);
+            int i;
+            for (i = 0; i < 127; i++) {
+                exec_name[i] = (char) readmembl(ptr + i);
+                if (!exec_name[i])
+                    break;
+            }
+            exec_name[i] = '\0';
+            codegen_trigger_check_exec(exec_name);
+        }
+    }
+#endif
+
+    if ((cr0 & 1) && (cpu_state.eflags & VM_FLAG) && (IOPL != 3)) {
+        if (cr4 & CR4_VME) {
+            uint16_t t;
+            uint8_t  d;
+
+            cpl_override = 1;
+            t            = readmemw(tr.base, 0x66) - 32;
+            cpl_override = 0;
+            if (cpu_state.abrt)
+                return;
+
+            t += (num >> 3);
+            if (t <= tr.limit) {
+                cpl_override = 1;
+                d            = readmemb(tr.base, t);
+                cpl_override = 0;
+                if (cpu_state.abrt)
+                    return;
+
+                if (!(d & (1 << (num & 7)))) {
+                    x86_int_sw_rm(num);
+                    return;
+                }
+            }
+        }
+        x86gpf_expected(NULL, 0);
+        return;
+    }
+
+    x86_int_sw(num);
+}
+
+void
+x86_do_int3(void)
+{
+#ifdef USE_GDBSTUB
+    if (gdbstub_int3())
+        return;
+#endif
+    if ((cr0 & 1) && (cpu_state.eflags & VM_FLAG) && (IOPL != 3)) {
+        x86gpf(NULL, 0);
+        return;
+    }
+    x86_int_sw(3);
+}
+
+void
+x86_do_into(void)
+{
+    if ((cr0 & 1) && (cpu_state.eflags & VM_FLAG) && (IOPL != 3)) {
+        x86gpf(NULL, 0);
+        return;
+    }
+    flags_rebuild();
+    if (cpu_state.flags & V_FLAG) {
+        x86_int_sw(4);
+    }
 }
 
 int

@@ -3,15 +3,7 @@ opINT3(UNUSED(uint32_t fetchdat))
 {
     int cycles_old = cycles;
     UN_USED(cycles_old);
-#ifdef USE_GDBSTUB
-    if (gdbstub_int3())
-        return 1;
-#endif
-    if ((cr0 & 1) && (cpu_state.eflags & VM_FLAG) && (IOPL != 3)) {
-        x86gpf(NULL, 0);
-        return 1;
-    }
-    x86_int_sw(3);
+    x86_do_int3();
     CLOCK_CYCLES((is486) ? 44 : 59);
     PREFETCH_RUN(cycles_old - cycles, 1, -1, 0, 0, 0, 0, 0);
     return 1;
@@ -32,68 +24,13 @@ opINT1(UNUSED(uint32_t fetchdat))
     return 1;
 }
 
-#ifdef USE_NEW_DYNAREC
-extern int  codegen_trigger_is_armed(void);
-extern void codegen_trigger_check_exec(const char *filename);
-#endif
-
 static int
 opINT(uint32_t fetchdat)
 {
     int cycles_old = cycles;
     UN_USED(cycles_old);
     uint8_t temp = getbytef();
-
-#ifdef USE_NEW_DYNAREC
-    if (temp == 0x21 && codegen_trigger_is_armed()) {
-        if (AH == 0x4b) {
-            char exec_name[128];
-            uint32_t ptr = (cr0 & 1 && !(cpu_state.eflags & VM_FLAG))
-                         ? (ds + EDX)
-                         : ((DS << 4) + DX);
-            int i;
-            for (i = 0; i < 127; i++) {
-                exec_name[i] = (char) readmembl(ptr + i);
-                if (!exec_name[i])
-                    break;
-            }
-            exec_name[i] = '\0';
-            codegen_trigger_check_exec(exec_name);
-        }
-    }
-#endif
-
-    if ((cr0 & 1) && (cpu_state.eflags & VM_FLAG) && (IOPL != 3)) {
-        if (cr4 & CR4_VME) {
-            uint16_t t;
-            uint8_t  d;
-
-            cpl_override = 1;
-            t            = readmemw(tr.base, 0x66) - 32;
-            cpl_override = 0;
-            if (cpu_state.abrt)
-                return 1;
-
-            t += (temp >> 3);
-            if (t <= tr.limit) {
-                cpl_override = 1;
-                d            = readmemb(tr.base, t); // + (temp >> 3));
-                cpl_override = 0;
-                if (cpu_state.abrt)
-                    return 1;
-
-                if (!(d & (1 << (temp & 7)))) {
-                    x86_int_sw_rm(temp);
-                    PREFETCH_RUN(cycles_old - cycles, 2, -1, 0, 0, 0, 0, 0);
-                    return 1;
-                }
-            }
-        }
-        x86gpf_expected(NULL, 0);
-        return 1;
-    }
-
-    x86_int_sw(temp);
+    x86_do_int(temp);
     PREFETCH_RUN(cycles_old - cycles, 2, -1, 0, 0, 0, 0, 0);
     return 1;
 }

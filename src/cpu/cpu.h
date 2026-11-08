@@ -808,6 +808,9 @@ extern void hardresetx86(void);
 extern void x86_int(int num);
 extern void x86_int_sw(int num);
 extern int  x86_int_sw_rm(int num);
+extern void x86_do_int(int num);
+extern void x86_do_int3(void);
+extern void x86_do_into(void);
 
 #ifdef ENABLE_808X_LOG
 extern void dumpregs(int __force);

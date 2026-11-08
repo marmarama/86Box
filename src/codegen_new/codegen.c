@@ -750,6 +750,10 @@ generate_call:
                 insn_end = op_pc + 2;
             } else if (opcode == 0xcb) {
                 insn_end = op_pc;
+            } else if (opcode == 0xcd) {
+                insn_end = op_pc + 1;
+            } else if (opcode == 0xcc || opcode == 0xce) {
+                insn_end = op_pc;
             } else {
                 insn_end = op_pc + 1;
             }

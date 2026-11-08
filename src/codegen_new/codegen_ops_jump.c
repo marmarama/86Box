@@ -444,3 +444,44 @@ ropIRETD_32(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), U
 
     return -1;
 }
+
+uint32_t
+ropINT3(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), uint32_t op_pc)
+{
+    uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
+    uop_MOV_IMM(ir, IREG_pc, op_pc);
+    codegen_accumulate_flush(ir);
+
+    uop_CALL_FUNC(ir, jit_int3);
+    CPU_BLOCK_END();
+    return -1;
+}
+
+uint32_t
+ropINT(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), uint32_t op_pc)
+{
+    uint8_t vector = fastreadb(cs + op_pc);
+
+    uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
+    uop_MOV_IMM(ir, IREG_pc, op_pc + 1);
+    codegen_accumulate_flush(ir);
+
+    uop_LOAD_FUNC_ARG_IMM(ir, 0, vector);
+    uop_CALL_FUNC(ir, jit_int);
+
+    codegen_mark_code_present(block, cs + op_pc, 1);
+    CPU_BLOCK_END();
+    return -1;
+}
+
+uint32_t
+ropINTO(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), uint32_t op_pc)
+{
+    uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
+    uop_MOV_IMM(ir, IREG_pc, op_pc);
+    codegen_accumulate_flush(ir);
+
+    uop_CALL_FUNC(ir, jit_into);
+    CPU_BLOCK_END();
+    return -1;
+}
