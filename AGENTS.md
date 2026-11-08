@@ -4,7 +4,7 @@ Essential knowledge for working on **86Box**, a cycle-accurate x86 PC emulator (
 
 Further docs: `src/codegen_new/docs/` (`DEBUGGING.md`, `BENCHMARKING.md`, `BUGS.md`, `ROADMAP.md`, `DEBUG-BLOCK-DUMPER.md`, `IDLE-OPTIMIZATION.md`, `CHANGELOG.md`, `PROFILE-WIN98*.md`), `benchmarks/README.md`, `tests/README.md`, `CONTRIBUTING.md` (upstream code style).
 
-Skills (`.agents/skills/`): [`run-dos-benchmarks`](.agents/skills/run-dos-benchmarks/SKILL.md), [`boot-test-guests`](.agents/skills/boot-test-guests/SKILL.md), [`bisect-dynarec-regression`](.agents/skills/bisect-dynarec-regression/SKILL.md), [`analyze-block-dump`](.agents/skills/analyze-block-dump/SKILL.md), [`manage-tasks`](.agents/skills/manage-tasks/SKILL.md), [`commit-work`](.agents/skills/commit-work/SKILL.md).
+Skills (`.agents/skills/`): [`run-dos-benchmarks`](.agents/skills/run-dos-benchmarks/SKILL.md), [`boot-test-guests`](.agents/skills/boot-test-guests/SKILL.md), [`bisect-dynarec-regression`](.agents/skills/bisect-dynarec-regression/SKILL.md), [`analyze-block-dump`](.agents/skills/analyze-block-dump/SKILL.md), [`ipc-control`](.agents/skills/ipc-control/SKILL.md), [`manage-tasks`](.agents/skills/manage-tasks/SKILL.md), [`commit-work`](.agents/skills/commit-work/SKILL.md).
 
 ## 1. Repository Map
 
@@ -19,7 +19,7 @@ Skills (`.agents/skills/`): [`run-dos-benchmarks`](.agents/skills/run-dos-benchm
 | `src/sound/`, `src/network/`, `src/input/`, `src/device/` | Audio, NICs and backends, keyboard/mice/joysticks, UART/parallel/RTC |
 | `src/qt/` | Qt frontend |
 | `benchmarks/` | Headless DOS benchmark runner (`run_benchmarks.py`) |
-| `scripts/` | `analyze_blocks.py` (block trace analyzer), `rebuild_deploy.sh` |
+| `scripts/` | `86box-ipc.py` (JSON-RPC IPC client), `analyze_blocks.py` (block trace analyzer), `rebuild_deploy.sh` |
 
 ## 2. Core Invariants
 
@@ -97,14 +97,23 @@ python3 benchmarks/run_benchmarks.py --only new \
 ```
 
 ### 2. Win98 desktop check
-Must reach the desktop (~35-42s) with network and Explorer up. Screenshot is triggered by GDB poking `mon_screenshots`.
+Must reach the desktop (~35-42s) with network and Explorer up. Screenshot is captured non-invasively via IPC (`python3 scripts/86box-ipc.py screenshot <file.png>`, skill `ipc-control`) or legacy GDB poking `mon_screenshots`.
 
-### 3. GDB (`-DGDBSTUB=ON`)
+### 3. Headless IPC control & dynamic profiling
+Start 86Box with `--ipc` or `BOX86_IPC_SOCKET`. Use `scripts/86box-ipc.py` (skill `ipc-control`) to take screenshots, inspect state, inject keys, start/stop block dumps at runtime, or arm breakpoints on DOS `EXEC` / PC ranges / opcode patterns without VM restarts:
+```bash
+python3 scripts/86box-ipc.py screenshot /tmp/screen.png
+python3 scripts/86box-ipc.py dump-start /tmp/dynarec.86bdump
+python3 scripts/86box-ipc.py dump-stop
+python3 scripts/86box-ipc.py arm-trigger --pattern "PINBALL.EXE" --output /tmp/pinball.86bdump --screenshot
+```
+
+### 4. GDB (`-DGDBSTUB=ON`)
 - Guest CPU (BIOS, DOS, VxDs): `gdb -ex "target remote 127.0.0.1:12345"`.
 - Host emulator internals: `gdb -p <86box_pid>`.
 - Single-stepping recompiled guest code: set `BOX86_LINK_MASK=0`.
 
-### 4. Block-linking env vars
+### 5. Block-linking env vars
 `BOX86_LINK_MASK` (bitmask, default `LINK_DEFAULT` = `0xbf`, defined in `src/codegen_new/codegen.h`):
 
 | Bit | Name | Meaning |
