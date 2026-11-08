@@ -72,6 +72,7 @@ codegen_timing_set(codegen_timing_t *timing)
 }
 
 int codegen_in_recompile;
+int codegen_ss_loaded;
 
 static int      last_op_ssegs;
 static x86seg  *last_op_ea_seg;
@@ -80,10 +81,11 @@ static uint32_t last_op_32;
 void
 codegen_generate_reset(void)
 {
-    last_op_ssegs  = -1;
-    last_op_ea_seg = NULL;
-    last_op_32     = -1;
-    has_ea         = 0;
+    last_op_ssegs     = -1;
+    last_op_ea_seg    = NULL;
+    last_op_32        = -1;
+    has_ea            = 0;
+    codegen_ss_loaded = 0;
 }
 
 void
@@ -410,6 +412,10 @@ codegen_generate_call(uint8_t opcode, OpFn op, uint32_t fetchdat, uint32_t new_p
 
     ir->cur_guest_insn_idx = block->ins;
     ir->cur_guest_pc_off   = (uint16_t) (old_pc - (block->pc - block->_cs));
+
+    int prev_ss_loaded = codegen_ss_loaded;
+    if (prev_ss_loaded)
+        codegen_ss_loaded = 0;
 #ifdef DEBUG_EXTRA
     uint8_t last_prefix = 0;
 #endif
@@ -764,7 +770,9 @@ generate_call:
 
             block->ins++;
 
-            if (block->ins >= MAX_INSTRUCTION_COUNT)
+            if (prev_ss_loaded && !codegen_ss_loaded)
+                CPU_BLOCK_END();
+            else if (block->ins >= MAX_INSTRUCTION_COUNT && !codegen_ss_loaded)
                 CPU_BLOCK_END();
 
             return;
@@ -855,7 +863,9 @@ codegen_skip:
 
     block->ins++;
 
-    if (block->ins >= MAX_INSTRUCTION_COUNT)
+    if (prev_ss_loaded && !codegen_ss_loaded)
+        CPU_BLOCK_END();
+    else if (block->ins >= MAX_INSTRUCTION_COUNT && !codegen_ss_loaded)
         CPU_BLOCK_END();
 
     codegen_endpc = (cs + cpu_state.pc) + 8;

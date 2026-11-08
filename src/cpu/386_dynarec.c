@@ -1300,7 +1300,7 @@ exec386_dynarec(int32_t cycs)
             dyn_oldcyc       = oldcyc;
             dyn_oldtsc       = oldtsc;
 #endif
-            if (cpu_cache_enabled || cpu_force_interpreter || cpu_override_dynarec || cpu_flush_pending || (!CACHE_ON())) /*Interpret block*/
+            if (cpu_end_block_after_ins || cpu_cache_enabled || cpu_force_interpreter || cpu_override_dynarec || cpu_flush_pending || (!CACHE_ON())) /*Interpret block*/
             {
                 cpu_is_halted = 0;
                 exec386_dynarec_int();
@@ -1372,7 +1372,7 @@ exec386_dynarec(int32_t cycs)
                 nmi = 0;
 #    endif
                 cpu_update_nmi();
-            } else if ((cpu_state.flags & I_FLAG) && pic.int_pending) {
+            } else if ((cpu_state.flags & I_FLAG) && pic.int_pending && !cpu_end_block_after_ins) {
                 vector = picinterrupt();
                 if (vector != -1) {
                     cpu_is_halted = 0;

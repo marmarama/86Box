@@ -455,6 +455,9 @@ ropMOV_seg_w(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t
         case 0x00: /*ES*/
             rseg = &cpu_state.seg_es;
             break;
+        case 0x10: /*SS*/
+            rseg = &cpu_state.seg_ss;
+            break;
         case 0x18: /*DS*/
             rseg = &cpu_state.seg_ds;
             break;
@@ -489,6 +492,9 @@ ropMOV_seg_w(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t
     } else {
         uop_LOAD_SEG(ir, rseg, src_reg);
     }
+
+    if (rseg == &cpu_state.seg_ss)
+        codegen_ss_loaded = 1;
 
     return op_pc + 1;
 }

@@ -659,21 +659,8 @@ opPOP_SS_w(uint32_t fetchdat)
     CLOCK_CYCLES(is486 ? 3 : 7);
     PREFETCH_RUN(is486 ? 3 : 7, 1, -1, 0, 0, 1, 0, 0);
 
-    cpu_state.oldpc  = cpu_state.pc;
-    cpu_state.op32   = use32;
-    cpu_state.ssegs  = 0;
-    cpu_state.ea_seg = &cpu_state.seg_ds;
-    fetchdat         = fastreadl(cs + cpu_state.pc);
-    cpu_state.pc++;
-    if (cpu_state.abrt)
-        return 1;
-#ifdef OPS_286_386
-    x86_2386_opcodes[(fetchdat & 0xff) | cpu_state.op32](fetchdat >> 8);
-#else
-    x86_opcodes[(fetchdat & 0xff) | cpu_state.op32](fetchdat >> 8);
-#endif
-
-    return 1;
+    cpu_end_block_after_ins = 2;
+    return cpu_state.abrt;
 }
 static int
 opPOP_SS_l(uint32_t fetchdat)
@@ -691,19 +678,6 @@ opPOP_SS_l(uint32_t fetchdat)
     CLOCK_CYCLES(is486 ? 3 : 7);
     PREFETCH_RUN(is486 ? 3 : 7, 1, -1, 0, 0, 1, 0, 0);
 
-    cpu_state.oldpc  = cpu_state.pc;
-    cpu_state.op32   = use32;
-    cpu_state.ssegs  = 0;
-    cpu_state.ea_seg = &cpu_state.seg_ds;
-    fetchdat         = fastreadl(cs + cpu_state.pc);
-    cpu_state.pc++;
-    if (cpu_state.abrt)
-        return 1;
-#ifdef OPS_286_386
-    x86_2386_opcodes[(fetchdat & 0xff) | cpu_state.op32](fetchdat >> 8);
-#else
-    x86_opcodes[(fetchdat & 0xff) | cpu_state.op32](fetchdat >> 8);
-#endif
-
-    return 1;
+    cpu_end_block_after_ins = 2;
+    return cpu_state.abrt;
 }

@@ -966,6 +966,7 @@ codegen_block_start_recompile(codeblock_t *block)
     block->host_tsc_total    = 0;
     block->host_tsc_callouts = 0;
     block->compile_seq       = 0;
+    codegen_ss_loaded        = 0;
 
     if (block->head_mem_block) {
         codegen_allocator_free(block->head_mem_block);
@@ -1191,6 +1192,10 @@ codegen_block_end_recompile(codeblock_t *block)
         block->flags &= ~CODEBLOCK_STATIC_TOP;
 
     codegen_accumulate_flush(ir_data);
+    if (codegen_ss_loaded) {
+        uop_STORE_PTR_IMM(ir_data, &cpu_end_block_after_ins, 2);
+        codegen_ss_loaded = 0;
+    }
     if (block->exit_type == BLOCK_EXIT_DIRECT_1) {
         uop_EXIT_BLOCK(ir_data, 0, block->links[0].target_pc);
     } else if (block->exit_type == BLOCK_EXIT_RET) {
@@ -1322,7 +1327,7 @@ codegen_handle_dispatch(void)
     /* 1. Cycle & asynchronous event check: */
     cpu_update_exit_request();
     if (cpu_state._cycles <= 0 || cpu_state.exit_request ||
-        ((cpu_state.flags & I_FLAG) && pic.int_pending)) {
+        ((cpu_state.flags & I_FLAG) && pic.int_pending && !cpu_end_block_after_ins)) {
         if (!codegen_handle_jit_event())
             return NULL; /* Exit JIT to C dispatcher */
     }

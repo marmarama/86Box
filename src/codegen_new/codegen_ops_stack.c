@@ -237,7 +237,7 @@ ropPOP_L(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fet
             uop_MOVZX(ir, IREG_eaaddr, IREG_SP);                                                  \
             uop_MEM_LOAD_REG(ir, IREG_temp0_W, IREG_SS_base, IREG_eaaddr);                        \
         }                                                                                         \
-        if (!(msw & 1) && &rseg != &cpu_state.seg_ss) {                                           \
+        if (!(msw & 1)) {                                                                         \
             uop_MOVZX(ir, IREG_temp1, IREG_temp0_W);                                              \
             uop_SHL_IMM(ir, ireg_seg_base(&rseg), IREG_temp1, 4);                                \
             uop_MOV(ir, ireg_seg_seg(&rseg), IREG_temp0_W);                                       \
@@ -245,6 +245,8 @@ ropPOP_L(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fet
             uop_LOAD_SEG(ir, &rseg, IREG_temp0_W);                                                \
         }                                                                                         \
         ADD_SP(ir, 2);                                                                            \
+        if (&rseg == &cpu_state.seg_ss)                                                           \
+            codegen_ss_loaded = 1;                                                                \
                                                                                                   \
         return op_pc;                                                                             \
     }                                                                                             \
@@ -259,14 +261,16 @@ ropPOP_L(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fet
             uop_MOVZX(ir, IREG_eaaddr, IREG_SP);                                                  \
             uop_MEM_LOAD_REG(ir, IREG_temp0_W, IREG_SS_base, IREG_eaaddr);                        \
         }                                                                                         \
-        if (!(msw & 1) && &rseg != &cpu_state.seg_ss) {                                           \
+        if (!(msw & 1)) {                                                                         \
             uop_MOVZX(ir, IREG_temp1, IREG_temp0_W);                                              \
             uop_SHL_IMM(ir, ireg_seg_base(&rseg), IREG_temp1, 4);                                \
             uop_MOV(ir, ireg_seg_seg(&rseg), IREG_temp0_W);                                       \
         } else {                                                                                  \
             uop_LOAD_SEG(ir, &rseg, IREG_temp0_W);                                                \
-        }                                                    \
+        }                                                                                         \
         ADD_SP(ir, 4);                                                                            \
+        if (&rseg == &cpu_state.seg_ss)                                                           \
+            codegen_ss_loaded = 1;                                                                \
                                                                                                   \
         return op_pc;                                                                             \
     }
@@ -282,6 +286,7 @@ ROP_POP_SEG(DS, cpu_state.seg_ds)
 ROP_POP_SEG(ES, cpu_state.seg_es)
 ROP_POP_SEG(FS, cpu_state.seg_fs)
 ROP_POP_SEG(GS, cpu_state.seg_gs)
+ROP_POP_SEG(SS, cpu_state.seg_ss)
 // clang-format on
 
 uint32_t

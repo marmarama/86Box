@@ -187,20 +187,8 @@ opMOV_seg_w_a16(uint32_t fetchdat)
             op_loadseg(new_seg, &cpu_state.seg_ss);
             if (cpu_state.abrt)
                 return 1;
-            cpu_state.oldpc  = cpu_state.pc;
-            cpu_state.op32   = use32;
-            cpu_state.ssegs  = 0;
-            cpu_state.ea_seg = &cpu_state.seg_ds;
-            fetchdat         = fastreadl(cs + cpu_state.pc);
-            cpu_state.pc++;
-            if (cpu_state.abrt)
-                return 1;
-#ifdef OPS_286_386
-            x86_2386_opcodes[(fetchdat & 0xff) | cpu_state.op32](fetchdat >> 8);
-#else
-            x86_opcodes[(fetchdat & 0xff) | cpu_state.op32](fetchdat >> 8);
-#endif
-            return 1;
+            cpu_end_block_after_ins = 2;
+            break;
         case 0x20: /*FS*/
             op_loadseg(new_seg, &cpu_state.seg_fs);
             break;
@@ -236,20 +224,8 @@ opMOV_seg_w_a32(uint32_t fetchdat)
             op_loadseg(new_seg, &cpu_state.seg_ss);
             if (cpu_state.abrt)
                 return 1;
-            cpu_state.oldpc  = cpu_state.pc;
-            cpu_state.op32   = use32;
-            cpu_state.ssegs  = 0;
-            cpu_state.ea_seg = &cpu_state.seg_ds;
-            fetchdat         = fastreadl(cs + cpu_state.pc);
-            cpu_state.pc++;
-            if (cpu_state.abrt)
-                return 1;
-#ifdef OPS_286_386
-            x86_2386_opcodes[(fetchdat & 0xff) | cpu_state.op32](fetchdat >> 8);
-#else
-            x86_opcodes[(fetchdat & 0xff) | cpu_state.op32](fetchdat >> 8);
-#endif
-            return 1;
+            cpu_end_block_after_ins = 2;
+            break;
         case 0x20: /*FS*/
             op_loadseg(new_seg, &cpu_state.seg_fs);
             break;
