@@ -24,7 +24,7 @@ The legacy dynarec (`src/codegen/`, originating in PCem) served as 86Box's initi
 | **Pipeline Paradigm** | **1-Pass Macro Assembler**: Decodes guest bytes and immediately emits host x86-64 machine code bytes into a memory buffer. | **Multi-Tier Compiler Pipeline**: Frontend Decoder $\to$ Micro-Op Intermediate Representation (IR) $\to$ Register Allocation $\to$ Backend Machine Code Emission $\to$ Dynamic Block Linking. |
 | **Host Portability** | **x86-64 Only**: `#error Dynamic recompiler not implemented on your platform`. Deeply intertwined with host x86 opcode tables and ModR/M layouts. | **Multi-Architecture**: Abstract IR retargetable to **x86-64**, **ARM64** (Apple Silicon, Raspberry Pi, Linux ARM), and **LoongArch64**. |
 | **Intermediate Representation (IR)** | **None**: No intermediate data structure. Instructions cannot be analyzed, reordered, optimized, or inspected before emission. | **Linear Micro-Op IR (`ir_data_t`)**: Clean stream of micro-operations (`uop_t`) with explicit virtual registers (`IREG_*`), operand sizes, side-effects, and order barriers. |
-| **Register Allocation** | **Hardcoded Mapping**: Fixed 1:1 assignment of guest registers to host registers; manual spill/reload macros scattered across opcode handlers. | **Dynamic Linear Scan Allocator (`codegen_reg.c`)**: Dynamic interval analysis mapping virtual registers (`IREG_*`) to available host registers, with automatic spilling, dirty writeback, and REX prefix constraint handling. |
+| **Register Allocation** | **Hardcoded Mapping**: Fixed 1:1 assignment of guest registers to host registers; manual spill/reload macros scattered across opcode handlers. | **Per-block dynamic allocator (`codegen_reg.c`)**: Versioned virtual registers with reference counts, mapped on demand to a small pool of host registers, with automatic spilling and dirty writeback. |
 | **Block Chaining & Linking** | **Brittle Single-Exit Linking**: Basic patching of jump offsets in host code; difficult to track multi-branch blocks or safely unlink when code is invalidated. | **Graph-Aware Multi-Exit Chaining (`codeblock_link_t`)**: Supports `LINK_JMP`, `LINK_JCC` (fallthrough + branch), `LINK_LOOP`, and `LINK_RET` with bidirectional incoming/outgoing link lists. |
 | **Self-Modifying Code (SMC)** | **Coarse Invalidation**: Whole-block or page invalidation; prone to catastrophic recompilation thrashing in tight SMC loops. | **Dual-Mask Tracking + Dirty-List Epochs**: Fine-grained 64-byte chunk masks (`code_present_mask` + `dirty_mask`) and adaptive fallback to `CODEBLOCK_NO_IMMEDIATES` mode during high churn. |
 | **Telemetry & Observability** | **Minimal / Ad-Hoc**: Printfs and gdbstub breakpoints. | **Integrated Telemetry (`codegen_dump.c`)**: Binary block dump format (`.86bdump`), runtime IPC socket triggers, Capstone host/guest disassembler integration, and automated linter. |
@@ -39,7 +39,7 @@ The compilation and execution lifecycle in `codegen_new` proceeds through five d
 ```mermaid
 flowchart TD
     subgraph Execution Loop ["1. Dispatch & Cache Lookup"]
-        A["pc_run() / exec386_dynarec(cycles)"] --> B{"codegen_find_block(phys_pc, cs_base, mode)"}
+        A["pc_run() / exec386_dynarec(cycles)"] --> B{"Hash probe codeblock_hash[HASH(phys)] then BST fallback (codeblock_tree_find)"}
         B -- "Hit (Valid)" --> C["Jump to Block Entry Point (Host Code)"]
         B -- "Miss" --> D["Allocate codeblock_t"]
     end
@@ -66,7 +66,7 @@ flowchart TD
     end
 
     subgraph Chaining ["5. Dynamic Block Chaining"]
-        O --> P["Patch Incoming / Outgoing Links (codegen_link_block)"]
+        O --> P["Patch Incoming / Outgoing Links (codegen_link_exit)"]
         P --> C
     end
 ```
@@ -106,19 +106,20 @@ The dynarec compiles code through a linearized micro-operation IR. The IR buffer
 
 ```c
 typedef struct uop_t {
-    uint32_t type;            /* UOP_ADD, UOP_MOV, UOP_MEM_LOAD_32, etc. | Flags */
-    ireg_t   dest_reg_a;      /* Destination virtual register */
-    ireg_t   src_reg_a;       /* Source operand A */
-    ireg_t   src_reg_b;       /* Source operand B */
-    ireg_t   src_reg_c;       /* Source operand C / Index */
-    int      dest_reg_a_real; /* Assigned host physical register */
-    int      src_reg_a_real;  /* Assigned host physical register */
-    int      src_reg_b_real;  /* Assigned host physical register */
-    int      src_reg_c_real;  /* Assigned host physical register */
-    uint32_t imm;             /* Immediate value 1 */
-    uint32_t imm2;            /* Immediate value 2 */
-    void    *ptr;             /* Pointer parameter (function target, host buffer) */
-    int      jump_dest_uop;   /* Target uOp index for intra-block branches */
+    uint32_t      type;             /* UOP_* opcode | UOP_TYPE_* flags */
+    ir_reg_t      dest_reg_a;       /* Virtual (versioned) destination */
+    ir_reg_t      src_reg_a, src_reg_b, src_reg_c;
+    uintptr_t     imm_data;         /* uint32_t on x86-64 */
+    void         *p;                /* Pointer operand (helper function, cpu_state field) */
+    ir_host_reg_t dest_reg_a_real;  /* Host registers assigned by the allocator */
+    ir_host_reg_t src_reg_a_real, src_reg_b_real, src_reg_c_real;
+    int           is_a16;
+    int           jump_dest_uop;    /* Intra-block jump target */
+    int           jump_list_next;
+    void         *jump_dest;
+    uint32_t      pc;               /* Guest-PC / instruction index metadata */
+    uint16_t      guest_insn_idx;   /*   used by the block dumper */
+    uint16_t      guest_pc_off;
 } uop_t;
 ```
 
@@ -161,17 +162,17 @@ When a branch (`Jcc`), conditional move (`CMOVcc`), byte-set (`SETcc`), or push 
 
 The register allocator maps the infinite virtual `IREG_*` space down to the host machine's physical register set.
 
-- **x86-64 Host Registers**: Up to 15 GPRs (`RAX`, `RCX`, `RDX`, `RBX`, `RSI`, `RDI`, `RBP`, `R8`–`R15`). `RSP` is reserved for the host stack.
-- **ARM64 Host Registers**: Up to 28 GPRs (`X0`–`X27`). `X28`–`X31` reserved for platform/stack.
+- **x86-64**: 7 allocatable GPRs (`EAX`, `EBX`, `EDX`, `R10`, `R11`, `R13`, `R15`). `RBP` holds the `cpu_state` base, `R14` is pinned to `cpu_state._cycles` across blocks (`REG_CYCLES`), and `ECX` and others are backend scratch.
+- **ARM64**: 10 allocatable GPRs. **LoongArch64**: 9 (`CODEGEN_HOST_REGS` in each `codegen_backend_*_defs.h`).
 
 #### Allocation & Spilling Mechanics
 1. **Read Allocation (`codegen_reg_alloc_read_reg`)**: Checks if the requested virtual register is already resident in a host register. If resident, reuses it. If not, claims an available host register (or evicts the oldest unmodified/least-recently-used register) and emits a load from `cpu_state`.
 2. **Write Allocation (`codegen_reg_alloc_write_reg`)**: Allocates a host register for the destination, marking the host register descriptor as **dirty**.
 3. **Register Flushing (`codegen_reg_flush`)**: Traverses the register table; any register marked dirty emits a host store back into `cpu_state` and clears the dirty bit.
 
-#### Host Architecture Constraints: REX vs. High-Byte Registers
-On x86-64, ModR/M byte instructions cannot mix a REX prefix with legacy high-byte registers (`AH`, `CH`, `DH`, `BH`). If an instruction uses `R8`–`R15`, references to `AH`..`BH` produce illegal encodings.
-`codegen_reg.c` handles this via `HOST_REG_FLAG_NO_BH`: when an operand requires a high-byte sub-register, host registers `R10`–`R15` are strictly masked out of the allocation candidates.
+#### High-Byte Registers (`AH`/`BH`/`CH`/`DH`) on x86-64
+x86-64 cannot encode `AH`..`DH` alongside a REX prefix. `HOST_REG_FLAG_NO_BH` exists in `codegen_backend.h` but is currently defined as `0` (a no-op), so the allocator does **not** mask any registers. High-byte operands are instead handled inside the backend uOp handlers via temporaries (`MOVZX` + `SHR 8` through `ECX`, see `EMIT_ALU8_BINARY` in `codegen_backend_x86-64_uops.c`).
+
 
 ---
 
@@ -280,11 +281,14 @@ Despite its vast improvements over the legacy macro-based dynarec, empirical pro
 ### 6.1 Basic-Block Scope & Lack of Inter-Block SSA / Global CFG
 * **The Limitation**: `codegen_new` is strictly a **single basic-block JIT**. Compilation begins at a block entry point and terminates at the first control-flow transfer (`JMP`, `Jcc`, `LOOP`, `CALL`, `RET`, `INT`).
 * **Consequences**:
-  * The IR has no Control Flow Graph (CFG) across blocks, no $\phi$ (phi) functions, and no Static Single Assignment (SSA) form.
+  * The IR has no Control Flow Graph across blocks and no $\phi$ functions. Registers are versioned within a block (SSA-like renaming), but versions do not extend across blocks.
   * Classical compiler optimizations—such as Loop-Invariant Code Motion (LICM), Common Subexpression Elimination (CSE), global dead code elimination, and cross-block register allocation—are structurally impossible.
   * Loops as small as 2 or 3 instructions (e.g. `rep stosb`, polling loops, string scanning) generate independent blocks that must continually transition across block boundary stubs.
 
 ### 6.2 Per-Block C Function Boundary & Dispatcher Overhead
+> [!NOTE]
+> Figures below come from the earlier `PROFILE-WIN98-v3.md` profile. Since then, `R14` has been pinned to cycles and an in-JIT dispatch stub (`codegen_dispatch_stub`) was added, so the numbers likely overstate the current cost. Re-measure before relying on them.
+
 * **The Limitation**: Every compiled block is modeled as a standalone C function pointer (`void (*code)(void)`).
 * **Consequences**:
   * Even with direct block chaining (`codeblock_link_t`), whenever chaining cannot occur (cross-page boundaries, cache misses, cycle exhaustion, hardware interrupts), the host CPU must tear down the block's stack frame, return to the C dispatcher in `pc_run()`, perform hash lookups, and enter the next block.
@@ -308,14 +312,16 @@ Despite its vast improvements over the legacy macro-based dynarec, empirical pro
   * In guest software, code following a barrier often immediately overwrites flags (e.g. `TEST`, `CMP`, `OR`) without ever reading the committed values.
   * In Windows 98 boot traces, eager flag materialization before barriers wastes **961 million host cycles** across 115,176 static sites.
 
-### 6.5 Sub-Register Representation & High-Byte REX Conflicts
-* **The Limitation**: On x86-64 hosts, ModR/M cannot encode legacy high-byte registers (`AH`, `BH`, `CH`, `DH`) alongside REX prefixes (which are required to access registers `R8`–`R15`).
+### 6.5 Small Host Register Pool & High-Byte Handling
+* **The Limitation**: Only 7 (x86-64), 10 (ARM64) or 9 (LoongArch64) host registers are allocatable, and x86-64 high-byte operands need extra temporaries in the backend.
 * **Consequences**:
-  * `codegen_reg.c` handles this by applying `HOST_REG_FLAG_NO_BH`, completely masking out `R10`–`R15` whenever an operand touches `AH`..`DH`.
-  * When combined with instructions requiring fixed registers (e.g. variable shifts requiring `CL`, or multiplication requiring `EAX`/`EDX`), the allocator is starved down to just 3–4 legacy host registers.
-  * This triggers severe intra-block spill/reload thrashing (e.g. 148,000+ spills in ScanDisk FAT cluster calculations). Sub-registers are not canonicalized into explicit bitfield operations (`BFX`/`BFI`) on 32/64-bit host containers.
+  * Instructions with fixed-register needs (variable shifts via `CL`, `MUL`/`DIV` via `EAX`/`EDX`) shrink the pool further.
+  * This causes intra-block spill/reload thrashing (148,000+ in ScanDisk FAT cluster math, per the block linter).
 
 ### 6.6 Heavy C Callout Fallbacks for Protected-Mode Control Flow
+> [!NOTE]
+> Real-mode (`CR0.PE == 0`) segment loads (`MOV seg`, `LxS`, `POP seg`) are now inlined as native uOps. The limitation below applies to protected mode only; the profile figures predate any pmode segment caching.
+
 * **The Limitation**: Complex x86 architectural operations—such as selector loading (`loadseg()`), task switching, far calls (`LCALL`), far jumps (`LJMP`), and protected-mode `IRET`—are not lowered to native uOps.
 * **Consequences**:
   * These operations drop entirely out of JIT execution into heavy C runtime helpers in `src/cpu/x86seg.c` and `src/cpu/x86_ops_pmode.h`.
@@ -345,7 +351,7 @@ src/codegen_new/
 ├── codegen_block.c             # Code cache, block hash table, direct chaining, SMC unlinking
 ├── codegen_ir.c                # Micro-operation IR stream manager, uop dispatcher
 ├── codegen_ir_defs.h           # uOp definitions, IREG register IDs, barrier masks
-├── codegen_reg.c               # Dynamic linear-scan register allocator
+├── codegen_reg.c               # Per-block versioned-register allocator
 ├── codegen_reg.h               # Register descriptor layouts and helper macros
 ├── codegen_dump.c              # Telemetry, .86bdump binary format emitter
 ├── codegen_dump.h              # Telemetry headers and IPC profiling interfaces
