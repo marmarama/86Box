@@ -229,7 +229,6 @@ flushmmucache(void)
 #ifdef USE_DYNAREC
     codegen_flush();
 #endif
-    seg_desc_cache_update_pages();
 }
 
 void

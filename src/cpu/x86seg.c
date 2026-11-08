@@ -742,6 +742,15 @@ loadcs(uint16_t seg)
     x86seg_log("Load CS %04X\n", seg);
 
     if ((msw & 1) && !(cpu_state.eflags & VM_FLAG)) {
+        if (load_cached_cs(seg)) {
+            if ((CPL == 3) && (oldcpl != 3))
+                flushmmucache_nopc();
+#ifdef USE_NEW_DYNAREC
+            oldcpl = CPL;
+#endif
+            return;
+        }
+
         if (!(seg & 0xfffc)) {
             x86gpf("loadcs(): Protected mode selector is zero", 0);
             return;
@@ -783,15 +792,15 @@ loadcs(uint16_t seg)
             CS = (seg & 0xfffc) | CPL;
             do_seg_load(&cpu_state.seg_cs, segdat);
             use32 = (segdat[3] & 0x40) ? 0x300 : 0;
+            cache_store_cs(seg, segdat);
             if ((CPL == 3) && (oldcpl != 3))
                 flushmmucache_nopc();
 #ifdef USE_NEW_DYNAREC
             oldcpl = CPL;
 #endif
 
-            cpl_override = 1;
-            writememw(0, addr + 4, segdat[2] | 0x0100); /* Set accessed bit */
-            cpl_override = 0;
+            if (set_descriptor_accessed(addr, segdat))
+                return;
         } else {
             /* System segment */
             switch (segdat[2] & 0x0f00) {

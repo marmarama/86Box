@@ -58,7 +58,12 @@ uint64_t seg_desc_accessed_skips     = 0;
 #define MAX_TRACKED_DESC_PAGES 64
 
 static uint32_t tracked_desc_pages[MAX_TRACKED_DESC_PAGES];
-static int      num_tracked_desc_pages = 0;
+static int      num_tracked_desc_pages  = 0;
+static uint32_t tracked_gdt_base        = 0;
+static uint32_t tracked_gdt_limit       = 0;
+static uint32_t tracked_ldt_base        = 0;
+static uint32_t tracked_ldt_limit       = 0;
+static uint16_t tracked_ldt_seg         = 0;
 
 void
 seg_desc_cache_flush(void)
@@ -86,107 +91,136 @@ void
 seg_desc_cache_update_pages(void)
 {
     seg_desc_update_pages_calls++;
-    seg_desc_cache_flush();
 
     if (!pages || !pages_sz)
         return;
 
-    /* 1. Clear has_desc_table on previously tracked physical pages */
+    uint32_t new_tracked_pages[MAX_TRACKED_DESC_PAGES];
+    int      new_num_tracked_pages = 0;
+    int      new_overflow          = 0;
+
+    if ((msw & 1) && !(cpu_state.eflags & VM_FLAG)) {
+        int saved_abrt = cpu_state.abrt;
+
+        /* 1. Track GDT pages */
+        if (gdt.limit > 0) {
+            uint32_t start_lin = gdt.base;
+            uint32_t end_lin   = gdt.base + gdt.limit;
+            if (end_lin < start_lin)
+                end_lin = 0xffffffff;
+            for (uint32_t lin = (start_lin & ~0xfff); lin <= end_lin; lin += 0x1000) {
+                uint32_t phys = (cr0 & 0x80000000) ? (uint32_t) mmutranslatereal(lin, 0) : lin;
+                if (cpu_state.abrt != saved_abrt) {
+                    cpu_state.abrt = saved_abrt;
+                    phys           = 0xffffffff;
+                }
+                if (phys != 0xffffffff) {
+                    uint32_t p = (phys & rammask) >> 12;
+                    if (p < pages_sz) {
+                        int found = 0;
+                        for (int j = 0; j < new_num_tracked_pages; j++) {
+                            if (new_tracked_pages[j] == p) {
+                                found = 1;
+                                break;
+                            }
+                        }
+                        if (!found) {
+                            if (new_num_tracked_pages < MAX_TRACKED_DESC_PAGES) {
+                                new_tracked_pages[new_num_tracked_pages++] = p;
+                            } else {
+                                new_overflow = 1;
+                            }
+                        }
+                    }
+                } else {
+                    /* GDT page failed translation; cannot safely track modifications */
+                    new_overflow = 1;
+                }
+                if (lin >= 0xfffff000)
+                    break;
+            }
+        }
+
+        /* 2. Track LDT pages */
+        if (ldt.limit > 0 && ldt.seg != 0) {
+            uint32_t start_lin = ldt.base;
+            uint32_t end_lin   = ldt.base + ldt.limit;
+            if (end_lin < start_lin)
+                end_lin = 0xffffffff;
+            for (uint32_t lin = (start_lin & ~0xfff); lin <= end_lin; lin += 0x1000) {
+                uint32_t phys = (cr0 & 0x80000000) ? (uint32_t) mmutranslatereal(lin, 0) : lin;
+                if (cpu_state.abrt != saved_abrt) {
+                    cpu_state.abrt = saved_abrt;
+                    phys           = 0xffffffff;
+                }
+                if (phys != 0xffffffff) {
+                    uint32_t p = (phys & rammask) >> 12;
+                    if (p < pages_sz) {
+                        int found = 0;
+                        for (int j = 0; j < new_num_tracked_pages; j++) {
+                            if (new_tracked_pages[j] == p) {
+                                found = 1;
+                                break;
+                            }
+                        }
+                        if (!found) {
+                            if (new_num_tracked_pages < MAX_TRACKED_DESC_PAGES) {
+                                new_tracked_pages[new_num_tracked_pages++] = p;
+                            } else {
+                                new_overflow = 1;
+                            }
+                        }
+                    }
+                } else {
+                    /* LDT page failed translation */
+                    new_overflow = 1;
+                }
+                if (lin >= 0xfffff000)
+                    break;
+            }
+        }
+    }
+
+    int changed = (seg_desc_cache_overflow != new_overflow) ||
+                  (num_tracked_desc_pages != new_num_tracked_pages) ||
+                  (gdt.base != tracked_gdt_base) || (gdt.limit != tracked_gdt_limit) ||
+                  (ldt.base != tracked_ldt_base) || (ldt.limit != tracked_ldt_limit) ||
+                  (ldt.seg != tracked_ldt_seg);
+    if (!changed) {
+        for (int i = 0; i < new_num_tracked_pages; i++) {
+            if (tracked_desc_pages[i] != new_tracked_pages[i]) {
+                changed = 1;
+                break;
+            }
+        }
+    }
+
+    if (!changed)
+        return;
+
+    /* Configuration or physical mapping changed: clear old tracked pages */
     for (int i = 0; i < num_tracked_desc_pages; i++) {
         uint32_t p = tracked_desc_pages[i];
         if (p < pages_sz)
             pages[p].has_desc_table = 0;
     }
-    num_tracked_desc_pages  = 0;
-    seg_desc_cache_overflow = 0;
 
-    if (!(msw & 1) || (cpu_state.eflags & VM_FLAG))
-        return;
-
-    int saved_abrt = cpu_state.abrt;
-
-    /* 2. Track GDT pages */
-    if (gdt.limit > 0) {
-        uint32_t start_lin = gdt.base;
-        uint32_t end_lin   = gdt.base + gdt.limit;
-        if (end_lin < start_lin)
-            end_lin = 0xffffffff;
-        for (uint32_t lin = (start_lin & ~0xfff); lin <= end_lin; lin += 0x1000) {
-            uint32_t phys = (cr0 & 0x80000000) ? (uint32_t) mmutranslatereal(lin, 0) : lin;
-            if (cpu_state.abrt != saved_abrt) {
-                cpu_state.abrt = saved_abrt;
-                phys           = 0xffffffff;
-            }
-            if (phys != 0xffffffff) {
-                uint32_t p = (phys & rammask) >> 12;
-                if (p < pages_sz) {
-                    int found = 0;
-                    for (int j = 0; j < num_tracked_desc_pages; j++) {
-                        if (tracked_desc_pages[j] == p) {
-                            found = 1;
-                            break;
-                        }
-                    }
-                    if (!found) {
-                        if (num_tracked_desc_pages < MAX_TRACKED_DESC_PAGES) {
-                            pages[p].has_desc_table                      = 1;
-                            tracked_desc_pages[num_tracked_desc_pages++] = p;
-                        } else {
-                            seg_desc_cache_overflow = 1;
-                        }
-                    }
-                }
-            } else {
-                /* GDT page failed translation; cannot safely track modifications */
-                seg_desc_cache_overflow = 1;
-            }
-            if (lin >= 0xfffff000)
-                break;
-        }
+    /* Set has_desc_table on new pages */
+    for (int i = 0; i < new_num_tracked_pages; i++) {
+        uint32_t p = new_tracked_pages[i];
+        if (p < pages_sz)
+            pages[p].has_desc_table = 1;
+        tracked_desc_pages[i] = p;
     }
+    num_tracked_desc_pages  = new_num_tracked_pages;
+    seg_desc_cache_overflow = new_overflow;
+    tracked_gdt_base        = gdt.base;
+    tracked_gdt_limit       = gdt.limit;
+    tracked_ldt_base        = ldt.base;
+    tracked_ldt_limit       = ldt.limit;
+    tracked_ldt_seg         = ldt.seg;
 
-    /* 3. Track LDT pages */
-    if (ldt.limit > 0 && ldt.seg != 0) {
-        uint32_t start_lin = ldt.base;
-        uint32_t end_lin   = ldt.base + ldt.limit;
-        if (end_lin < start_lin)
-            end_lin = 0xffffffff;
-        for (uint32_t lin = (start_lin & ~0xfff); lin <= end_lin; lin += 0x1000) {
-            uint32_t phys = (cr0 & 0x80000000) ? (uint32_t) mmutranslatereal(lin, 0) : lin;
-            if (cpu_state.abrt != saved_abrt) {
-                cpu_state.abrt = saved_abrt;
-                phys           = 0xffffffff;
-            }
-            if (phys != 0xffffffff) {
-                uint32_t p = (phys & rammask) >> 12;
-                if (p < pages_sz) {
-                    int found = 0;
-                    for (int j = 0; j < num_tracked_desc_pages; j++) {
-                        if (tracked_desc_pages[j] == p) {
-                            found = 1;
-                            break;
-                        }
-                    }
-                    if (!found) {
-                        if (num_tracked_desc_pages < MAX_TRACKED_DESC_PAGES) {
-                            pages[p].has_desc_table                      = 1;
-                            tracked_desc_pages[num_tracked_desc_pages++] = p;
-                        } else {
-                            seg_desc_cache_overflow = 1;
-                        }
-                    }
-                }
-            } else {
-                /* LDT page failed translation */
-                seg_desc_cache_overflow = 1;
-            }
-            if (lin >= 0xfffff000)
-                break;
-        }
-    }
-
-    if (seg_desc_cache_overflow)
-        seg_desc_cache_flush();
+    seg_desc_cache_flush();
 
     /* Invalidate writelookup mappings so that writes to these pages route via page_lookup */
     flushmmucache_nopc();
@@ -218,6 +252,13 @@ void
 x86seg_reset(void)
 {
     seg_desc_cache_flush();
+    tracked_gdt_base        = 0;
+    tracked_gdt_limit       = 0;
+    tracked_ldt_base        = 0;
+    tracked_ldt_limit       = 0;
+    tracked_ldt_seg         = 0;
+    num_tracked_desc_pages  = 0;
+    seg_desc_cache_overflow = 0;
     seg_reset(&cpu_state.seg_cs);
     seg_reset(&cpu_state.seg_ds);
     seg_reset(&cpu_state.seg_es);
