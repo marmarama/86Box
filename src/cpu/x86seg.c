@@ -132,28 +132,21 @@ load_cached_cs(uint16_t seg)
     if (entry->valid &&
         entry->generation == seg_desc_cache_gen &&
         entry->selector == seg &&
+        entry->cpl == CPL &&
         entry->is_ss == 2) {
 
-        uint8_t dpl = (entry->access >> 5) & 3;
-        int conforming = (entry->access & 0x04);
-        if (conforming) {
-            if ((seg & 3) < dpl)
-                return 0;
-        } else {
-            if ((seg & 3) != dpl)
-                return 0;
-        }
-        if ((seg & 3) < CPL)
+        /* Non-conforming code segment: RPL must be <= CPL */
+        if ((seg & 3) > CPL)
             return 0;
 
         seg_desc_cache_hits++;
-        CS = seg;
-        cpu_state.seg_cs.seg        = seg;
+        CS = (seg & 0xfffc) | CPL;
+        cpu_state.seg_cs.seg        = CS;
         cpu_state.seg_cs.base       = entry->base;
         cpu_state.seg_cs.limit      = entry->limit;
         cpu_state.seg_cs.limit_low  = entry->limit_low;
         cpu_state.seg_cs.limit_high = entry->limit_high;
-        cpu_state.seg_cs.access     = (entry->access & ~0x60) | ((seg & 3) << 5);
+        cpu_state.seg_cs.access     = entry->access;
         cpu_state.seg_cs.ar_high    = entry->ar_high;
         cpu_state.seg_cs.checked    = 0;
         set_use32(entry->stack32);
@@ -167,12 +160,16 @@ cache_store_cs(uint16_t seg, uint16_t *segdat)
 {
     if (seg_desc_cache_overflow)
         return;
+    /* Do not cache conforming code segments (segdat[2] bit 10): conforming execution
+       preserves CPL and has distinct DPL rules best handled by slow path. */
+    if (segdat[2] & 0x0400)
+        return;
 
     uint32_t idx = ((seg >> 2) ^ (seg >> 8) ^ 2) & SEG_DESC_CACHE_MASK;
     seg_desc_cache_entry_t *entry = &seg_desc_cache[idx];
     entry->generation = seg_desc_cache_gen;
     entry->selector   = seg;
-    entry->cpl        = seg & 3;
+    entry->cpl        = CPL;
     entry->is_ss      = 2; /* 2 = CS */
     entry->stack32    = (segdat[3] & 0x40) ? 1 : 0;
     entry->base       = cpu_state.seg_cs.base;
@@ -792,7 +789,6 @@ loadcs(uint16_t seg)
             CS = (seg & 0xfffc) | CPL;
             do_seg_load(&cpu_state.seg_cs, segdat);
             use32 = (segdat[3] & 0x40) ? 0x300 : 0;
-            cache_store_cs(seg, segdat);
             if ((CPL == 3) && (oldcpl != 3))
                 flushmmucache_nopc();
 #ifdef USE_NEW_DYNAREC
@@ -801,6 +797,8 @@ loadcs(uint16_t seg)
 
             if (set_descriptor_accessed(addr, segdat))
                 return;
+
+            cache_store_cs(seg, segdat);
         } else {
             /* System segment */
             switch (segdat[2] & 0x0f00) {

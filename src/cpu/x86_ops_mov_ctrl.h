@@ -225,6 +225,8 @@ opMOV_CRx_r_a16(uint32_t fetchdat)
         case 3:
             cr3 = cpu_state.regs[cpu_rm].l;
             flushmmucache();
+            if (cr0 & 0x80000000)
+                seg_desc_cache_update_pages();
             break;
         case 4:
             if (cpu_has_feature(CPU_FEATURE_CR4)) {
@@ -296,6 +298,8 @@ opMOV_CRx_r_a32(uint32_t fetchdat)
         case 3:
             cr3 = cpu_state.regs[cpu_rm].l;
             flushmmucache();
+            if (cr0 & 0x80000000)
+                seg_desc_cache_update_pages();
             break;
         case 4:
             if (cpu_has_feature(CPU_FEATURE_CR4)) {

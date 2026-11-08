@@ -484,6 +484,8 @@ op0F01_common(UNUSED(uint32_t fetchdat), int is32, int is286, UNUSED(int ea32))
                 }
                 SEG_CHECK_READ(cpu_state.ea_seg);
                 flushmmucache_nopc();
+                if (cr0 & 0x80000000)
+                    seg_desc_cache_update_pages();
                 CLOCK_CYCLES(12);
                 PREFETCH_RUN(12, 2, rmdat, 0, 0, 0, 0, ea32);
                 break;
