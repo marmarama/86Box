@@ -139,11 +139,12 @@ All roadmap, optimization, testing and upstream-PR work is tracked with `task` (
 
 | Project | Scope |
 | :--- | :--- |
-| `86box.phase2` | Native lowerings (MOV SS noint, IDIV, FDECSTP/FINCSTP, SHRD/SHLD) |
-| `86box.phase4` | Block chaining, near CALL/RET linking, SMC |
-| `86box.phase7` | Regression fixes, audit, cycle precision, backend fixes |
-| `86box.phase8` | Host register pinning (RBX = cycles), inline dispatch stub, fast paths |
-| `86box.perf` | Memory fast path, cold code separation, flatmode LEA elision, regalloc shift rearchitecture |
-| `86box.proposals` | DSL, IR liveness/DSE, three-tier IR (pmode segment cache already landed) |
-| `86box.testing` | Google Benchmark, CTest, deterministic telemetry |
-| `86box.upstream` | Staged PRs for `86Box/86Box` |
+| `86box.subsystems` | Core PC emulation: disk (MiniVHD), ACPI/APM, DMA, PIC/PIT, NMI, char devices |
+| `86box.video` | Video, SVGA, 2D blitter, and 3dfx Voodoo hardware acceleration |
+| `86box.segment` | Real-mode & protected-mode segment descriptor handling & address translation |
+| `86box.ops` | Dynarec frontend instruction decoder, native opcode lowerings, and fast paths |
+| `86box.compiler` | Intermediate Representation (IR), optimization passes (DSE/liveness), regalloc, DSL |
+| `86box.engine` | Dynarec core execution, dispatch loop, block chaining, SMC tracking, standalone context |
+| `86box.telemetry` | Developer diagnostics, block dumping (.86bdump), profiling, IPC server, timing models |
+| `86box.testing` | Automated test suites, microbenchmarks, synthetic tests, and differential harnesses |
+| `86box.upstream` | Staged PRs targeting upstream `86Box/86Box:master` |
