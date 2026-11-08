@@ -257,6 +257,25 @@ ireg_seg_base(x86seg *seg)
 }
 
 static inline int
+ireg_seg_seg(x86seg *seg)
+{
+    if (seg == &cpu_state.seg_cs)
+        return IREG_CS_seg_W;
+    if (seg == &cpu_state.seg_ds)
+        return IREG_DS_seg_W;
+    if (seg == &cpu_state.seg_es)
+        return IREG_ES_seg_W;
+    if (seg == &cpu_state.seg_fs)
+        return IREG_FS_seg_W;
+    if (seg == &cpu_state.seg_gs)
+        return IREG_GS_seg_W;
+    if (seg == &cpu_state.seg_ss)
+        return IREG_SS_seg_W;
+    fatal("ireg_seg_seg : unknown segment\n");
+    return 0;
+}
+
+static inline int
 ireg_seg_limit_low(x86seg *seg)
 {
     if (seg == &cpu_state.seg_cs)

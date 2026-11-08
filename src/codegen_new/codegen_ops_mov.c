@@ -482,7 +482,13 @@ ropMOV_seg_w(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t
         src_reg = IREG_temp0_W;
     }
 
-    uop_LOAD_SEG(ir, rseg, src_reg);
+    if (!(msw & 1)) {
+        uop_MOVZX(ir, IREG_temp1, src_reg);
+        uop_SHL_IMM(ir, ireg_seg_base(rseg), IREG_temp1, 4);
+        uop_MOV(ir, ireg_seg_seg(rseg), src_reg);
+    } else {
+        uop_LOAD_SEG(ir, rseg, src_reg);
+    }
 
     return op_pc + 1;
 }

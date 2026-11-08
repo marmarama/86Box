@@ -596,7 +596,13 @@ ropCWDE(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNUSE
         codegen_check_seg_read(block, ir, target_seg);                                         \
         uop_MEM_LOAD_REG(ir, IREG_temp0_W, ireg_seg_base(target_seg), (op_32 & 0x200) ? IREG_eaaddr : IREG_eaa16); \
         uop_MEM_LOAD_REG_OFFSET(ir, IREG_temp1_W, ireg_seg_base(target_seg), (op_32 & 0x200) ? IREG_eaaddr : IREG_eaa16, 2); \
-        uop_LOAD_SEG(ir, seg, IREG_temp1_W);                                                   \
+        if (!(msw & 1) && seg != &cpu_state.seg_ss) {                                         \
+            uop_MOVZX(ir, IREG_temp2, IREG_temp1_W);                                          \
+            uop_SHL_IMM(ir, ireg_seg_base(seg), IREG_temp2, 4);                                \
+            uop_MOV(ir, ireg_seg_seg(seg), IREG_temp1_W);                                     \
+        } else {                                                                               \
+            uop_LOAD_SEG(ir, seg, IREG_temp1_W);                                               \
+        }                                                                                      \
         uop_MOV(ir, IREG_16(dest_reg), IREG_temp0_W);                                          \
                                                                                                \
         if (seg == &cpu_state.seg_ss)                                                          \
@@ -619,7 +625,13 @@ ropCWDE(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNUSE
         codegen_check_seg_read(block, ir, target_seg);                                         \
         uop_MEM_LOAD_REG(ir, IREG_temp0, ireg_seg_base(target_seg), (op_32 & 0x200) ? IREG_eaaddr : IREG_eaa16);              \
         uop_MEM_LOAD_REG_OFFSET(ir, IREG_temp1_W, ireg_seg_base(target_seg), (op_32 & 0x200) ? IREG_eaaddr : IREG_eaa16, 4);  \
-        uop_LOAD_SEG(ir, seg, IREG_temp1_W);                                                   \
+        if (!(msw & 1) && seg != &cpu_state.seg_ss) {                                         \
+            uop_MOVZX(ir, IREG_temp2, IREG_temp1_W);                                          \
+            uop_SHL_IMM(ir, ireg_seg_base(seg), IREG_temp2, 4);                                \
+            uop_MOV(ir, ireg_seg_seg(seg), IREG_temp1_W);                                     \
+        } else {                                                                               \
+            uop_LOAD_SEG(ir, seg, IREG_temp1_W);                                               \
+        }                                                   \
         uop_MOV(ir, IREG_32(dest_reg), IREG_temp0);                                            \
                                                                                                \
         if (seg == &cpu_state.seg_ss)                                                          \

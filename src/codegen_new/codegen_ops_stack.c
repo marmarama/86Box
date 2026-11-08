@@ -237,7 +237,13 @@ ropPOP_L(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fet
             uop_MOVZX(ir, IREG_eaaddr, IREG_SP);                                                  \
             uop_MEM_LOAD_REG(ir, IREG_temp0_W, IREG_SS_base, IREG_eaaddr);                        \
         }                                                                                         \
-        uop_LOAD_SEG(ir, &rseg, IREG_temp0_W);                                                    \
+        if (!(msw & 1) && &rseg != &cpu_state.seg_ss) {                                           \
+            uop_MOVZX(ir, IREG_temp1, IREG_temp0_W);                                              \
+            uop_SHL_IMM(ir, ireg_seg_base(&rseg), IREG_temp1, 4);                                \
+            uop_MOV(ir, ireg_seg_seg(&rseg), IREG_temp0_W);                                       \
+        } else {                                                                                  \
+            uop_LOAD_SEG(ir, &rseg, IREG_temp0_W);                                                \
+        }                                                                                         \
         ADD_SP(ir, 2);                                                                            \
                                                                                                   \
         return op_pc;                                                                             \
@@ -253,7 +259,13 @@ ropPOP_L(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fet
             uop_MOVZX(ir, IREG_eaaddr, IREG_SP);                                                  \
             uop_MEM_LOAD_REG(ir, IREG_temp0_W, IREG_SS_base, IREG_eaaddr);                        \
         }                                                                                         \
-        uop_LOAD_SEG(ir, &rseg, IREG_temp0_W);                                                    \
+        if (!(msw & 1) && &rseg != &cpu_state.seg_ss) {                                           \
+            uop_MOVZX(ir, IREG_temp1, IREG_temp0_W);                                              \
+            uop_SHL_IMM(ir, ireg_seg_base(&rseg), IREG_temp1, 4);                                \
+            uop_MOV(ir, ireg_seg_seg(&rseg), IREG_temp0_W);                                       \
+        } else {                                                                                  \
+            uop_LOAD_SEG(ir, &rseg, IREG_temp0_W);                                                \
+        }                                                    \
         ADD_SP(ir, 4);                                                                            \
                                                                                                   \
         return op_pc;                                                                             \

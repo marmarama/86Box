@@ -669,7 +669,35 @@ loadseg_2386(uint16_t seg, x86seg *s)
 loadseg(uint16_t seg, x86seg *s)
 #endif
 {
-    if ((msw & 1) && !(cpu_state.eflags & VM_FLAG)) {
+    if (!(msw & 1)) {
+        s->base    = (uint32_t) seg << 4;
+        s->seg     = seg;
+        s->checked = 1;
+        if (s == &cpu_state.seg_ds) {
+            if (s->base == 0 && s->limit_low == 0 && s->limit_high == 0xffffffff)
+                cpu_cur_status &= ~CPU_STATUS_NOTFLATDS;
+            else
+                cpu_cur_status |= CPU_STATUS_NOTFLATDS;
+#ifdef USE_DYNAREC
+            codegen_flat_ds = 0;
+#endif
+        } else if (s == &cpu_state.seg_ss) {
+            if (s->base == 0 && s->limit_low == 0 && s->limit_high == 0xffffffff)
+                cpu_cur_status &= ~CPU_STATUS_NOTFLATSS;
+            else
+                cpu_cur_status |= CPU_STATUS_NOTFLATSS;
+#ifdef USE_DYNAREC
+            codegen_flat_ss = 0;
+#endif
+        }
+#ifdef USE_NEW_DYNAREC
+        return 0;
+#else
+        return;
+#endif
+    }
+
+    if (!(cpu_state.eflags & VM_FLAG)) {
         if (seg & 0xfffc) {
             uint32_t idx = ((seg >> 2) ^ (seg >> 8) ^ (s == &cpu_state.seg_ss)) & SEG_DESC_CACHE_MASK;
             seg_desc_cache_entry_t *entry = &seg_desc_cache[idx];
