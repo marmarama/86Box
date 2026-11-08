@@ -113,7 +113,7 @@ codegen_ir_optimize_liveness(ir_data_t *ir)
 {
     int flags_live = FLAGS_ALL_LIVE;
     int pc_live = 1;
-    int oldpc_live = 0; /* Normal block exit does not read oldpc; only faults/aborts need it */
+    int oldpc_live = 1;
 
     for (int c = ir->wr_pos - 1; c >= 0; c--) {
         uop_t *uop = &ir->uops[c];
@@ -121,9 +121,9 @@ codegen_ir_optimize_liveness(ir_data_t *ir)
         if ((uop->type & UOP_MASK) == UOP_INVALID)
             continue;
 
-        /* Invalidate liveness optimizations across full barriers, branches, and loop boundaries.
+        /* Invalidate liveness optimizations across barriers, branches, and loop boundaries.
            At these points, all architectural flags and PC states must be live. */
-        if (uop->type & (UOP_TYPE_BARRIER | UOP_TYPE_JUMP_DEST | UOP_TYPE_JUMP)) {
+        if (uop->type & (UOP_TYPE_BARRIER | UOP_TYPE_ORDER_BARRIER | UOP_TYPE_JUMP_DEST | UOP_TYPE_JUMP)) {
             flags_live = FLAGS_ALL_LIVE;
             pc_live = 1;
             oldpc_live = 1;
@@ -133,14 +133,6 @@ codegen_ir_optimize_liveness(ir_data_t *ir)
             flags_live = FLAGS_ALL_LIVE;
             pc_live = 1;
             oldpc_live = 1;
-            continue;
-        }
-        if (uop->type & UOP_TYPE_ORDER_BARRIER) {
-            /* Memory access order barrier:
-               Fast-path RAM hits do not fault and do not inspect pc or oldpc.
-               Cold slow-path stubs materialize cpu_state.oldpc and cpu_state.pc on demand.
-               Therefore, ORDER_BARRIER preserves flags_live but does not revive pc_live or oldpc_live. */
-            flags_live = FLAGS_ALL_LIVE;
             continue;
         }
 
