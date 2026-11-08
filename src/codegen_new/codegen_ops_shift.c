@@ -915,7 +915,8 @@ ropC0(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchd
         new_pc = shift_common_variable_8(ir, fetchdat, op_pc, target_seg, IREG_temp2) + 1;
         uop_NOP_BARRIER(ir);
         uop_set_jump_dest(ir, jump_uop);
-        codegen_last_flags_op = FLAGS_UNKNOWN;
+        codegen_last_flags_op = FLAGS_INVALID;
+        codegen_flags_changed = 0;
         return new_pc;
     } else {
         imm = fastreadb(cs + op_pc + 1) & 0x1f;
@@ -953,7 +954,8 @@ ropC1_w(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetc
         new_pc = shift_common_variable_16(ir, fetchdat, op_pc, target_seg, IREG_temp2) + 1;
         uop_NOP_BARRIER(ir);
         uop_set_jump_dest(ir, jump_uop);
-        codegen_last_flags_op = FLAGS_UNKNOWN;
+        codegen_last_flags_op = FLAGS_INVALID;
+        codegen_flags_changed = 0;
         return new_pc;
     } else {
         imm = fastreadb(cs + op_pc + 1) & 0x1f;
@@ -990,7 +992,8 @@ ropC1_l(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetc
         new_pc = shift_common_variable_32(ir, fetchdat, op_pc, target_seg, IREG_temp2) + 1;
         uop_NOP_BARRIER(ir);
         uop_set_jump_dest(ir, jump_uop);
-        codegen_last_flags_op = FLAGS_UNKNOWN;
+        codegen_last_flags_op = FLAGS_INVALID;
+        codegen_flags_changed = 0;
         return new_pc;
     } else {
         uint8_t imm = fastreadb(cs + op_pc + 1) & 0x1f;
@@ -1075,7 +1078,8 @@ ropD2(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchd
 
     uop_NOP_BARRIER(ir);
     uop_set_jump_dest(ir, jump_uop);
-    codegen_last_flags_op = FLAGS_UNKNOWN;
+    codegen_last_flags_op = FLAGS_INVALID;
+    codegen_flags_changed = 0;
 
     return new_pc;
 }
@@ -1107,7 +1111,8 @@ ropD3_w(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetc
 
     uop_NOP_BARRIER(ir);
     uop_set_jump_dest(ir, jump_uop);
-    codegen_last_flags_op = FLAGS_UNKNOWN;
+    codegen_last_flags_op = FLAGS_INVALID;
+    codegen_flags_changed = 0;
 
     return new_pc;
 }
@@ -1139,7 +1144,8 @@ ropD3_l(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetc
 
     uop_NOP_BARRIER(ir);
     uop_set_jump_dest(ir, jump_uop);
-    codegen_last_flags_op = FLAGS_UNKNOWN;
+    codegen_last_flags_op = FLAGS_INVALID;
+    codegen_flags_changed = 0;
 
     return new_pc;
 }
@@ -1444,7 +1450,8 @@ ropSHLD_16_cl(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_
 
     uop_NOP_BARRIER(ir);
     uop_set_jump_dest(ir, jump_uop);
-    codegen_last_flags_op = FLAGS_UNKNOWN;
+    codegen_last_flags_op = FLAGS_INVALID;
+    codegen_flags_changed = 0;
     codegen_flags_changed = 1;
 
     return op_pc + 1;
@@ -1495,7 +1502,8 @@ ropSHLD_32_cl(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_
 
     uop_NOP_BARRIER(ir);
     uop_set_jump_dest(ir, jump_uop);
-    codegen_last_flags_op = FLAGS_UNKNOWN;
+    codegen_last_flags_op = FLAGS_INVALID;
+    codegen_flags_changed = 0;
     codegen_flags_changed = 1;
 
     return op_pc + 1;
@@ -1547,7 +1555,8 @@ ropSHRD_16_cl(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_
 
     uop_NOP_BARRIER(ir);
     uop_set_jump_dest(ir, jump_uop);
-    codegen_last_flags_op = FLAGS_UNKNOWN;
+    codegen_last_flags_op = FLAGS_INVALID;
+    codegen_flags_changed = 0;
     codegen_flags_changed = 1;
 
     return op_pc + 1;
@@ -1598,7 +1607,8 @@ ropSHRD_32_cl(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_
 
     uop_NOP_BARRIER(ir);
     uop_set_jump_dest(ir, jump_uop);
-    codegen_last_flags_op = FLAGS_UNKNOWN;
+    codegen_last_flags_op = FLAGS_INVALID;
+    codegen_flags_changed = 0;
     codegen_flags_changed = 1;
 
     return op_pc + 1;

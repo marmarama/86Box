@@ -251,6 +251,9 @@ codegen_CMP_IMM_JNZ_DEST(codeblock_t *block, uop_t *uop)
     } else if (REG_IS_W(src_size)) {
         host_arm64_AND_IMM(block, REG_TEMP, src_reg, 0xffff);
         host_arm64_CMP_IMM(block, REG_TEMP, uop->imm_data);
+    } else if (REG_IS_B(src_size)) {
+        host_arm64_AND_IMM(block, REG_TEMP, src_reg, 0xff);
+        host_arm64_CMP_IMM(block, REG_TEMP, uop->imm_data);
     } else
         fatal("CMP_IMM_JNZ_DEST %02x\n", uop->src_reg_a_real);
 
@@ -268,6 +271,9 @@ codegen_CMP_IMM_JZ_DEST(codeblock_t *block, uop_t *uop)
         host_arm64_CMP_IMM(block, src_reg, uop->imm_data);
     } else if (REG_IS_W(src_size)) {
         host_arm64_AND_IMM(block, REG_TEMP, src_reg, 0xffff);
+        host_arm64_CMP_IMM(block, REG_TEMP, uop->imm_data);
+    } else if (REG_IS_B(src_size)) {
+        host_arm64_AND_IMM(block, REG_TEMP, src_reg, 0xff);
         host_arm64_CMP_IMM(block, REG_TEMP, uop->imm_data);
     } else
         fatal("CMP_IMM_JZ_DEST %02x\n", uop->src_reg_a_real);
@@ -288,10 +294,38 @@ codegen_CMP_IMM_JLE_DEST(codeblock_t *block, uop_t *uop)
     } else if (REG_IS_W(src_size)) {
         host_arm64_SBFX(block, REG_TEMP, src_reg, 0, 16);
         host_arm64_CMP_IMM(block, REG_TEMP, uop->imm_data);
+    } else if (REG_IS_B(src_size)) {
+        host_arm64_SBFX(block, REG_TEMP, src_reg, 0, 8);
+        host_arm64_CMP_IMM(block, REG_TEMP, uop->imm_data);
     } else
         fatal("CMP_IMM_JLE_DEST %02x\n", uop->src_reg_a_real);
 
     uop->p = host_arm64_BLE_(block);
+
+    return 0;
+}
+
+static int
+codegen_CMP_IMM_JNLE_DEST(codeblock_t *block, uop_t *uop)
+{
+    int src_reg  = HOST_REG_GET(uop->src_reg_a_real);
+    int src_size = IREG_GET_SIZE(uop->src_reg_a_real);
+
+    if (REG_IS_L(src_size)) {
+        host_arm64_CMP_IMM(block, src_reg, uop->imm_data);
+    } else if (REG_IS_W(src_size)) {
+        host_arm64_SBFX(block, REG_TEMP, src_reg, 0, 16);
+        host_arm64_CMP_IMM(block, REG_TEMP, uop->imm_data);
+    } else if (REG_IS_B(src_size)) {
+        host_arm64_SBFX(block, REG_TEMP, src_reg, 0, 8);
+        host_arm64_CMP_IMM(block, REG_TEMP, uop->imm_data);
+    } else
+        fatal("CMP_IMM_JNLE_DEST %02x\n", uop->src_reg_a_real);
+
+    uop->p = host_arm64_BGT_(block);
+
+    return 0;
+}
 
     return 0;
 }
@@ -3582,6 +3616,9 @@ const uOpFn uop_handlers[UOP_MAX] = {
     [UOP_CMP_IMM_JLE_DEST &
         UOP_MASK]
     = codegen_CMP_IMM_JLE_DEST,
+    [UOP_CMP_IMM_JNLE_DEST &
+        UOP_MASK]
+    = codegen_CMP_IMM_JNLE_DEST,
 
     [UOP_LOOP_LABEL &
         UOP_MASK]

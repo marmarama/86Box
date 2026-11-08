@@ -175,6 +175,8 @@ extern int codegen_last_flags_op;
 #define UOP_CMP_IMM_JNZ_DEST (UOP_TYPE_PARAMS_REGS | UOP_TYPE_PARAMS_IMM | UOP_TYPE_PARAMS_POINTER | 0x61 | UOP_TYPE_ORDER_BARRIER | UOP_TYPE_JUMP)
 /*UOP_CMP_IMM_JLE_DEST - if (signed)(src_reg_a <= imm_data) then jump to ptr*/
 #define UOP_CMP_IMM_JLE_DEST (UOP_TYPE_PARAMS_REGS | UOP_TYPE_PARAMS_IMM | UOP_TYPE_PARAMS_POINTER | 0x6e | UOP_TYPE_ORDER_BARRIER | UOP_TYPE_JUMP)
+/*UOP_CMP_IMM_JNLE_DEST - if (signed)(src_reg_a > imm_data) then jump to ptr*/
+#define UOP_CMP_IMM_JNLE_DEST (UOP_TYPE_PARAMS_REGS | UOP_TYPE_PARAMS_IMM | UOP_TYPE_PARAMS_POINTER | 0x6f | UOP_TYPE_ORDER_BARRIER | UOP_TYPE_JUMP)
 
 /*UOP_LOOP_LABEL - loop destination marker with barrier*/
 #define UOP_LOOP_LABEL       (UOP_TYPE_BARRIER | 0x72)
@@ -496,7 +498,7 @@ uop_alloc(ir_data_t *ir, uint32_t uop_type)
     if ((uop_type & UOP_MASK) == (UOP_CALL_FUNC & UOP_MASK) ||
         (uop_type & UOP_MASK) == (UOP_CALL_INSTRUCTION_FUNC & UOP_MASK) ||
         (uop_type & UOP_MASK) == (UOP_CALL_FUNC_RESULT & UOP_MASK))
-        codegen_last_flags_op = FLAGS_UNKNOWN;
+        codegen_last_flags_op = FLAGS_INVALID;
 
     return uop;
 }
@@ -535,7 +537,7 @@ uop_alloc_unroll(ir_data_t *ir, uint32_t uop_type)
     if ((uop_type & UOP_MASK) == (UOP_CALL_FUNC & UOP_MASK) ||
         (uop_type & UOP_MASK) == (UOP_CALL_INSTRUCTION_FUNC & UOP_MASK) ||
         (uop_type & UOP_MASK) == (UOP_CALL_FUNC_RESULT & UOP_MASK))
-        codegen_last_flags_op = FLAGS_UNKNOWN;
+        codegen_last_flags_op = FLAGS_INVALID;
 
     return uop;
 }
@@ -839,6 +841,7 @@ extern int codegen_fp_enter(void);
 #define uop_CMP_IMM_JNZ_DEST(ir, src_reg, imm)                   uop_gen_reg_src1_imm(UOP_CMP_IMM_JNZ_DEST, ir, src_reg, imm)
 #define uop_CMP_IMM_JZ_DEST(ir, src_reg, imm)                    uop_gen_reg_src1_imm(UOP_CMP_IMM_JZ_DEST, ir, src_reg, imm)
 #define uop_CMP_IMM_JLE_DEST(ir, src_reg, imm)                   uop_gen_reg_src1_imm(UOP_CMP_IMM_JLE_DEST, ir, src_reg, imm)
+#define uop_CMP_IMM_JNLE_DEST(ir, src_reg, imm)                  uop_gen_reg_src1_imm(UOP_CMP_IMM_JNLE_DEST, ir, src_reg, imm)
 
 #define uop_CMP_JB(ir, src_reg_a, src_reg_b, p)                  uop_gen_reg_src2_pointer(UOP_CMP_JB, ir, src_reg_a, src_reg_b, p)
 #define uop_CMP_JNBE(ir, src_reg_a, src_reg_b, p)                uop_gen_reg_src2_pointer(UOP_CMP_JNBE, ir, src_reg_a, src_reg_b, p)

@@ -411,6 +411,10 @@ codegen_CMP_IMM_JNZ_DEST(codeblock_t *block, uop_t *uop)
         host_loong64_UBFX_D(block, REG_TEMP, src_reg, 0, 16);
         host_loong64_mov_imm_w(block, REG_TEMP2, (uint32_t) uop->imm_data);
         host_loong64_XOR_REG(block, REG_TEMP, REG_TEMP, REG_TEMP2);
+    } else if (REG_IS_B(src_size)) {
+        host_loong64_UBFX_D(block, REG_TEMP, src_reg, 0, 8);
+        host_loong64_mov_imm_w(block, REG_TEMP2, (uint32_t) uop->imm_data);
+        host_loong64_XOR_REG(block, REG_TEMP, REG_TEMP, REG_TEMP2);
     } else
         fatal("CMP_IMM_JNZ_DEST %02x\n", uop->src_reg_a_real);
 
@@ -432,6 +436,10 @@ codegen_CMP_IMM_JZ_DEST(codeblock_t *block, uop_t *uop)
         host_loong64_UBFX_D(block, REG_TEMP, src_reg, 0, 16);
         host_loong64_mov_imm_w(block, REG_TEMP2, (uint32_t) uop->imm_data);
         host_loong64_XOR_REG(block, REG_TEMP, REG_TEMP, REG_TEMP2);
+    } else if (REG_IS_B(src_size)) {
+        host_loong64_UBFX_D(block, REG_TEMP, src_reg, 0, 8);
+        host_loong64_mov_imm_w(block, REG_TEMP2, (uint32_t) uop->imm_data);
+        host_loong64_XOR_REG(block, REG_TEMP, REG_TEMP, REG_TEMP2);
     } else
         fatal("CMP_IMM_JZ_DEST %02x\n", uop->src_reg_a_real);
 
@@ -450,12 +458,36 @@ codegen_CMP_IMM_JLE_DEST(codeblock_t *block, uop_t *uop)
         host_loong64_MOV_W(block, REG_TEMP, src_reg);
     } else if (REG_IS_W(src_size)) {
         host_loong64_SEXT_H(block, REG_TEMP, src_reg);
+    } else if (REG_IS_B(src_size)) {
+        host_loong64_SEXT_B(block, REG_TEMP, src_reg);
     } else
         fatal("CMP_IMM_JLE_DEST %02x\n", uop->src_reg_a_real);
 
     host_loong64_mov_imm_w(block, REG_TEMP2, (uint32_t) uop->imm_data);
     host_loong64_MOV_W(block, REG_TEMP2, REG_TEMP2);
     uop->p = host_loong64_BGE_(block, REG_TEMP2, REG_TEMP);
+
+    return 0;
+}
+
+static int
+codegen_CMP_IMM_JNLE_DEST(codeblock_t *block, uop_t *uop)
+{
+    int src_reg  = HOST_REG_GET(uop->src_reg_a_real);
+    int src_size = IREG_GET_SIZE(uop->src_reg_a_real);
+
+    if (REG_IS_L(src_size)) {
+        host_loong64_MOV_W(block, REG_TEMP, src_reg);
+    } else if (REG_IS_W(src_size)) {
+        host_loong64_SEXT_H(block, REG_TEMP, src_reg);
+    } else if (REG_IS_B(src_size)) {
+        host_loong64_SEXT_B(block, REG_TEMP, src_reg);
+    } else
+        fatal("CMP_IMM_JNLE_DEST %02x\n", uop->src_reg_a_real);
+
+    host_loong64_mov_imm_w(block, REG_TEMP2, (uint32_t) uop->imm_data);
+    host_loong64_MOV_W(block, REG_TEMP2, REG_TEMP2);
+    uop->p = host_loong64_BLT_(block, REG_TEMP2, REG_TEMP);
 
     return 0;
 }
@@ -2543,6 +2575,7 @@ const uOpFn uop_handlers[UOP_MAX] = {
     [UOP_CMP_IMM_JZ_DEST & UOP_MASK]    = codegen_CMP_IMM_JZ_DEST,
     [UOP_CMP_IMM_JNZ_DEST & UOP_MASK]   = codegen_CMP_IMM_JNZ_DEST,
     [UOP_CMP_IMM_JLE_DEST & UOP_MASK]   = codegen_CMP_IMM_JLE_DEST,
+    [UOP_CMP_IMM_JNLE_DEST & UOP_MASK]  = codegen_CMP_IMM_JNLE_DEST,
 
     [UOP_LOOP_LABEL & UOP_MASK]         = codegen_LOOP_LABEL,
     [UOP_LOOP_JMP & UOP_MASK]           = codegen_LOOP_JMP,

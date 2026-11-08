@@ -29,8 +29,46 @@ const jit_cond_fn_t jit_cond_helpers[16] = {
 int
 codegen_cond_jump_false(ir_data_t *ir, int cond)
 {
-    if (codegen_flags_changed && codegen_last_flags_op != FLAGS_UNKNOWN) {
+    if (codegen_flags_changed && codegen_last_flags_op != FLAGS_INVALID) {
         int cond_base = cond & 0xf;
+
+        /* Fast-path 0: Flags materialized in IREG_flags (FLAGS_UNKNOWN) */
+        if (codegen_last_flags_op == FLAGS_UNKNOWN) {
+            switch (cond_base) {
+                case COND_B:  /* CF == 1 -> jump false if CF == 0 */
+                    uop_AND_IMM(ir, IREG_temp0, IREG_flags, C_FLAG);
+                    return uop_CMP_IMM_JZ_DEST(ir, IREG_temp0, 0);
+                case COND_NB: /* CF == 0 -> jump false if CF == 1 */
+                    uop_AND_IMM(ir, IREG_temp0, IREG_flags, C_FLAG);
+                    return uop_CMP_IMM_JNZ_DEST(ir, IREG_temp0, 0);
+                case COND_E:  /* ZF == 1 -> jump false if ZF == 0 */
+                    uop_AND_IMM(ir, IREG_temp0, IREG_flags, Z_FLAG);
+                    return uop_CMP_IMM_JZ_DEST(ir, IREG_temp0, 0);
+                case COND_NE: /* ZF == 0 -> jump false if ZF == 1 */
+                    uop_AND_IMM(ir, IREG_temp0, IREG_flags, Z_FLAG);
+                    return uop_CMP_IMM_JNZ_DEST(ir, IREG_temp0, 0);
+                case COND_S:  /* SF == 1 -> jump false if SF == 0 */
+                    uop_AND_IMM(ir, IREG_temp0, IREG_flags, N_FLAG);
+                    return uop_CMP_IMM_JZ_DEST(ir, IREG_temp0, 0);
+                case COND_NS: /* SF == 0 -> jump false if SF == 1 */
+                    uop_AND_IMM(ir, IREG_temp0, IREG_flags, N_FLAG);
+                    return uop_CMP_IMM_JNZ_DEST(ir, IREG_temp0, 0);
+                case COND_O:  /* OF == 1 -> jump false if OF == 0 */
+                    uop_AND_IMM(ir, IREG_temp0, IREG_flags, V_FLAG);
+                    return uop_CMP_IMM_JZ_DEST(ir, IREG_temp0, 0);
+                case COND_NO: /* OF == 0 -> jump false if OF == 1 */
+                    uop_AND_IMM(ir, IREG_temp0, IREG_flags, V_FLAG);
+                    return uop_CMP_IMM_JNZ_DEST(ir, IREG_temp0, 0);
+                case COND_P:  /* PF == 1 -> jump false if PF == 0 */
+                    uop_AND_IMM(ir, IREG_temp0, IREG_flags, P_FLAG);
+                    return uop_CMP_IMM_JZ_DEST(ir, IREG_temp0, 0);
+                case COND_NP: /* PF == 0 -> jump false if PF == 1 */
+                    uop_AND_IMM(ir, IREG_temp0, IREG_flags, P_FLAG);
+                    return uop_CMP_IMM_JNZ_DEST(ir, IREG_temp0, 0);
+                default:
+                    break;
+            }
+        }
 
         /* Fast-path 1: Zero Flag (COND_E / COND_NE) for all operations where ZF is (flags_res == 0) */
         if (is_zf_flags_res_op(codegen_last_flags_op)) {
@@ -43,24 +81,33 @@ codegen_cond_jump_false(ir_data_t *ir, int cond)
             }
         }
 
-        /* Fast-path 2: Comparison conditions (B, NB, BE, NBE, L, NL, LE, NLE) after CMP and SUB */
-        if (codegen_last_flags_op == FLAGS_SUB32 ||
-            codegen_last_flags_op == FLAGS_SUB16 ||
-            codegen_last_flags_op == FLAGS_SUB8) {
-            int op1 = (codegen_last_flags_op == FLAGS_SUB32) ? IREG_flags_op1 :
-                      (codegen_last_flags_op == FLAGS_SUB16) ? IREG_flags_op1_W : IREG_flags_op1_B;
-            int op2 = (codegen_last_flags_op == FLAGS_SUB32) ? IREG_flags_op2 :
-                      (codegen_last_flags_op == FLAGS_SUB16) ? IREG_flags_op2_W : IREG_flags_op2_B;
+        /* Fast-path 2: Comparison conditions (B, NB, BE, NBE, L, NL, LE, NLE) after CMP, SUB, and DEC */
+        int is_sub = (codegen_last_flags_op == FLAGS_SUB32 ||
+                      codegen_last_flags_op == FLAGS_SUB16 ||
+                      codegen_last_flags_op == FLAGS_SUB8);
+        int is_dec = (codegen_last_flags_op == FLAGS_DEC32 ||
+                      codegen_last_flags_op == FLAGS_DEC16 ||
+                      codegen_last_flags_op == FLAGS_DEC8);
+
+        if (is_sub || is_dec) {
+            int is_32 = (codegen_last_flags_op == FLAGS_SUB32 || codegen_last_flags_op == FLAGS_DEC32);
+            int is_16 = (codegen_last_flags_op == FLAGS_SUB16 || codegen_last_flags_op == FLAGS_DEC16);
+            int op1 = is_32 ? IREG_flags_op1 : is_16 ? IREG_flags_op1_W : IREG_flags_op1_B;
+            int op2 = is_32 ? IREG_flags_op2 : is_16 ? IREG_flags_op2_W : IREG_flags_op2_B;
 
             switch (cond_base) {
                 case COND_B:   /* op1 < op2 (unsigned) -> jump false if op1 >= op2 */
-                    return uop_CMP_JNB_DEST(ir, op1, op2);
+                    if (is_sub) return uop_CMP_JNB_DEST(ir, op1, op2);
+                    break;
                 case COND_NB:  /* op1 >= op2 (unsigned) -> jump false if op1 < op2 */
-                    return uop_CMP_JB_DEST(ir, op1, op2);
+                    if (is_sub) return uop_CMP_JB_DEST(ir, op1, op2);
+                    break;
                 case COND_BE:  /* op1 <= op2 (unsigned) -> jump false if op1 > op2 */
-                    return uop_CMP_JNBE_DEST(ir, op1, op2);
+                    if (is_sub) return uop_CMP_JNBE_DEST(ir, op1, op2);
+                    break;
                 case COND_NBE: /* op1 > op2 (unsigned) -> jump false if op1 <= op2 */
-                    return uop_CMP_JBE_DEST(ir, op1, op2);
+                    if (is_sub) return uop_CMP_JBE_DEST(ir, op1, op2);
+                    break;
                 case COND_L:   /* op1 < op2 (signed) -> jump false if op1 >= op2 */
                     return uop_CMP_JNL_DEST(ir, op1, op2);
                 case COND_NL:  /* op1 >= op2 (signed) -> jump false if op1 < op2 */
@@ -74,7 +121,28 @@ codegen_cond_jump_false(ir_data_t *ir, int cond)
             }
         }
 
-        /* Fast-path 3: Sign Flag (COND_S / COND_NS) */
+        /* Fast-path 3: Signed conditions (L, NL, LE, NLE) after logic operations (FLAGS_ZN*) where OF = 0 */
+        if (codegen_last_flags_op == FLAGS_ZN32 ||
+            codegen_last_flags_op == FLAGS_ZN16 ||
+            codegen_last_flags_op == FLAGS_ZN8) {
+            int res_sized = (codegen_last_flags_op == FLAGS_ZN32) ? IREG_flags_res :
+                            (codegen_last_flags_op == FLAGS_ZN16) ? IREG_flags_res_W : IREG_flags_res_B;
+
+            switch (cond_base) {
+                case COND_L:   /* SF != OF (with OF=0: SF == 1) -> jump false if SF == 0 */
+                    return uop_TEST_JNS_DEST(ir, res_sized);
+                case COND_NL:  /* SF == OF (with OF=0: SF == 0) -> jump false if SF == 1 */
+                    return uop_TEST_JS_DEST(ir, res_sized);
+                case COND_LE:  /* (SF != OF) || ZF (with OF=0: SF==1 || ZF==1 <=> signed <= 0) -> jump false if signed > 0 */
+                    return uop_CMP_IMM_JNLE_DEST(ir, res_sized, 0);
+                case COND_NLE: /* (SF == OF) && !ZF (with OF=0: SF==0 && !ZF <=> signed > 0) -> jump false if signed <= 0 */
+                    return uop_CMP_IMM_JLE_DEST(ir, res_sized, 0);
+                default:
+                    break;
+            }
+        }
+
+        /* Fast-path 4: Sign Flag (COND_S / COND_NS) */
         if (cond_base == COND_S || cond_base == COND_NS) {
             int res_sized = -1;
             switch (codegen_last_flags_op) {

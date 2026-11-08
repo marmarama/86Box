@@ -481,6 +481,13 @@ codegen_CMP_IMM_JNZ_DEST(codeblock_t *block, uop_t *uop)
         host_x86_CMP32_REG_IMM(block, src_reg, uop->imm_data);
     } else if (REG_IS_W(src_size)) {
         host_x86_CMP16_REG_IMM(block, src_reg, uop->imm_data);
+    } else if (REG_IS_B(src_size)) {
+        host_x86_MOVZX_REG_32_8(block, REG_ECX, src_reg);
+        host_x86_CMP32_REG_IMM(block, REG_ECX, uop->imm_data);
+    } else if (REG_IS_BH(src_size)) {
+        host_x86_MOVZX_REG_32_16(block, REG_ECX, src_reg);
+        host_x86_SHR32_IMM(block, REG_ECX, 8);
+        host_x86_CMP32_REG_IMM(block, REG_ECX, uop->imm_data);
     }
 #    ifdef RECOMPILER_DEBUG
     else
@@ -500,6 +507,13 @@ codegen_CMP_IMM_JZ_DEST(codeblock_t *block, uop_t *uop)
         host_x86_CMP32_REG_IMM(block, src_reg, uop->imm_data);
     } else if (REG_IS_W(src_size)) {
         host_x86_CMP16_REG_IMM(block, src_reg, uop->imm_data);
+    } else if (REG_IS_B(src_size)) {
+        host_x86_MOVZX_REG_32_8(block, REG_ECX, src_reg);
+        host_x86_CMP32_REG_IMM(block, REG_ECX, uop->imm_data);
+    } else if (REG_IS_BH(src_size)) {
+        host_x86_MOVZX_REG_32_16(block, REG_ECX, src_reg);
+        host_x86_SHR32_IMM(block, REG_ECX, 8);
+        host_x86_CMP32_REG_IMM(block, REG_ECX, uop->imm_data);
     }
 #    ifdef RECOMPILER_DEBUG
     else
@@ -520,12 +534,48 @@ codegen_CMP_IMM_JLE_DEST(codeblock_t *block, uop_t *uop)
         host_x86_CMP32_REG_IMM(block, src_reg, uop->imm_data);
     } else if (REG_IS_W(src_size)) {
         host_x86_CMP16_REG_IMM(block, src_reg, uop->imm_data);
+    } else if (REG_IS_B(src_size)) {
+        host_x86_MOVSX_REG_32_8(block, REG_ECX, src_reg);
+        host_x86_CMP32_REG_IMM(block, REG_ECX, uop->imm_data);
+    } else if (REG_IS_BH(src_size)) {
+        host_x86_MOVZX_REG_32_16(block, REG_ECX, src_reg);
+        host_x86_SHR32_IMM(block, REG_ECX, 8);
+        host_x86_MOVSX_REG_32_8(block, REG_ECX, REG_ECX);
+        host_x86_CMP32_REG_IMM(block, REG_ECX, uop->imm_data);
     }
 #    ifdef RECOMPILER_DEBUG
     else
         fatal("CMP_IMM_JLE_DEST %02x\n", uop->src_reg_a_real);
 #    endif
     uop->p = host_x86_JLE_long(block);
+
+    return 0;
+}
+
+static int
+codegen_CMP_IMM_JNLE_DEST(codeblock_t *block, uop_t *uop)
+{
+    int src_reg  = HOST_REG_GET(uop->src_reg_a_real);
+    int src_size = IREG_GET_SIZE(uop->src_reg_a_real);
+
+    if (REG_IS_L(src_size)) {
+        host_x86_CMP32_REG_IMM(block, src_reg, uop->imm_data);
+    } else if (REG_IS_W(src_size)) {
+        host_x86_CMP16_REG_IMM(block, src_reg, uop->imm_data);
+    } else if (REG_IS_B(src_size)) {
+        host_x86_MOVSX_REG_32_8(block, REG_ECX, src_reg);
+        host_x86_CMP32_REG_IMM(block, REG_ECX, uop->imm_data);
+    } else if (REG_IS_BH(src_size)) {
+        host_x86_MOVZX_REG_32_16(block, REG_ECX, src_reg);
+        host_x86_SHR32_IMM(block, REG_ECX, 8);
+        host_x86_MOVSX_REG_32_8(block, REG_ECX, REG_ECX);
+        host_x86_CMP32_REG_IMM(block, REG_ECX, uop->imm_data);
+    }
+#    ifdef RECOMPILER_DEBUG
+    else
+        fatal("CMP_IMM_JNLE_DEST %02x\n", uop->src_reg_a_real);
+#    endif
+    uop->p = host_x86_JNLE_long(block);
 
     return 0;
 }
@@ -3896,6 +3946,9 @@ const uOpFn uop_handlers[UOP_MAX] = {
     [UOP_CMP_IMM_JLE_DEST &
         UOP_MASK]
     = codegen_CMP_IMM_JLE_DEST,
+    [UOP_CMP_IMM_JNLE_DEST &
+        UOP_MASK]
+    = codegen_CMP_IMM_JNLE_DEST,
 
     [UOP_LOOP_LABEL &
         UOP_MASK]

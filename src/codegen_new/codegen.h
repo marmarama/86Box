@@ -445,6 +445,7 @@ extern uint32_t op_old_pc;
 
 /*Set to 1 if flags have been changed in the block being recompiled, and hence
   flags_op is known and can be relied on */
+#define FLAGS_INVALID (-1)
 extern int codegen_flags_changed;
 extern int codegen_last_flags_op;
 

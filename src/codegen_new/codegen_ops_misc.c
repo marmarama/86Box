@@ -653,6 +653,9 @@ ropCLC(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED
 {
     uop_CALL_FUNC(ir, jit_flags_rebuild);
     uop_AND_IMM(ir, IREG_flags, IREG_flags, ~C_FLAG);
+    uop_MOV_IMM(ir, IREG_flags_op, FLAGS_UNKNOWN);
+    codegen_flags_changed = 1;
+    codegen_last_flags_op = FLAGS_UNKNOWN;
     return op_pc;
 }
 uint32_t
@@ -660,6 +663,9 @@ ropCMC(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED
 {
     uop_CALL_FUNC(ir, jit_flags_rebuild);
     uop_XOR_IMM(ir, IREG_flags, IREG_flags, C_FLAG);
+    uop_MOV_IMM(ir, IREG_flags_op, FLAGS_UNKNOWN);
+    codegen_flags_changed = 1;
+    codegen_last_flags_op = FLAGS_UNKNOWN;
     return op_pc;
 }
 uint32_t
@@ -667,6 +673,9 @@ ropSTC(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED
 {
     uop_CALL_FUNC(ir, jit_flags_rebuild);
     uop_OR_IMM(ir, IREG_flags, IREG_flags, C_FLAG);
+    uop_MOV_IMM(ir, IREG_flags_op, FLAGS_UNKNOWN);
+    codegen_flags_changed = 1;
+    codegen_last_flags_op = FLAGS_UNKNOWN;
     return op_pc;
 }
 
@@ -990,7 +999,9 @@ ropBT_common(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchda
         uop_MEM_STORE_REG(ir, ireg_seg_base(target_seg), IREG_eaaddr, val_reg);
     }
 
-    codegen_flags_changed = 0;
+    uop_MOV_IMM(ir, IREG_flags_op, FLAGS_UNKNOWN);
+    codegen_flags_changed = 1;
+    codegen_last_flags_op = FLAGS_UNKNOWN;
     return is_imm ? (op_pc + 2) : (op_pc + 1);
 }
 
@@ -1565,7 +1576,7 @@ ropLAR_LSL_common(codeblock_t *block, ir_data_t *ir, uint32_t fetchdat, uint32_t
     uop_NOP_BARRIER(ir);
     uop_set_jump_dest(ir, jump_invalid);
 
-    codegen_last_flags_op = FLAGS_UNKNOWN;
+    codegen_last_flags_op = FLAGS_INVALID;
     codegen_flags_changed = 0;
     return op_pc + 1;
 }

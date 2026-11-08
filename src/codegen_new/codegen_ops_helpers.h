@@ -242,7 +242,7 @@ codegen_can_unroll(codeblock_t *block, ir_data_t *ir, uint32_t next_pc, uint32_t
 static inline int
 codegen_get_condition_fastpath(int cond, int *out_op1, int *out_op2)
 {
-    if (!codegen_flags_changed || codegen_last_flags_op == FLAGS_UNKNOWN)
+    if (!codegen_flags_changed || codegen_last_flags_op == FLAGS_INVALID || codegen_last_flags_op == FLAGS_UNKNOWN)
         return 0;
 
     int cond_base = cond & 0xf;
