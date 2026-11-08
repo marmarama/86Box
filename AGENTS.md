@@ -136,6 +136,7 @@ All roadmap, optimization, testing and upstream-PR work is tracked with `task` (
 
 - Before starting, check `task list` / `task active`.
 - `task start <id>` when coding, `task <id> done` once verified. `task <id> info` shows details and `task summary` shows progress.
+- **Log discoveries promptly**: If you discover a new bug, regression, bottleneck, or have an idea for an improvement or simplification during profiling, research, or coding, **log a Taskwarrior ticket as a priority**. Always check first (`task /<keyword>/ list` or `task list`) to ensure an existing ticket doesn't already cover it. If untracked, create one (`task add project:86box.<subproject> priority:<H|M|L> +<tags> "<description>"`) and annotate with relevant reproduction details, files, or telemetry.
 
 | Project | Scope |
 | :--- | :--- |

@@ -60,16 +60,18 @@ task <id> done
 ```
 *Note: Always pair completing work with the `commit-work` skill.*
 
-### 4. Adding New Tasks
-When discovering a new optimization opportunity, bug, or architectural need:
+### 4. Adding New Tasks (Log Discoveries Promptly)
+If you uncover a new bug, regression, bottleneck, or have an idea for an architectural improvement or simplification during profiling, research, or coding, **log a Taskwarrior ticket as a priority**:
+1. **Search first**: Check `task /<keyword>/ list` or `task list` to verify an existing ticket doesn't already track it.
+2. **Add the task**:
 ```bash
-task add project:<project> priority:<H|M|L> +<tags> "<description>"
+task add project:86box.<subproject> priority:<H|M|L> +<tags> "<description>"
 ```
 Example:
 ```bash
-task add project:86box.perf priority:M +voodoo +simd "Voodoo: SIMD-vectorize 2D blitter inner loops and span-parallelize large stretch/screen blits"
+task add project:86box.video priority:M +voodoo +simd "Voodoo: SIMD-vectorize 2D blitter inner loops and span-parallelize large stretch/screen blits"
 ```
-Follow up with detailed annotations:
+3. **Annotate details**: Follow up immediately with reproduction steps, telemetry findings, or architectural design notes:
 ```bash
 task <new_id> annotate "Telemetry: Hotspot in vid_voodoo_banshee_blitter.c accounts for 15% of frame time during video playback."
 ```
