@@ -279,6 +279,7 @@ x86 software frequently modifies code in RAM. `codegen_new` coordinates with `sr
 Despite its vast improvements over the legacy macro-based dynarec, empirical profiling across DOS benchmarks and Windows 98 guest workloads has revealed several fundamental architectural bottlenecks in `codegen_new`:
 
 ### 6.1 Basic-Block Scope & Lack of Inter-Block SSA / Global CFG
+* **Tracking**: Task #47 (`Multi-block trace formation and superblock JIT exploration`); intra-block liveness/SSA explored in Task #13 & #28.
 * **The Limitation**: `codegen_new` is strictly a **single basic-block JIT**. Compilation begins at a block entry point and terminates at the first control-flow transfer (`JMP`, `Jcc`, `LOOP`, `CALL`, `RET`, `INT`).
 * **Consequences**:
   * The IR has no Control Flow Graph across blocks and no $\phi$ functions. Registers are versioned within a block (SSA-like renaming), but versions do not extend across blocks.
@@ -286,6 +287,7 @@ Despite its vast improvements over the legacy macro-based dynarec, empirical pro
   * Loops as small as 2 or 3 instructions (e.g. `rep stosb`, polling loops, string scanning) generate independent blocks that must continually transition across block boundary stubs.
 
 ### 6.2 Per-Block C Function Boundary & Dispatcher Overhead
+* **Tracking**: Tasks #9, #10, #20, #39 (FPU loop chaining, event-driven cycle quanta, in-JIT event loop, cross-block GPR pinning).
 > [!NOTE]
 > Figures below come from the earlier `PROFILE-WIN98-v3.md` profile. Since then, `R14` has been pinned to cycles and an in-JIT dispatch stub (`codegen_dispatch_stub`) was added, so the numbers likely overstate the current cost. Re-measure before relying on them.
 
@@ -295,17 +297,14 @@ Despite its vast improvements over the legacy macro-based dynarec, empirical pro
   * Telemetry from Windows 98 boot profiling (`PROFILE-WIN98-v3.md`) demonstrates that **22.17% of all host instructions** executed by the dynarec are function prologue/epilogue/spill/reload glue, and **6.58% of total host execution time** is burned inside the C dispatcher loop across 199+ million C returns.
 
 ### 6.3 Eager Exception State Synchronization (Hot Memory Path PC Stores)
-* **The Limitation**: Before every memory load or store (`uop_MEM_LOAD_*`, `uop_MEM_STORE_*`), the frontend emits:
-  ```c
-  uop_MOV_IMM(ir, IREG_pc, current_pc);
-  uop_MOV_IMM(ir, IREG_oldpc, current_oldpc);
-  ```
+* **Tracking**: Memory fast-path resolved in Task `1d3df524` (`Cold exception materialization - sink oldpc/pc out of fast-path memory uOps`); remaining dead instruction-boundary `pc` stores tracked in Task #13.
+* **The Limitation**: Before memory loads and stores, the frontend historically emitted eager `uop_MOV_IMM(ir, IREG_oldpc, ...)` and `uop_MOV_IMM(ir, IREG_pc, ...)`.
 * **Consequences**:
-  * This is done so that if a memory access triggers a CPU fault (`#PF` page fault or `#GP` general protection fault), `cpu_state.pc` accurately reflects the faulting guest instruction.
-  * However, >99.9% of memory accesses are fast-path RAM hits that never fault (and in real mode, page faults are impossible). Eagerly storing `pc` and `oldpc` into host memory on every load/store wastes tens of millions of host writes (e.g., **30.7M writes in ScanDisk**, **137.7M writes in Windows 98**).
-  * The architecture currently lacks an out-of-line **cold exception materialization** table (safepoints or unwind metadata) to reconstruct `pc`/`oldpc` only when a fault actually occurs.
+  * Because >99.9% of memory accesses are fast-path RAM hits that never fault, eagerly synchronizing `oldpc` and `pc` across barriers wasted tens of millions of host stores.
+  * Sinking `oldpc` and fault state into out-of-line cold slowpath/fault thunks resolved the memory fast-path overhead, while dead instruction-boundary `pc` stores remain targeted by middle-end DSE passes.
 
 ### 6.4 Coarse Barrier Granularity & Dead Flag Materialization
+* **Tracking**: Task #13 (`Proposal 3: Middle-End IR Liveness, Dead-Flag Elimination & Barrier Refinement`).
 * **The Limitation**: Barriers (`UOP_TYPE_BARRIER` and `UOP_TYPE_ORDER_BARRIER`) are all-or-nothing.
 * **Consequences**:
   * When a barrier is encountered (I/O instructions `IN`/`OUT`, C helper callouts, block termination), the engine flushes all dirty host registers and eagerly computes `cpu_state.flags_*` from lazy flags.
@@ -313,28 +312,30 @@ Despite its vast improvements over the legacy macro-based dynarec, empirical pro
   * In Windows 98 boot traces, eager flag materialization before barriers wastes **961 million host cycles** across 115,176 static sites.
 
 ### 6.5 Small Host Register Pool & High-Byte Handling
+* **Tracking**: Task #28 (sub-register canonicalization via `UOP_BFX`/`UOP_BFI`), Roadmap Task #33 (high-byte shifts).
 * **The Limitation**: Only 7 (x86-64), 10 (ARM64) or 9 (LoongArch64) host registers are allocatable, and x86-64 high-byte operands need extra temporaries in the backend.
 * **Consequences**:
   * Instructions with fixed-register needs (variable shifts via `CL`, `MUL`/`DIV` via `EAX`/`EDX`) shrink the pool further.
   * This causes intra-block spill/reload thrashing (148,000+ in ScanDisk FAT cluster math, per the block linter).
 
 ### 6.6 Heavy C Callout Fallbacks for Protected-Mode Control Flow
+* **Tracking**: Tasks `2dfe1ee9` (pmode segment descriptor cache) and `beb254df` (real-mode loadseg inlining) completed; Task #22 (flat DS/SS base elision) pending.
 > [!NOTE]
-> Real-mode (`CR0.PE == 0`) segment loads (`MOV seg`, `LxS`, `POP seg`) are now inlined as native uOps. The limitation below applies to protected mode only; the profile figures predate any pmode segment caching.
+> Real-mode (`CR0.PE == 0`) segment loads (`MOV seg`, `LxS`, `POP seg`) are now inlined as native uOps. Protected-mode descriptor caching has landed; flat segment optimizations remain active.
 
-* **The Limitation**: Complex x86 architectural operations—such as selector loading (`loadseg()`), task switching, far calls (`LCALL`), far jumps (`LJMP`), and protected-mode `IRET`—are not lowered to native uOps.
+* **The Limitation**: Complex x86 architectural operations—such as selector loading (`loadseg()`), task switching, far calls (`LCALL`), far jumps (`LJMP`), and protected-mode `IRET`—historically dropped entirely out of JIT execution into heavy C runtime helpers.
 * **Consequences**:
-  * These operations drop entirely out of JIT execution into heavy C runtime helpers in `src/cpu/x86seg.c` and `src/cpu/x86_ops_pmode.h`.
-  * Every callout destroys host register cache residency, flushes lazy flags, and incurs >1,100 host cycles per invocation (e.g. `loadseg` in the top Windows 98 hot blocks `blk#55748` and `blk#58507`).
-  * The dynarec lacks an inlined fast-path cache for validated protected-mode segment descriptors.
+  * Callouts destroy host register cache residency, flush lazy flags, and incur heavy cycle penalties (>1,100 cycles per invocation in un-cached pmode paths).
 
 ### 6.7 Global State Coupling (No SMP / Multi-Core Emulation)
+* **Tracking**: Task #46 (`Decouple dynarec global state into explicit context and define pluggable dynarec engine interface (lib86dynarec)`).
 * **The Limitation**: `codegen_new` directly references global C symbols (`cpu_state`, `readlookup2`, `writelookup2`, `pic`, `devices`).
 * **Consequences**:
   * The JIT cannot be instantiated multiple times concurrently, making Symmetric Multiprocessing (SMP) or multi-threaded CPU emulation impossible without a major architectural refactor.
   * It prevents `codegen_new` from being cleanly embedded as an independent library (`lib86dynarec`) in other emulation projects without dragging in 86Box's entire global header tree.
 
 ### 6.8 Combinatorial Frontend Repetition
+* **Tracking**: Task #12 (`x86gen` DSL prototype, Proposal 1), Task #29 (shared ModR/M & ALU helpers, Proposal 5.3).
 * **The Limitation**: Decoding and lowering guest opcodes into uOps requires ~25,000 lines of handwritten C across `codegen_ops_*.c`.
 * **Consequences**:
   * Every instruction requires manual permutations for 8-bit, 16-bit, and 32-bit operand sizes, ModR/M register-to-register, register-to-memory, memory-to-register, and SIB addressing forms.
