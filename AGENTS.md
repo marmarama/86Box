@@ -2,7 +2,7 @@
 
 Essential knowledge for working on **86Box**, a cycle-accurate x86 PC emulator (IBM PC/XT/AT/PS/2 through PCI/AGP clones). This file is authoritative; `src/codegen_new/docs/AGENTS.md` is a legacy subset.
 
-Further docs: `src/codegen_new/docs/` (`DEBUGGING.md`, `BENCHMARKING.md`, `BUGS.md`, `ROADMAP.md`, `DEBUG-BLOCK-DUMPER.md`, `IDLE-OPTIMIZATION.md`, `CHANGELOG.md`, `PROFILE-WIN98*.md`), `benchmarks/README.md`, `tests/README.md`, `CONTRIBUTING.md` (upstream code style).
+Further docs: `src/codegen_new/docs/` (`ARCHITECTURE.md`, `DEBUGGING.md`, `BENCHMARKING.md`, `BUGS.md`, `ROADMAP.md`, `DEBUG-BLOCK-DUMPER.md`, `IDLE-OPTIMIZATION.md`, `CHANGELOG.md`, `PROFILE-WIN98*.md`), `benchmarks/README.md`, `tests/README.md`, `CONTRIBUTING.md` (upstream code style).
 
 Skills (`.agents/skills/`): [`run-dos-benchmarks`](.agents/skills/run-dos-benchmarks/SKILL.md), [`boot-test-guests`](.agents/skills/boot-test-guests/SKILL.md), [`bisect-dynarec-regression`](.agents/skills/bisect-dynarec-regression/SKILL.md), [`analyze-block-dump`](.agents/skills/analyze-block-dump/SKILL.md), [`ipc-control`](.agents/skills/ipc-control/SKILL.md), [`manage-tasks`](.agents/skills/manage-tasks/SKILL.md), [`commit-work`](.agents/skills/commit-work/SKILL.md).
 
