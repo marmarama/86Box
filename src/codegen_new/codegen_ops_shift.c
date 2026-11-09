@@ -1452,7 +1452,6 @@ ropSHLD_16_cl(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_
     uop_set_jump_dest(ir, jump_uop);
     codegen_last_flags_op = FLAGS_INVALID;
     codegen_flags_changed = 0;
-    codegen_flags_changed = 1;
 
     return op_pc + 1;
 }
@@ -1504,7 +1503,6 @@ ropSHLD_32_cl(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_
     uop_set_jump_dest(ir, jump_uop);
     codegen_last_flags_op = FLAGS_INVALID;
     codegen_flags_changed = 0;
-    codegen_flags_changed = 1;
 
     return op_pc + 1;
 }
@@ -1557,7 +1555,6 @@ ropSHRD_16_cl(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_
     uop_set_jump_dest(ir, jump_uop);
     codegen_last_flags_op = FLAGS_INVALID;
     codegen_flags_changed = 0;
-    codegen_flags_changed = 1;
 
     return op_pc + 1;
 }
@@ -1609,7 +1606,6 @@ ropSHRD_32_cl(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_
     uop_set_jump_dest(ir, jump_uop);
     codegen_last_flags_op = FLAGS_INVALID;
     codegen_flags_changed = 0;
-    codegen_flags_changed = 1;
 
     return op_pc + 1;
 }

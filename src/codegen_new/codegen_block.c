@@ -1228,8 +1228,8 @@ codegen_block_end_recompile(codeblock_t *block)
             if (codegen_flags_changed && is_zf_flags_res_op(codegen_last_flags_op)) {
                 jump_false_extra = uop_CMP_IMM_JNZ_DEST(ir_data, IREG_flags_res, 0);
             } else if (codegen_flags_changed && codegen_last_flags_op == FLAGS_UNKNOWN) {
-                uop_AND_IMM(ir_data, IREG_temp0, IREG_flags, Z_FLAG);
-                jump_false_extra = uop_CMP_IMM_JZ_DEST(ir_data, IREG_temp0, 0);
+                uop_AND_IMM(ir_data, IREG_temp0_W, IREG_flags, Z_FLAG);
+                jump_false_extra = uop_CMP_IMM_JZ_DEST(ir_data, IREG_temp0_W, 0);
             } else {
                 uop_CALL_FUNC_RESULT(ir_data, IREG_temp0, jit_ZF_SET);
                 jump_false_extra = uop_CMP_IMM_JZ_DEST(ir_data, IREG_temp0, 0);
@@ -1241,8 +1241,8 @@ codegen_block_end_recompile(codeblock_t *block)
             if (codegen_flags_changed && is_zf_flags_res_op(codegen_last_flags_op)) {
                 jump_false_extra = uop_CMP_IMM_JZ_DEST(ir_data, IREG_flags_res, 0);
             } else if (codegen_flags_changed && codegen_last_flags_op == FLAGS_UNKNOWN) {
-                uop_AND_IMM(ir_data, IREG_temp0, IREG_flags, Z_FLAG);
-                jump_false_extra = uop_CMP_IMM_JNZ_DEST(ir_data, IREG_temp0, 0);
+                uop_AND_IMM(ir_data, IREG_temp0_W, IREG_flags, Z_FLAG);
+                jump_false_extra = uop_CMP_IMM_JNZ_DEST(ir_data, IREG_temp0_W, 0);
             } else {
                 uop_CALL_FUNC_RESULT(ir_data, IREG_temp0, jit_ZF_SET);
                 jump_false_extra = uop_CMP_IMM_JNZ_DEST(ir_data, IREG_temp0, 0);

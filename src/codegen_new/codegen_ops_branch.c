@@ -36,35 +36,35 @@ codegen_cond_jump_false(ir_data_t *ir, int cond)
         if (codegen_last_flags_op == FLAGS_UNKNOWN) {
             switch (cond_base) {
                 case COND_B:  /* CF == 1 -> jump false if CF == 0 */
-                    uop_AND_IMM(ir, IREG_temp0, IREG_flags, C_FLAG);
-                    return uop_CMP_IMM_JZ_DEST(ir, IREG_temp0, 0);
+                    uop_AND_IMM(ir, IREG_temp0_W, IREG_flags, C_FLAG);
+                    return uop_CMP_IMM_JZ_DEST(ir, IREG_temp0_W, 0);
                 case COND_NB: /* CF == 0 -> jump false if CF == 1 */
-                    uop_AND_IMM(ir, IREG_temp0, IREG_flags, C_FLAG);
-                    return uop_CMP_IMM_JNZ_DEST(ir, IREG_temp0, 0);
+                    uop_AND_IMM(ir, IREG_temp0_W, IREG_flags, C_FLAG);
+                    return uop_CMP_IMM_JNZ_DEST(ir, IREG_temp0_W, 0);
                 case COND_E:  /* ZF == 1 -> jump false if ZF == 0 */
-                    uop_AND_IMM(ir, IREG_temp0, IREG_flags, Z_FLAG);
-                    return uop_CMP_IMM_JZ_DEST(ir, IREG_temp0, 0);
+                    uop_AND_IMM(ir, IREG_temp0_W, IREG_flags, Z_FLAG);
+                    return uop_CMP_IMM_JZ_DEST(ir, IREG_temp0_W, 0);
                 case COND_NE: /* ZF == 0 -> jump false if ZF == 1 */
-                    uop_AND_IMM(ir, IREG_temp0, IREG_flags, Z_FLAG);
-                    return uop_CMP_IMM_JNZ_DEST(ir, IREG_temp0, 0);
+                    uop_AND_IMM(ir, IREG_temp0_W, IREG_flags, Z_FLAG);
+                    return uop_CMP_IMM_JNZ_DEST(ir, IREG_temp0_W, 0);
                 case COND_S:  /* SF == 1 -> jump false if SF == 0 */
-                    uop_AND_IMM(ir, IREG_temp0, IREG_flags, N_FLAG);
-                    return uop_CMP_IMM_JZ_DEST(ir, IREG_temp0, 0);
+                    uop_AND_IMM(ir, IREG_temp0_W, IREG_flags, N_FLAG);
+                    return uop_CMP_IMM_JZ_DEST(ir, IREG_temp0_W, 0);
                 case COND_NS: /* SF == 0 -> jump false if SF == 1 */
-                    uop_AND_IMM(ir, IREG_temp0, IREG_flags, N_FLAG);
-                    return uop_CMP_IMM_JNZ_DEST(ir, IREG_temp0, 0);
+                    uop_AND_IMM(ir, IREG_temp0_W, IREG_flags, N_FLAG);
+                    return uop_CMP_IMM_JNZ_DEST(ir, IREG_temp0_W, 0);
                 case COND_O:  /* OF == 1 -> jump false if OF == 0 */
-                    uop_AND_IMM(ir, IREG_temp0, IREG_flags, V_FLAG);
-                    return uop_CMP_IMM_JZ_DEST(ir, IREG_temp0, 0);
+                    uop_AND_IMM(ir, IREG_temp0_W, IREG_flags, V_FLAG);
+                    return uop_CMP_IMM_JZ_DEST(ir, IREG_temp0_W, 0);
                 case COND_NO: /* OF == 0 -> jump false if OF == 1 */
-                    uop_AND_IMM(ir, IREG_temp0, IREG_flags, V_FLAG);
-                    return uop_CMP_IMM_JNZ_DEST(ir, IREG_temp0, 0);
+                    uop_AND_IMM(ir, IREG_temp0_W, IREG_flags, V_FLAG);
+                    return uop_CMP_IMM_JNZ_DEST(ir, IREG_temp0_W, 0);
                 case COND_P:  /* PF == 1 -> jump false if PF == 0 */
-                    uop_AND_IMM(ir, IREG_temp0, IREG_flags, P_FLAG);
-                    return uop_CMP_IMM_JZ_DEST(ir, IREG_temp0, 0);
+                    uop_AND_IMM(ir, IREG_temp0_W, IREG_flags, P_FLAG);
+                    return uop_CMP_IMM_JZ_DEST(ir, IREG_temp0_W, 0);
                 case COND_NP: /* PF == 0 -> jump false if PF == 1 */
-                    uop_AND_IMM(ir, IREG_temp0, IREG_flags, P_FLAG);
-                    return uop_CMP_IMM_JNZ_DEST(ir, IREG_temp0, 0);
+                    uop_AND_IMM(ir, IREG_temp0_W, IREG_flags, P_FLAG);
+                    return uop_CMP_IMM_JNZ_DEST(ir, IREG_temp0_W, 0);
                 default:
                     break;
             }
