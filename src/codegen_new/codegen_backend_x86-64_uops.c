@@ -1962,6 +1962,87 @@ codegen_MOVZX(codeblock_t *block, uop_t *uop)
 }
 
 static int
+codegen_BFX(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg  = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_reg   = HOST_REG_GET(uop->src_reg_a_real);
+    int lsb       = uop->imm_data & 0xff;
+    int width     = (uop->imm_data >> 8) & 0xff;
+    int is_signed = (uop->imm_data >> 16) & 1;
+
+    if (lsb == 0 && width == 8) {
+        if (!is_signed)
+            host_x86_MOVZX_REG_32_8(block, dest_reg, src_reg);
+        else
+            host_x86_MOVSX_REG_32_8(block, dest_reg, src_reg);
+    } else if (lsb == 0 && width == 16) {
+        if (!is_signed)
+            host_x86_MOVZX_REG_32_16(block, dest_reg, src_reg);
+        else
+            host_x86_MOVSX_REG_32_16(block, dest_reg, src_reg);
+    } else if (lsb == 8 && width == 8) {
+        host_x86_MOVZX_REG_32_16(block, dest_reg, src_reg);
+        host_x86_SHR32_IMM(block, dest_reg, 8);
+        if (is_signed)
+            host_x86_MOVSX_REG_32_8(block, dest_reg, dest_reg);
+    } else {
+        if (dest_reg != src_reg)
+            host_x86_MOV32_REG_REG(block, dest_reg, src_reg);
+        if (lsb > 0)
+            host_x86_SHR32_IMM(block, dest_reg, lsb);
+        if (is_signed) {
+            int shift = 32 - width;
+            if (shift > 0) {
+                host_x86_SHL32_IMM(block, dest_reg, shift);
+                host_x86_SAR32_IMM(block, dest_reg, shift);
+            }
+        } else {
+            uint32_t mask = (width >= 32) ? 0xffffffffu : ((1u << width) - 1);
+            host_x86_AND32_REG_IMM(block, dest_reg, mask);
+        }
+    }
+    return 0;
+}
+
+static int
+codegen_BFI(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg = HOST_REG_GET(uop->dest_reg_a_real);
+    int prev_reg = HOST_REG_GET(uop->src_reg_a_real);
+    int val_reg  = HOST_REG_GET(uop->src_reg_b_real);
+    int lsb      = uop->imm_data & 0xff;
+    int width    = (uop->imm_data >> 8) & 0xff;
+
+    if (lsb == 0 && width == 8) {
+        if (dest_reg != prev_reg)
+            host_x86_MOV32_REG_REG(block, dest_reg, prev_reg);
+        host_x86_MOV8_REG_REG(block, dest_reg, val_reg);
+    } else if (lsb == 0 && width == 16) {
+        if (dest_reg != prev_reg)
+            host_x86_MOV32_REG_REG(block, dest_reg, prev_reg);
+        host_x86_MOV16_REG_REG(block, dest_reg, val_reg);
+    } else if (lsb == 8 && width == 8) {
+        host_x86_MOVZX_REG_32_8(block, REG_ECX, val_reg);
+        host_x86_SHL32_IMM(block, REG_ECX, 8);
+        if (dest_reg != prev_reg)
+            host_x86_MOV32_REG_REG(block, dest_reg, prev_reg);
+        host_x86_AND32_REG_IMM(block, dest_reg, 0xffff00ff);
+        host_x86_OR32_REG_REG(block, dest_reg, REG_ECX);
+    } else {
+        uint32_t mask = ((width >= 32) ? 0xffffffffu : ((1u << width) - 1)) << lsb;
+        host_x86_MOV32_REG_REG(block, REG_ECX, val_reg);
+        if (lsb > 0)
+            host_x86_SHL32_IMM(block, REG_ECX, lsb);
+        host_x86_AND32_REG_IMM(block, REG_ECX, mask);
+        if (dest_reg != prev_reg)
+            host_x86_MOV32_REG_REG(block, dest_reg, prev_reg);
+        host_x86_AND32_REG_IMM(block, dest_reg, ~mask);
+        host_x86_OR32_REG_REG(block, dest_reg, REG_ECX);
+    }
+    return 0;
+}
+
+static int
 codegen_MOV_DOUBLE_INT(codeblock_t *block, uop_t *uop)
 {
     int dest_reg  = HOST_REG_GET(uop->dest_reg_a_real);
@@ -4205,7 +4286,9 @@ const uOpFn uop_handlers[UOP_MAX] = {
     = codegen_PSLLD,
     [UOP_PSLLQ &
         UOP_MASK]
-    = codegen_PSLLQ
+    = codegen_PSLLQ,
+    [UOP_BFX & UOP_MASK] = codegen_BFX,
+    [UOP_BFI & UOP_MASK] = codegen_BFI
 };
 
 void

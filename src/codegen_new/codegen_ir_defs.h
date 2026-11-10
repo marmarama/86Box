@@ -385,7 +385,14 @@ extern int codegen_last_flags_op;
 /*UOP_PSLLQ - (packed quad) dest_reg = src_reg_a << src_reg_b*/
 #define UOP_PSLLQ (UOP_TYPE_PARAMS_REGS | 0xd6)
 
-#define UOP_MAX     0xd7
+/* UOP_BFX - Bitfield extract: dest = (src >> lsb) & ((1 << width) - 1)
+   imm_data: (lsb & 0xff) | ((width & 0xff) << 8) | ((is_signed & 1) << 16) */
+#define UOP_BFX (UOP_TYPE_PARAMS_REGS | UOP_TYPE_PARAMS_IMM | 0xd7)
+/* UOP_BFI - Bitfield insert: dest = (prev_dest & ~mask) | ((val & ((1 << width) - 1)) << lsb)
+   imm_data: (lsb & 0xff) | ((width & 0xff) << 8) */
+#define UOP_BFI (UOP_TYPE_PARAMS_REGS | UOP_TYPE_PARAMS_IMM | 0xd8)
+
+#define UOP_MAX     0xd9
 
 #define UOP_INVALID 0xff
 
@@ -955,6 +962,8 @@ uop_EXIT_BLOCK_RET(ir_data_t *ir, int exit_idx)
 #define uop_MOVZX_REG_PTR_16(ir, reg, p)                                 uop_gen_reg_dst_pointer(UOP_MOVZX_REG_PTR_16, ir, reg, p)
 #define uop_MOVSX(ir, dst_reg, src_reg)                                  uop_gen_reg_dst_src1(UOP_MOVSX, ir, dst_reg, src_reg)
 #define uop_MOVZX(ir, dst_reg, src_reg)                                  uop_gen_reg_dst_src1(UOP_MOVZX, ir, dst_reg, src_reg)
+#define uop_BFX(ir, dst_reg, src_reg, lsb, width, is_signed)              uop_gen_reg_dst_src1_imm(UOP_BFX, ir, dst_reg, src_reg, (lsb & 0xff) | ((width & 0xff) << 8) | ((is_signed & 1) << 16))
+#define uop_BFI(ir, dst_reg, prev_reg, val_reg, lsb, width)               uop_gen_reg_dst_src2_imm(UOP_BFI, ir, dst_reg, prev_reg, val_reg, (lsb & 0xff) | ((width & 0xff) << 8))
 #define uop_MOV_DOUBLE_INT(ir, dst_reg, src_reg)                         uop_gen_reg_dst_src1(UOP_MOV_DOUBLE_INT, ir, dst_reg, src_reg)
 #define uop_MOV_INT_DOUBLE(ir, dst_reg, src_reg /*, nrc, orc*/)          uop_gen_reg_dst_src1(UOP_MOV_INT_DOUBLE, ir, dst_reg, src_reg /*, nrc, orc*/)
 #define uop_MOV_INT_DOUBLE_64(ir, dst_reg, src_reg_d, src_reg_q, tag)    uop_gen_reg_dst_src3(UOP_MOV_INT_DOUBLE_64, ir, dst_reg, src_reg_d, src_reg_q, tag)

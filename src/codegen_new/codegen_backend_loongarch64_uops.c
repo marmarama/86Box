@@ -1155,6 +1155,51 @@ codegen_MOVZX(codeblock_t *block, uop_t *uop)
 }
 
 static int
+codegen_BFX(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg  = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_reg   = HOST_REG_GET(uop->src_reg_a_real);
+    int lsb       = uop->imm_data & 0xff;
+    int width     = (uop->imm_data >> 8) & 0xff;
+    int is_signed = (uop->imm_data >> 16) & 1;
+
+    if (!is_signed) {
+        if (lsb == 0 && width == 8)
+            host_loong64_ANDI(block, dest_reg, src_reg, 0xff);
+        else
+            host_loong64_UBFX_D(block, dest_reg, src_reg, lsb, width);
+    } else {
+        if (lsb == 0 && width == 8) {
+            host_loong64_SEXT_B(block, dest_reg, src_reg);
+        } else if (lsb == 0 && width == 16) {
+            host_loong64_SEXT_H(block, dest_reg, src_reg);
+        } else {
+            host_loong64_UBFX_D(block, dest_reg, src_reg, lsb, width);
+            if (width == 8)
+                host_loong64_SEXT_B(block, dest_reg, dest_reg);
+            else if (width == 16)
+                host_loong64_SEXT_H(block, dest_reg, dest_reg);
+        }
+    }
+    return 0;
+}
+
+static int
+codegen_BFI(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg = HOST_REG_GET(uop->dest_reg_a_real);
+    int prev_reg = HOST_REG_GET(uop->src_reg_a_real);
+    int val_reg  = HOST_REG_GET(uop->src_reg_b_real);
+    int lsb      = uop->imm_data & 0xff;
+    int width    = (uop->imm_data >> 8) & 0xff;
+
+    if (dest_reg != prev_reg)
+        host_loong64_MOV_REG(block, dest_reg, prev_reg);
+    host_loong64_BFI_W(block, dest_reg, val_reg, lsb, width);
+    return 0;
+}
+
+static int
 codegen_MOV_REG_PTR(codeblock_t *block, uop_t *uop)
 {
     int dest_reg  = HOST_REG_GET(uop->dest_reg_a_real);
@@ -2618,6 +2663,9 @@ const uOpFn uop_handlers[UOP_MAX] = {
     [UOP_NOP_BARRIER & UOP_MASK] = codegen_NOP,
 
     [UOP_BSWAP & UOP_MASK]       = codegen_BSWAP,
+
+    [UOP_BFX & UOP_MASK]         = codegen_BFX,
+    [UOP_BFI & UOP_MASK]         = codegen_BFI,
 
 #ifdef DEBUG_EXTRA
     [UOP_LOG_INSTR & UOP_MASK] = codegen_LOG_INSTR,

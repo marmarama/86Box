@@ -1390,6 +1390,37 @@ codegen_MOVZX(codeblock_t *block, uop_t *uop)
 }
 
 static int
+codegen_BFX(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg  = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_reg   = HOST_REG_GET(uop->src_reg_a_real);
+    int lsb       = uop->imm_data & 0xff;
+    int width     = (uop->imm_data >> 8) & 0xff;
+    int is_signed = (uop->imm_data >> 16) & 1;
+
+    if (!is_signed)
+        host_arm64_UBFX(block, dest_reg, src_reg, lsb, width);
+    else
+        host_arm64_SBFX(block, dest_reg, src_reg, lsb, width);
+    return 0;
+}
+
+static int
+codegen_BFI(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg = HOST_REG_GET(uop->dest_reg_a_real);
+    int prev_reg = HOST_REG_GET(uop->src_reg_a_real);
+    int val_reg  = HOST_REG_GET(uop->src_reg_b_real);
+    int lsb      = uop->imm_data & 0xff;
+    int width    = (uop->imm_data >> 8) & 0xff;
+
+    if (dest_reg != prev_reg)
+        host_arm64_MOV_REG(block, dest_reg, prev_reg, 0);
+    host_arm64_BFI(block, dest_reg, val_reg, lsb, width);
+    return 0;
+}
+
+static int
 codegen_MOV_DOUBLE_INT(codeblock_t *block, uop_t *uop)
 {
     int dest_reg  = HOST_REG_GET(uop->dest_reg_a_real);
@@ -3899,7 +3930,9 @@ const uOpFn uop_handlers[UOP_MAX] = {
     = codegen_PSLLD,
     [UOP_PSLLQ &
         UOP_MASK]
-    = codegen_PSLLQ
+    = codegen_PSLLQ,
+    [UOP_BFX & UOP_MASK] = codegen_BFX,
+    [UOP_BFI & UOP_MASK] = codegen_BFI
 };
 
 void
