@@ -1327,9 +1327,31 @@ exec386_dynarec(int32_t cycs)
             if (cpu_state.abrt) {
                 flags_rebuild();
                 tempi          = cpu_state.abrt & ABRT_MASK;
+                fprintf(stderr, "=== CPU ABRT: type=0x%x, CS:EIP=%04X:%08X oldpc=%08x CR0=%08x ===\n", tempi, CS, cpu_state.pc, cpu_state.oldpc, cr0);
+                fprintf(stderr, "    EAX=%08x EBX=%08x ECX=%08x EDX=%08x ESI=%08x EDI=%08x EBP=%08x ESP=%08x\n",
+                        EAX, EBX, ECX, EDX, ESI, EDI, EBP, ESP);
+                fprintf(stderr, "    DS: sel=%04x base=%08x lim=%08x lim_h=%08x\n",
+                        cpu_state.seg_ds.seg, cpu_state.seg_ds.base, cpu_state.seg_ds.limit, cpu_state.seg_ds.limit_high);
+                fprintf(stderr, "    ES: sel=%04x base=%08x lim=%08x lim_h=%08x\n",
+                        cpu_state.seg_es.seg, cpu_state.seg_es.base, cpu_state.seg_es.limit, cpu_state.seg_es.limit_high);
+                fprintf(stderr, "    CS: sel=%04x base=%08x lim=%08x lim_h=%08x\n",
+                        cpu_state.seg_cs.seg, cpu_state.seg_cs.base, cpu_state.seg_cs.limit, cpu_state.seg_cs.limit_high);
+                fprintf(stderr, "    SS: sel=%04x base=%08x lim=%08x lim_h=%08x\n",
+                        cpu_state.seg_ss.seg, cpu_state.seg_ss.base, cpu_state.seg_ss.limit, cpu_state.seg_ss.limit_high);
+                uint32_t lin_pc = cpu_state.seg_cs.base + cpu_state.pc;
+                fprintf(stderr, "    Code at %08x: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
+                        lin_pc,
+                        readmembl(lin_pc), readmembl(lin_pc+1), readmembl(lin_pc+2), readmembl(lin_pc+3),
+                        readmembl(lin_pc+4), readmembl(lin_pc+5), readmembl(lin_pc+6), readmembl(lin_pc+7),
+                        readmembl(lin_pc+8), readmembl(lin_pc+9), readmembl(lin_pc+10), readmembl(lin_pc+11),
+                        readmembl(lin_pc+12), readmembl(lin_pc+13), readmembl(lin_pc+14), readmembl(lin_pc+15));
+#ifdef USE_NEW_DYNAREC
+                codegen_dump_print_flight_recorder();
+#endif
                 cpu_state.abrt = 0;
                 x86_doabrt(tempi);
                 if (cpu_state.abrt) {
+                    fprintf(stderr, "=== DOUBLE FAULT: CS:EIP=%04X:%08X oldpc=%08x ===\n", CS, cpu_state.pc, cpu_state.oldpc);
                     cpu_state.abrt = 0;
                     cpu_state.pc   = cpu_state.oldpc;
 #    ifndef USE_NEW_DYNAREC
@@ -1337,6 +1359,7 @@ exec386_dynarec(int32_t cycs)
 #    endif
                     pmodeint(8, 0);
                     if (cpu_state.abrt) {
+                        fprintf(stderr, "=== TRIPLE FAULT - RESET! CS:EIP=%04X:%08X oldpc=%08x ===\n", CS, cpu_state.pc, cpu_state.oldpc);
                         cpu_state.abrt = 0;
                         softresetx86();
                         cpu_set_edx();

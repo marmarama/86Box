@@ -386,6 +386,15 @@ IPCServer::handleGetStatus(const QJsonObject &/*params*/, QString &/*errorMsg*/)
     res[QStringLiteral("machine")]   = QString::fromUtf8(machine_getname(machine));
     res[QStringLiteral("cycles")]    = static_cast<qint64>(cpu_state._cycles);
     res[QStringLiteral("fps")]       = static_cast<qint64>(monitors[0].mon_renderedframes);
+    res[QStringLiteral("pc")]        = QString::asprintf("%04X:%08X", CS, cpu_state.pc);
+    res[QStringLiteral("eax")]       = QString::asprintf("%08X", cpu_state.regs[0].l);
+    res[QStringLiteral("ecx")]       = QString::asprintf("%08X", cpu_state.regs[1].l);
+    res[QStringLiteral("edx")]       = QString::asprintf("%08X", cpu_state.regs[2].l);
+    res[QStringLiteral("ebx")]       = QString::asprintf("%08X", cpu_state.regs[3].l);
+    res[QStringLiteral("esp")]       = QString::asprintf("%08X", cpu_state.regs[4].l);
+    res[QStringLiteral("ebp")]       = QString::asprintf("%08X", cpu_state.regs[5].l);
+    res[QStringLiteral("esi")]       = QString::asprintf("%08X", cpu_state.regs[6].l);
+    res[QStringLiteral("edi")]       = QString::asprintf("%08X", cpu_state.regs[7].l);
 
 #ifdef USE_NEW_DYNAREC
     res[QStringLiteral("is_dynarec")] = true;

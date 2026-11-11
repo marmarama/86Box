@@ -63,12 +63,12 @@ host_reg_def_t codegen_host_reg_list[CODEGEN_HOST_REGS] = {
     { REG_R15, 0 }
 };
 
-/* The Windows x64 frame: 0x38 bytes of block temporaries as before, then
-   XMM6 and XMM7 as the caller left them. 0x58 keeps RSP 16-byte aligned
-   after the eight pushes and the return address. */
-#define CODEGEN_WIN64_FRAME 0x58
-#define CODEGEN_XMM6_SAVE   0x38
-#define CODEGEN_XMM7_SAVE   0x48
+/* The Windows x64 frame: 0x58 bytes of block temporaries (including IREG_temp0..6
+   and IREG_temp0d..1d), then XMM6 and XMM7 as the caller left them. 0x78 keeps
+   RSP 16-byte aligned after the eight pushes and the return address. */
+#define CODEGEN_WIN64_FRAME 0x78
+#define CODEGEN_XMM6_SAVE   0x58
+#define CODEGEN_XMM7_SAVE   0x68
 
 host_reg_def_t codegen_host_fp_reg_list[CODEGEN_HOST_FP_REGS] = {
 #    if _WIN64
@@ -376,7 +376,7 @@ codegen_backend_init(void)
     host_x86_MOVDQU_XREG_BASE_OFFSET(block, REG_XMM7, REG_RSP, CODEGEN_XMM7_SAVE);
     host_x86_ADD64_REG_IMM(block, REG_RSP, CODEGEN_WIN64_FRAME);
 #else
-    host_x86_ADD64_REG_IMM(block, REG_RSP, 0x48);
+    host_x86_ADD64_REG_IMM(block, REG_RSP, 0x68);
 #endif
     host_x86_POP(block, REG_R15);
     host_x86_POP(block, REG_R14);
@@ -632,7 +632,7 @@ codegen_backend_init(void)
     host_x86_MOVDQU_BASE_OFFSET_XREG(block, REG_RSP, CODEGEN_XMM6_SAVE, REG_XMM6);
     host_x86_MOVDQU_BASE_OFFSET_XREG(block, REG_RSP, CODEGEN_XMM7_SAVE, REG_XMM7);
 #else
-    host_x86_SUB64_REG_IMM(block, REG_RSP, 0x48);
+    host_x86_SUB64_REG_IMM(block, REG_RSP, 0x68);
 #endif
     host_x86_MOV64_REG_IMM(block, REG_RBP, ((uintptr_t) &cpu_state) + 128);
     host_x86_MOV64_REG_IMM(block, REG_R12, (uint64_t) (uintptr_t) readlookup2);
@@ -671,7 +671,7 @@ codegen_backend_prologue(codeblock_t *block)
     codegen_mem_slowpath_reset();
     block_pos = BLOCK_START; /*Entry code*/
     block->direct_entry_pos = block_pos;
-    if (codegen_dump_is_active() || codegen_profile_active || codegen_hang_detect_active) {
+    if (codegen_dump_is_active() || codegen_profile_active || codegen_hang_detect_active || flight_recorder_enabled) {
         int cycles_disp = (int) offsetof(cpu_state_t, _cycles) - 128;
         host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, cycles_disp, REG_R14);
 #ifdef _WIN64

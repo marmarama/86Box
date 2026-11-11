@@ -39,7 +39,7 @@ static uint64_t      codegen_last_block_callouts      = 0;
 #define FLIGHT_RECORDER_SIZE 128
 static bdump_trace_entry_t flight_recorder[FLIGHT_RECORDER_SIZE];
 static uint64_t            flight_recorder_total      = 0;
-static int                 flight_recorder_enabled    = 0;
+int                    flight_recorder_enabled    = 0;
 
 static uint64_t            hang_spin_limit            = 50000000ULL;
 static uint64_t            hang_chain_limit           = 1000000ULL;
@@ -158,6 +158,7 @@ codegen_dump_perf_map_active(void)
 void
 codegen_dump_init(void)
 {
+    flight_recorder_enabled = 1;
     const char *dump_path   = getenv("BOX86_DUMP_BLOCKS");
     const char *perf_env    = getenv("BOX86_PERF_MAP");
     const char *pc_env      = getenv("BOX86_DUMP_PC");
@@ -962,11 +963,38 @@ codegen_dump_enter_block(codeblock_t *block)
     uint16_t block_nr = (codeblock) ? (uint16_t) (block - codeblock) : 0;
 
     if (flight_recorder_enabled) {
+        if (block->phys >= 0x000fd310 && block->phys <= 0x000fd360) {
+            uint32_t ss_base = cpu_state.seg_ss.base;
+            uint32_t sp = cpu_state.regs[4].w;
+            fprintf(stderr, "TRACE BIOS: phys=%08x pc=%08x EAX=%08x EBX=%08x ECX=%08x EDX=%08x ESI=%08x EDI=%08x ESP=%08x SS:SP=[%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x]\n",
+                    block->phys, block->pc,
+                    cpu_state.regs[0].l, cpu_state.regs[3].l, cpu_state.regs[1].l, cpu_state.regs[2].l,
+                    cpu_state.regs[6].l, cpu_state.regs[7].l, cpu_state.regs[4].l,
+                    readmembl(ss_base + sp), readmembl(ss_base + sp + 1),
+                    readmembl(ss_base + sp + 2), readmembl(ss_base + sp + 3),
+                    readmembl(ss_base + sp + 4), readmembl(ss_base + sp + 5),
+                    readmembl(ss_base + sp + 6), readmembl(ss_base + sp + 7),
+                    readmembl(ss_base + sp + 8), readmembl(ss_base + sp + 9),
+                    readmembl(ss_base + sp + 10), readmembl(ss_base + sp + 11),
+                    readmembl(ss_base + sp + 12), readmembl(ss_base + sp + 13),
+                    readmembl(ss_base + sp + 14), readmembl(ss_base + sp + 15),
+                    readmembl(ss_base + sp + 16), readmembl(ss_base + sp + 17),
+                    readmembl(ss_base + sp + 18), readmembl(ss_base + sp + 19));
+        }
+        if (CS == 0x024c && block->pc >= 0x27e0 && block->pc <= 0x2950) {
+            uint32_t lin = cpu_state.seg_cs.base + block->pc;
+            fprintf(stderr, "TRACE CALLER 024c: pc=%04x phys=%05x: EAX=%08x EBX=%08x ECX=%08x EDX=%08x ESI=%08x EDI=%08x ESP=%08x EFL=%08x code=[%02x %02x %02x %02x %02x %02x %02x %02x]\n",
+                    block->pc, lin,
+                    cpu_state.regs[0].l, cpu_state.regs[3].l, cpu_state.regs[1].l, cpu_state.regs[2].l,
+                    cpu_state.regs[6].l, cpu_state.regs[7].l, cpu_state.regs[4].l, cpu_state.eflags,
+                    readmembl(lin), readmembl(lin+1), readmembl(lin+2), readmembl(lin+3),
+                    readmembl(lin+4), readmembl(lin+5), readmembl(lin+6), readmembl(lin+7));
+        }
         bdump_trace_entry_t *e = &flight_recorder[flight_recorder_total & (FLIGHT_RECORDER_SIZE - 1)];
         flight_recorder_total++;
         e->tr_compile_seq = block->compile_seq;
         e->tr_block_nr    = block_nr;
-        e->tr_flags_op    = (uint16_t) cpu_state.flags_op;
+        e->tr_flags_op    = (uint16_t) CS;
         e->tr_pc          = block->pc;
         e->tr_phys        = block->phys;
         e->tr_eax         = cpu_state.regs[0].l;
@@ -1195,5 +1223,18 @@ codegen_dump_record_rt_sample(int speed_percent, int fps, uint32_t elapsed_ms)
             s->speed_percent = (uint16_t) (speed_percent < 0 ? 0 : (speed_percent > 65535 ? 65535 : speed_percent));
             s->fps           = (uint16_t) (fps < 0 ? 0 : (fps > 65535 ? 65535 : fps));
         }
+    }
+}
+
+void
+codegen_dump_print_flight_recorder(void)
+{
+    uint32_t count = (flight_recorder_total < FLIGHT_RECORDER_SIZE) ? (uint32_t) flight_recorder_total : FLIGHT_RECORDER_SIZE;
+    uint64_t start = (flight_recorder_total >= count) ? (flight_recorder_total - count) : 0;
+    fprintf(stderr, "=== Flight Recorder (last %u blocks, total=%" PRIu64 ") ===\n", count, flight_recorder_total);
+    for (uint32_t i = 0; i < count; i++) {
+        bdump_trace_entry_t *t = &flight_recorder[(start + i) & (FLIGHT_RECORDER_SIZE - 1)];
+        fprintf(stderr, "  [%03u] cs=%04x pc=%08x phys=%08x eax=%08x ebx=%08x ecx=%08x edx=%08x esp=%08x esi=%08x edi=%08x\n",
+                i, t->tr_flags_op, t->tr_pc, t->tr_phys, t->tr_eax, t->tr_ebx, t->tr_ecx, t->tr_edx, t->tr_esp, t->tr_esi, t->tr_edi);
     }
 }

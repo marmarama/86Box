@@ -78,7 +78,7 @@ Skills (`.agents/skills/`): [`run-dos-benchmarks`](.agents/skills/run-dos-benchm
      git checkout -
      ```
      Or at the absolute minimum: `git stash create` / `git stash push -u -m "rescue: ..."` and verify the stash SHA exists before resetting.
-   - **Never delete or overwrite human or peer-agent work.** Violating this destroys irreplaceable effort. If you cannot complete a task, leave the files intact or safely committed on a rescue branch, log what failed to Taskwarrior, and ask the user for guidance.
+   - **Never delete or overwrite human or agent work.** Violating this destroys irreplaceable effort. If you cannot complete a task, leave the files intact or safely committed on a rescue branch, log what failed to Taskwarrior, and ask the user for guidance.
 
 Build both configs (binary: `build/new_dynarec/src/86Box`):
 ```bash

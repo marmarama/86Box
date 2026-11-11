@@ -131,6 +131,9 @@ enum {
     IREG_temp1,
     IREG_temp2,
     IREG_temp3,
+    IREG_temp4,
+    IREG_temp5,
+    IREG_temp6,
 
     IREG_temp0d,
     IREG_temp1d,
@@ -312,7 +315,7 @@ ireg_seg_limit_high(x86seg *seg)
     return 0;
 }
 
-extern uint8_t reg_last_version[IREG_COUNT];
+extern uint16_t reg_last_version[IREG_COUNT];
 extern uint64_t dirty_ir_regs[2];
 
 /*This version of the register must be calculated, regardless of whether it is
@@ -329,20 +332,20 @@ typedef struct {
     /*uOP that generated this register version*/
     uint16_t parent_uop;
     /*Pointer to next register version in dead register list*/
-    uint16_t next;
+    uint32_t next;
 } reg_version_t;
 
-extern reg_version_t reg_version[IREG_COUNT][256];
+extern reg_version_t reg_version[IREG_COUNT][2048];
 
 /*Head of dead register list; a list of register versions that are not used and
   can be optimised out*/
-extern uint16_t reg_dead_list;
+extern uint32_t reg_dead_list;
 
 static inline void
 add_to_dead_list(reg_version_t *regv, int reg, int version)
 {
     regv->next    = reg_dead_list;
-    reg_dead_list = version | (reg << 8);
+    reg_dead_list = ((uint32_t)version & 0xffff) | ((uint32_t)reg << 16);
 }
 
 typedef struct {

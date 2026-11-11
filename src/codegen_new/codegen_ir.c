@@ -389,9 +389,453 @@ codegen_ir_peephole(ir_data_t *ir)
     }
 }
 
+int codegen_opt_bfx = 1;
+
+static inline int
+is_subreg_int(ir_reg_t r)
+{
+    if (ir_reg_is_invalid(r) || !reg_is_integer(r))
+        return 0;
+    int sz = IREG_GET_SIZE(r.reg);
+    return (sz == IREG_SIZE_B || sz == IREG_SIZE_BH || sz == IREG_SIZE_W);
+}
+
+static inline int
+subreg_lsb(int reg_with_size)
+{
+    return (IREG_GET_SIZE(reg_with_size) == IREG_SIZE_BH) ? 8 : 0;
+}
+
+static inline int
+subreg_width(int reg_with_size)
+{
+    int sz = IREG_GET_SIZE(reg_with_size);
+    if (sz == IREG_SIZE_B || sz == IREG_SIZE_BH)
+        return 8;
+    if (sz == IREG_SIZE_W)
+        return 16;
+    return 32;
+}
+
+static inline int
+reg_needs_bfi(int r)
+{
+    /* Only architectural 32-bit GPRs (EAX..EDI) preserve upper bits across 8/16-bit writes. */
+    return (r >= IREG_EAX && r <= IREG_EDI);
+}
+
+static uop_t orig_uops_buf[UOP_NR_MAX];
+static int   uop_map_buf[UOP_NR_MAX + 1];
+
+static inline uop_t *
+lower_copy_uop(ir_data_t *ir, const uop_t *u, uint32_t new_type)
+{
+    uop_t *new_uop          = uop_alloc_unroll(ir, new_type);
+    new_uop->type           = new_type;
+    new_uop->imm_data       = u->imm_data;
+    new_uop->p              = u->p;
+    new_uop->pc             = u->pc;
+    new_uop->guest_insn_idx = u->guest_insn_idx;
+    new_uop->guest_pc_off   = u->guest_pc_off;
+    new_uop->is_a16         = u->is_a16;
+    new_uop->jump_dest_uop  = u->jump_dest_uop;
+    return new_uop;
+}
+
+static int
+lower_read_subreg(ir_data_t *ir, ir_reg_t src_reg, int is_signed, int temp_reg,
+                  uint8_t *zext_width)
+{
+    int r     = IREG_GET_REG(src_reg.reg);
+    int lsb   = subreg_lsb(src_reg.reg);
+    int width = subreg_width(src_reg.reg);
+
+    if (!reg_needs_bfi(r) && !is_signed && lsb == 0 && zext_width[r] != 0 && zext_width[r] <= width) {
+        return r | IREG_SIZE_L;
+    }
+
+    uop_BFX(ir, temp_reg, r | IREG_SIZE_L, lsb, width, is_signed);
+    zext_width[IREG_GET_REG(temp_reg)] = is_signed ? 0 : (uint8_t) width;
+    return temp_reg;
+}
+
+static void
+codegen_ir_lower_subregs(ir_data_t *ir)
+{
+    int      orig_count     = ir->wr_pos;
+    uint16_t saved_insn_idx = ir->cur_guest_insn_idx;
+    uint16_t saved_pc_off   = ir->cur_guest_pc_off;
+    uint8_t  zext_width[IREG_COUNT];
+    uint8_t  is_jump_dest[UOP_NR_MAX];
+
+    if (orig_count <= 0)
+        return;
+
+    memcpy(orig_uops_buf, ir->uops, orig_count * sizeof(uop_t));
+    memset(zext_width, 0, sizeof(zext_width));
+    memset(is_jump_dest, 0, orig_count * sizeof(uint8_t));
+
+    for (int i = 0; i < orig_count; i++) {
+        if ((orig_uops_buf[i].type & UOP_TYPE_JUMP) &&
+            orig_uops_buf[i].jump_dest_uop >= 0 &&
+            orig_uops_buf[i].jump_dest_uop < orig_count) {
+            is_jump_dest[orig_uops_buf[i].jump_dest_uop] = 1;
+        }
+        if ((orig_uops_buf[i].type & UOP_MASK) == (UOP_LOOP_JMP & UOP_MASK) && orig_uops_buf[i].p != NULL) {
+            uintptr_t p_val     = (uintptr_t) orig_uops_buf[i].p;
+            uintptr_t base_ir   = (uintptr_t) ir->uops;
+            uintptr_t base_orig = (uintptr_t) orig_uops_buf;
+            int       old_idx   = -1;
+            if (p_val >= base_ir && p_val < base_ir + orig_count * sizeof(uop_t))
+                old_idx = (p_val - base_ir) / sizeof(uop_t);
+            else if (p_val >= base_orig && p_val < base_orig + orig_count * sizeof(uop_t))
+                old_idx = (p_val - base_orig) / sizeof(uop_t);
+            if (old_idx >= 0 && old_idx < orig_count)
+                is_jump_dest[old_idx] = 1;
+        }
+    }
+
+    codegen_reg_reset();
+    ir->wr_pos = 0;
+
+    for (int i = 0; i < orig_count; i++) {
+        uop_t   *u          = &orig_uops_buf[i];
+        uint32_t uop_masked = u->type & UOP_MASK;
+
+        uop_map_buf[i]         = ir->wr_pos;
+        ir->cur_guest_insn_idx = u->guest_insn_idx;
+        ir->cur_guest_pc_off   = u->guest_pc_off;
+
+        if (is_jump_dest[i]) {
+            memset(zext_width, 0, sizeof(zext_width));
+            uop_mark_barrier_dirty_regs(UOP_TYPE_JUMP_DEST);
+        }
+
+        if (uop_masked == UOP_INVALID)
+            continue;
+
+        if (uop_masked == (UOP_LOOP_LABEL & UOP_MASK)) {
+            memset(zext_width, 0, sizeof(zext_width));
+            lower_copy_uop(ir, u, u->type);
+            continue;
+        }
+
+        /* 1. UOP_MOVZX / UOP_MOVSX from sub-register */
+        if ((uop_masked == (UOP_MOVZX & UOP_MASK) || uop_masked == (UOP_MOVSX & UOP_MASK)) &&
+            is_subreg_int(u->src_reg_a)) {
+            int is_signed = (uop_masked == (UOP_MOVSX & UOP_MASK));
+            int sreg      = IREG_GET_REG(u->src_reg_a.reg);
+            int s_lsb     = subreg_lsb(u->src_reg_a.reg);
+            int s_width   = subreg_width(u->src_reg_a.reg);
+            int dreg      = IREG_GET_REG(u->dest_reg_a.reg);
+            int d_is_sub  = is_subreg_int(u->dest_reg_a);
+            int d_lsb     = d_is_sub ? subreg_lsb(u->dest_reg_a.reg) : 0;
+            int d_width   = d_is_sub ? subreg_width(u->dest_reg_a.reg) : 32;
+
+            if (d_is_sub && reg_needs_bfi(dreg)) {
+                if (!reg_needs_bfi(sreg) && !is_signed && s_lsb == 0 && zext_width[sreg] != 0 && zext_width[sreg] <= s_width) {
+                    uop_MOV(ir, IREG_temp4, sreg | IREG_SIZE_L);
+                } else {
+                    uop_BFX(ir, IREG_temp4, sreg | IREG_SIZE_L, s_lsb, s_width, is_signed);
+                }
+                uop_BFI(ir, dreg | IREG_SIZE_L, dreg | IREG_SIZE_L, IREG_temp4, d_lsb, d_width);
+                zext_width[dreg]       = 0;
+                zext_width[IREG_temp4] = is_signed ? 0 : (uint8_t) s_width;
+            } else {
+                int target_dreg = dreg | IREG_SIZE_L;
+                if (!reg_needs_bfi(sreg) && !is_signed && s_lsb == 0 && zext_width[sreg] != 0 && zext_width[sreg] <= s_width) {
+                    if (dreg != sreg || is_jump_dest[i])
+                        uop_MOV(ir, target_dreg, sreg | IREG_SIZE_L);
+                } else {
+                    uop_BFX(ir, target_dreg, sreg | IREG_SIZE_L, s_lsb, s_width, is_signed);
+                }
+                zext_width[dreg] = is_signed ? 0 : (uint8_t) s_width;
+            }
+            continue;
+        }
+
+        /* 2. Memory accesses: preserve native memory operations intact */
+        if (uop_is_mem_access(u->type)) {
+            uop_t *new_uop = lower_copy_uop(ir, u, u->type);
+            if (!ir_reg_is_invalid(u->src_reg_a))
+                new_uop->src_reg_a = codegen_reg_read(u->src_reg_a.reg);
+            if (!ir_reg_is_invalid(u->src_reg_b))
+                new_uop->src_reg_b = codegen_reg_read(u->src_reg_b.reg);
+            if (!ir_reg_is_invalid(u->src_reg_c))
+                new_uop->src_reg_c = codegen_reg_read(u->src_reg_c.reg);
+            if (!ir_reg_is_invalid(u->dest_reg_a)) {
+                int dreg = IREG_GET_REG(u->dest_reg_a.reg);
+                if (is_subreg_int(u->dest_reg_a) && reg_needs_bfi(dreg)) {
+                    int d_lsb      = subreg_lsb(u->dest_reg_a.reg);
+                    int d_width    = subreg_width(u->dest_reg_a.reg);
+                    int temp_sized = IREG_temp4 | (d_width == 16 ? IREG_SIZE_W : IREG_SIZE_B);
+                    new_uop->dest_reg_a = codegen_reg_write(temp_sized, ir->wr_pos - 1);
+                    uop_BFI(ir, dreg | IREG_SIZE_L, dreg | IREG_SIZE_L, IREG_temp4, d_lsb, d_width);
+                    zext_width[dreg]       = 0;
+                    zext_width[IREG_temp4] = (uint8_t) d_width;
+                } else {
+                    new_uop->dest_reg_a = codegen_reg_write(u->dest_reg_a.reg, ir->wr_pos - 1);
+                    if (dreg < IREG_COUNT)
+                        zext_width[dreg] = 0;
+                }
+            }
+            continue;
+        }
+
+        /* 4. Native Shifts and Rotates: keep hardware semantics intact */
+        if (uop_masked == (UOP_ROL & UOP_MASK) || uop_masked == (UOP_ROL_IMM & UOP_MASK) ||
+            uop_masked == (UOP_ROR & UOP_MASK) || uop_masked == (UOP_ROR_IMM & UOP_MASK) ||
+            uop_masked == (UOP_SHL & UOP_MASK) || uop_masked == (UOP_SHL_IMM & UOP_MASK) ||
+            uop_masked == (UOP_SHR & UOP_MASK) || uop_masked == (UOP_SHR_IMM & UOP_MASK) ||
+            uop_masked == (UOP_SAR & UOP_MASK) || uop_masked == (UOP_SAR_IMM & UOP_MASK)) {
+            uop_t *new_uop     = lower_copy_uop(ir, u, u->type);
+            if (!ir_reg_is_invalid(u->src_reg_a))
+                new_uop->src_reg_a = codegen_reg_read(u->src_reg_a.reg);
+            if (!ir_reg_is_invalid(u->src_reg_b))
+                new_uop->src_reg_b = codegen_reg_read(u->src_reg_b.reg);
+            if (!ir_reg_is_invalid(u->src_reg_c))
+                new_uop->src_reg_c = codegen_reg_read(u->src_reg_c.reg);
+            if (!ir_reg_is_invalid(u->dest_reg_a)) {
+                int dreg = IREG_GET_REG(u->dest_reg_a.reg);
+                if (is_subreg_int(u->dest_reg_a) && reg_needs_bfi(dreg)) {
+                    int d_lsb      = subreg_lsb(u->dest_reg_a.reg);
+                    int d_width    = subreg_width(u->dest_reg_a.reg);
+                    int temp_sized = IREG_temp4 | (d_width == 16 ? IREG_SIZE_W : IREG_SIZE_B);
+                    new_uop->dest_reg_a = codegen_reg_write(temp_sized, ir->wr_pos - 1);
+                    uop_BFI(ir, dreg | IREG_SIZE_L, dreg | IREG_SIZE_L, IREG_temp4, d_lsb, d_width);
+                    zext_width[dreg]       = 0;
+                    zext_width[IREG_temp4] = (uop_masked == (UOP_SHR & UOP_MASK) || uop_masked == (UOP_SHR_IMM & UOP_MASK)) ? (uint8_t) d_width : 0;
+                } else {
+                    new_uop->dest_reg_a = codegen_reg_write(u->dest_reg_a.reg, ir->wr_pos - 1);
+                    if (dreg < IREG_COUNT)
+                        zext_width[dreg] = 0;
+                }
+            }
+            continue;
+        }
+
+        /* 5. Read-only subreg consumers (function args, branches, SETCC) */
+        if (uop_masked >= (UOP_LOAD_FUNC_ARG_0 & UOP_MASK) && uop_masked <= (UOP_LOAD_FUNC_ARG_3 & UOP_MASK)) {
+            uop_t *new_uop     = lower_copy_uop(ir, u, u->type);
+            new_uop->src_reg_a = codegen_reg_read(u->src_reg_a.reg);
+            continue;
+        }
+        if (uop_masked == (UOP_TEST_JNS_DEST & UOP_MASK) || uop_masked == (UOP_TEST_JS_DEST & UOP_MASK) ||
+            uop_masked == (UOP_CMP_IMM_JZ & UOP_MASK) || uop_masked == (UOP_CMP_IMM_JZ_DEST & UOP_MASK) ||
+            uop_masked == (UOP_CMP_IMM_JNZ_DEST & UOP_MASK) || uop_masked == (UOP_CMP_IMM_JLE_DEST & UOP_MASK) ||
+            uop_masked == (UOP_CMP_IMM_JNLE_DEST & UOP_MASK)) {
+            uop_t *new_uop     = lower_copy_uop(ir, u, u->type);
+            new_uop->src_reg_a = codegen_reg_read(u->src_reg_a.reg);
+            memset(zext_width, 0, sizeof(zext_width));
+            continue;
+        }
+        if ((uop_masked >= (UOP_CMP_JB_DEST & UOP_MASK) && uop_masked <= (UOP_CMP_JNLE_DEST & UOP_MASK)) ||
+            uop_masked == (UOP_CMP_JB & UOP_MASK) || uop_masked == (UOP_CMP_JNBE & UOP_MASK)) {
+            int src_a_reg = u->src_reg_a.reg;
+            int src_b_reg = u->src_reg_b.reg;
+            int is_unsigned_cmp = (uop_masked == (UOP_CMP_JB_DEST & UOP_MASK) ||
+                                   uop_masked == (UOP_CMP_JNB_DEST & UOP_MASK) ||
+                                   uop_masked == (UOP_CMP_JZ_DEST & UOP_MASK) ||
+                                   uop_masked == (UOP_CMP_JNZ_DEST & UOP_MASK) ||
+                                   uop_masked == (UOP_CMP_JBE_DEST & UOP_MASK) ||
+                                   uop_masked == (UOP_CMP_JNBE_DEST & UOP_MASK));
+            if (is_unsigned_cmp && is_subreg_int(u->src_reg_a) && is_subreg_int(u->src_reg_b)) {
+                int ra = IREG_GET_REG(src_a_reg), rb = IREG_GET_REG(src_b_reg);
+                int wa = subreg_width(src_a_reg), wb = subreg_width(src_b_reg);
+                if (subreg_lsb(src_a_reg) == 0 && subreg_lsb(src_b_reg) == 0 &&
+                    zext_width[ra] != 0 && zext_width[ra] <= wa &&
+                    zext_width[rb] != 0 && zext_width[rb] <= wb) {
+                    src_a_reg = ra | IREG_SIZE_L;
+                    src_b_reg = rb | IREG_SIZE_L;
+                }
+            }
+            uop_t *new_uop     = lower_copy_uop(ir, u, u->type);
+            new_uop->src_reg_a = codegen_reg_read(src_a_reg);
+            new_uop->src_reg_b = codegen_reg_read(src_b_reg);
+            memset(zext_width, 0, sizeof(zext_width));
+            continue;
+        }
+        if (uop_masked == (UOP_SETCC & UOP_MASK)) {
+            int src_a_reg = u->src_reg_a.reg;
+            int src_b_reg = u->src_reg_b.reg;
+            int cond_base = u->imm_data & 0xf;
+            int is_unsigned_cmp = (cond_base == COND_B || cond_base == COND_NB ||
+                                   cond_base == COND_E || cond_base == COND_NE ||
+                                   cond_base == COND_BE || cond_base == COND_NBE);
+            if (is_unsigned_cmp && is_subreg_int(u->src_reg_a) && is_subreg_int(u->src_reg_b)) {
+                int ra = IREG_GET_REG(src_a_reg), rb = IREG_GET_REG(src_b_reg);
+                int wa = subreg_width(src_a_reg), wb = subreg_width(src_b_reg);
+                if (subreg_lsb(src_a_reg) == 0 && subreg_lsb(src_b_reg) == 0 &&
+                    zext_width[ra] != 0 && zext_width[ra] <= wa &&
+                    zext_width[rb] != 0 && zext_width[rb] <= wb) {
+                    src_a_reg = ra | IREG_SIZE_L;
+                    src_b_reg = rb | IREG_SIZE_L;
+                }
+            }
+            int dreg      = IREG_GET_REG(u->dest_reg_a.reg);
+            int d_is_sub  = is_subreg_int(u->dest_reg_a);
+            int d_lsb     = d_is_sub ? subreg_lsb(u->dest_reg_a.reg) : 0;
+            int d_width   = d_is_sub ? subreg_width(u->dest_reg_a.reg) : 32;
+
+            uop_t *new_uop     = lower_copy_uop(ir, u, u->type);
+            new_uop->src_reg_a = codegen_reg_read(src_a_reg);
+            new_uop->src_reg_b = codegen_reg_read(src_b_reg);
+            if (d_is_sub && reg_needs_bfi(dreg)) {
+                new_uop->dest_reg_a = codegen_reg_write(IREG_temp4, ir->wr_pos - 1);
+                uop_BFI(ir, dreg | IREG_SIZE_L, dreg | IREG_SIZE_L, IREG_temp4, d_lsb, d_width);
+                zext_width[dreg]       = 0;
+                zext_width[IREG_temp4] = 8;
+            } else {
+                new_uop->dest_reg_a = codegen_reg_write(dreg | IREG_SIZE_L, ir->wr_pos - 1);
+                zext_width[dreg]    = 8;
+            }
+            continue;
+        }
+
+        /* 6. General uOp lowering */
+        int src_a_norm   = u->src_reg_a.reg;
+        int src_b_norm   = u->src_reg_b.reg;
+        int src_c_norm   = u->src_reg_c.reg;
+        int src_a_signed = (uop_masked == (UOP_SAR & UOP_MASK) || uop_masked == (UOP_SAR_IMM & UOP_MASK));
+
+        if (is_subreg_int(u->src_reg_a)) {
+            src_a_norm = lower_read_subreg(ir, u->src_reg_a, src_a_signed, IREG_temp5, zext_width);
+        }
+        if (is_subreg_int(u->src_reg_b)) {
+            src_b_norm = lower_read_subreg(ir, u->src_reg_b, 0, IREG_temp6, zext_width);
+        }
+        if (is_subreg_int(u->src_reg_c)) {
+            if (uop_masked == (UOP_CMOV & UOP_MASK)) {
+                int rc = IREG_GET_REG(u->src_reg_c.reg);
+                int wc = subreg_width(u->src_reg_c.reg);
+                if (subreg_lsb(u->src_reg_c.reg) == 0 && zext_width[rc] != 0 && zext_width[rc] <= wc)
+                    src_c_norm = rc | IREG_SIZE_L;
+            } else {
+                src_c_norm = lower_read_subreg(ir, u->src_reg_c, 0, IREG_temp3, zext_width);
+            }
+        }
+
+        int dest_is_sub = is_subreg_int(u->dest_reg_a);
+        int dreg        = dest_is_sub ? IREG_GET_REG(u->dest_reg_a.reg) : -1;
+        int d_lsb       = dest_is_sub ? subreg_lsb(u->dest_reg_a.reg) : 0;
+        int d_width     = dest_is_sub ? subreg_width(u->dest_reg_a.reg) : 32;
+
+        uop_t *new_uop = lower_copy_uop(ir, u, u->type);
+        if (!ir_reg_is_invalid(u->src_reg_a))
+            new_uop->src_reg_a = codegen_reg_read(src_a_norm);
+        if (!ir_reg_is_invalid(u->src_reg_b))
+            new_uop->src_reg_b = codegen_reg_read(src_b_norm);
+        if (!ir_reg_is_invalid(u->src_reg_c))
+            new_uop->src_reg_c = codegen_reg_read(src_c_norm);
+
+        if (dest_is_sub) {
+            int result_is_zext = 0;
+            if (uop_masked == (UOP_MOV_IMM & UOP_MASK) ||
+                uop_masked == (UOP_AND_IMM & UOP_MASK) ||
+                uop_masked == (UOP_OR_IMM & UOP_MASK) ||
+                uop_masked == (UOP_XOR_IMM & UOP_MASK)) {
+                new_uop->imm_data &= (d_width == 8) ? 0xffu : 0xffffu;
+                result_is_zext = 1;
+            } else if (uop_masked == (UOP_SHR_IMM & UOP_MASK) ||
+                       uop_masked == (UOP_SHR & UOP_MASK) ||
+                       uop_masked == (UOP_MOVZX_REG_PTR_8 & UOP_MASK) ||
+                       uop_masked == (UOP_MOVZX_REG_PTR_16 & UOP_MASK) ||
+                       uop_masked == (UOP_AND & UOP_MASK) ||
+                       uop_masked == (UOP_OR & UOP_MASK) ||
+                       uop_masked == (UOP_XOR & UOP_MASK) ||
+                       uop_masked == (UOP_MOV & UOP_MASK) ||
+                       uop_masked == (UOP_CMOV & UOP_MASK)) {
+                result_is_zext = 1;
+            }
+
+            if (reg_needs_bfi(dreg)) {
+                new_uop->dest_reg_a = codegen_reg_write(IREG_temp4, ir->wr_pos - 1);
+                uop_BFI(ir, dreg | IREG_SIZE_L, dreg | IREG_SIZE_L, IREG_temp4, d_lsb, d_width);
+                zext_width[dreg]       = 0;
+                zext_width[IREG_temp4] = result_is_zext ? (uint8_t) d_width : 0;
+            } else {
+                /* Non-GPR sub-register dest (flags_res/temps/segs): compute in a
+                   32-bit temp, then truncate so upper bits never leak. */
+                new_uop->dest_reg_a = codegen_reg_write(IREG_temp4, ir->wr_pos - 1);
+                uop_BFX(ir, dreg | IREG_SIZE_L, IREG_temp4, 0, d_width, 0);
+                zext_width[dreg]       = (uint8_t) d_width;
+                zext_width[IREG_temp4] = 0;
+            }
+        } else if (!ir_reg_is_invalid(u->dest_reg_a)) {
+            int full_dreg       = IREG_GET_REG(u->dest_reg_a.reg);
+            new_uop->dest_reg_a = codegen_reg_write(u->dest_reg_a.reg, ir->wr_pos - 1);
+            if (uop_masked == (UOP_MOV_IMM & UOP_MASK) || uop_masked == (UOP_AND_IMM & UOP_MASK)) {
+                if (u->imm_data <= 0xffu)
+                    zext_width[full_dreg] = 8;
+                else if (u->imm_data <= 0xffffu)
+                    zext_width[full_dreg] = 16;
+                else
+                    zext_width[full_dreg] = 0;
+            } else if (uop_masked == (UOP_MOVZX_REG_PTR_8 & UOP_MASK)) {
+                zext_width[full_dreg] = 8;
+            } else if (uop_masked == (UOP_MOVZX_REG_PTR_16 & UOP_MASK)) {
+                zext_width[full_dreg] = 16;
+            } else if (uop_masked == (UOP_MOV & UOP_MASK) && !ir_reg_is_invalid(new_uop->src_reg_a)) {
+                zext_width[full_dreg] = zext_width[IREG_GET_REG(new_uop->src_reg_a.reg)];
+            } else {
+                zext_width[full_dreg] = 0;
+            }
+        }
+
+        if (u->type & (UOP_TYPE_BARRIER | UOP_TYPE_ORDER_BARRIER | UOP_TYPE_JUMP)) {
+            if (!uop_is_mem_access(u->type))
+                memset(zext_width, 0, sizeof(zext_width));
+        }
+    }
+
+    uop_map_buf[orig_count] = ir->wr_pos;
+    if (codegen_unroll_count && codegen_unroll_start >= 0 && codegen_unroll_start <= orig_count) {
+        codegen_unroll_start = uop_map_buf[codegen_unroll_start];
+    }
+    for (int c = 0; c < ir->wr_pos; c++) {
+        if (ir->uops[c].jump_dest_uop >= 0 && ir->uops[c].jump_dest_uop <= orig_count) {
+            ir->uops[c].jump_dest_uop = uop_map_buf[ir->uops[c].jump_dest_uop];
+        }
+        if ((ir->uops[c].type & UOP_MASK) == (UOP_LOOP_JMP & UOP_MASK) && ir->uops[c].p != NULL) {
+            uintptr_t p_val     = (uintptr_t) ir->uops[c].p;
+            uintptr_t base_ir   = (uintptr_t) ir->uops;
+            uintptr_t base_orig = (uintptr_t) orig_uops_buf;
+            int       old_idx   = -1;
+            if (p_val >= base_ir && p_val < base_ir + orig_count * sizeof(uop_t))
+                old_idx = (p_val - base_ir) / sizeof(uop_t);
+            else if (p_val >= base_orig && p_val < base_orig + orig_count * sizeof(uop_t))
+                old_idx = (p_val - base_orig) / sizeof(uop_t);
+            if (old_idx >= 0 && old_idx < orig_count) {
+                int new_idx = uop_map_buf[old_idx];
+                ir->uops[c].p = &ir->uops[new_idx];
+            }
+        }
+    }
+
+    ir->cur_guest_insn_idx = saved_insn_idx;
+    ir->cur_guest_pc_off   = saved_pc_off;
+}
+
 void
 codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
 {
+    static int opt_bfx_initialized = 0;
+    static int opt_bfx_limit = -1;
+    static int opt_bfx_count = 0;
+    if (!opt_bfx_initialized) {
+        opt_bfx_initialized = 1;
+        const char *env = getenv("BOX86_OPT_BFX");
+        if (env)
+            codegen_opt_bfx = atoi(env);
+        const char *lim = getenv("BOX86_BFX_LIMIT");
+        if (lim)
+            opt_bfx_limit = atoi(lim);
+    }
+    if (codegen_opt_bfx && (opt_bfx_limit < 0 || opt_bfx_count < opt_bfx_limit)) {
+        opt_bfx_count++;
+        codegen_ir_lower_subregs(ir);
+    }
+
     int jump_target_at_end = -1;
     int c;
 

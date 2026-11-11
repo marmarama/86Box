@@ -266,6 +266,8 @@ void codegen_dump_exec_block(codeblock_t *block, uint8_t invalidate_reason);
 void codegen_dump_perf_map_block(codeblock_t *block);
 void codegen_dump_perf_map_symbol(uintptr_t addr, size_t size, const char *name);
 
+extern int flight_recorder_enabled;
+void codegen_dump_print_flight_recorder(void);
 void codegen_dump_enter_block(codeblock_t *block);
 void codegen_dump_notify_idle(void);
 void codegen_dump_notify_event(void);

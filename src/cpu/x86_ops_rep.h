@@ -239,6 +239,10 @@
         addr64 = addr64_2 = 0x00000000;                                                                           \
         if (trap)                                                                                                 \
             cycles_end = cycles + 1; /*Force the instruction to end after only one iteration when trap flag set*/ \
+        if (SRC_REG > 0xffff) {                                                                                   \
+            fprintf(stderr, "MOVSL ESI>64K: %s CS:EIP=%04x:%08x seg.lim_h=%08x SRC=%08x DEST=%08x CNT=%08x CR0=%08x\n", \
+                    #size, CS, cpu_state.pc, cpu_state.ea_seg->limit_high, (uint32_t)SRC_REG, (uint32_t)DEST_REG, (uint32_t)CNT_REG, cr0); \
+        }                                                                                                         \
         while (CNT_REG > 0) {                                                                                     \
             uint8_t temp;                                                                                         \
                                                                                                                   \
@@ -290,6 +294,10 @@
         addr64a_2[0] = addr64a_2[1] = 0x00000000;                                                                 \
         if (trap)                                                                                                 \
             cycles_end = cycles + 1; /*Force the instruction to end after only one iteration when trap flag set*/ \
+        if (SRC_REG > 0xffff) {                                                                                   \
+            fprintf(stderr, "MOVSL ESI>64K: %s CS:EIP=%04x:%08x seg.lim_h=%08x SRC=%08x DEST=%08x CNT=%08x CR0=%08x\n", \
+                    #size, CS, cpu_state.pc, cpu_state.ea_seg->limit_high, (uint32_t)SRC_REG, (uint32_t)DEST_REG, (uint32_t)CNT_REG, cr0); \
+        }                                                                                                         \
         while (CNT_REG > 0) {                                                                                     \
             uint16_t temp;                                                                                        \
                                                                                                                   \
@@ -341,6 +349,10 @@
         addr64a_2[0] = addr64a_2[1] = addr64a_2[2] = addr64a_2[3] = 0x00000000;                                   \
         if (trap)                                                                                                 \
             cycles_end = cycles + 1; /*Force the instruction to end after only one iteration when trap flag set*/ \
+        if (SRC_REG > 0xffff) {                                                                                   \
+            fprintf(stderr, "MOVSL ESI>64K: %s CS:EIP=%04x:%08x seg.lim_h=%08x SRC=%08x DEST=%08x CNT=%08x CR0=%08x\n", \
+                    #size, CS, cpu_state.pc, cpu_state.ea_seg->limit_high, (uint32_t)SRC_REG, (uint32_t)DEST_REG, (uint32_t)CNT_REG, cr0); \
+        }                                                                                                         \
         while (CNT_REG > 0) {                                                                                     \
             uint32_t temp;                                                                                        \
                                                                                                                   \
@@ -391,6 +403,10 @@
         int cycles_end = cycles - ((is386 && cpu_use_dynarec) ? 1000 : 100);                                      \
         if (trap)                                                                                                 \
             cycles_end = cycles + 1; /*Force the instruction to end after only one iteration when trap flag set*/ \
+        if (SRC_REG > 0xffff) {                                                                                   \
+            fprintf(stderr, "MOVSL ESI>64K: %s CS:EIP=%04x:%08x seg.lim_h=%08x SRC=%08x DEST=%08x CNT=%08x CR0=%08x\n", \
+                    #size, CS, cpu_state.pc, cpu_state.ea_seg->limit_high, (uint32_t)SRC_REG, (uint32_t)DEST_REG, (uint32_t)CNT_REG, cr0); \
+        }                                                                                                         \
         while (CNT_REG > 0) {                                                                                     \
                                                                                                                   \
             SEG_CHECK_WRITE_REP(&cpu_state.seg_es);                                                               \
@@ -424,6 +440,10 @@
         int cycles_end = cycles - ((is386 && cpu_use_dynarec) ? 1000 : 100);                                      \
         if (trap)                                                                                                 \
             cycles_end = cycles + 1; /*Force the instruction to end after only one iteration when trap flag set*/ \
+        if (SRC_REG > 0xffff) {                                                                                   \
+            fprintf(stderr, "MOVSL ESI>64K: %s CS:EIP=%04x:%08x seg.lim_h=%08x SRC=%08x DEST=%08x CNT=%08x CR0=%08x\n", \
+                    #size, CS, cpu_state.pc, cpu_state.ea_seg->limit_high, (uint32_t)SRC_REG, (uint32_t)DEST_REG, (uint32_t)CNT_REG, cr0); \
+        }                                                                                                         \
         while (CNT_REG > 0) {                                                                                     \
                                                                                                                   \
             SEG_CHECK_WRITE_REP(&cpu_state.seg_es);                                                               \
@@ -457,6 +477,10 @@
         int cycles_end = cycles - ((is386 && cpu_use_dynarec) ? 1000 : 100);                                      \
         if (trap)                                                                                                 \
             cycles_end = cycles + 1; /*Force the instruction to end after only one iteration when trap flag set*/ \
+        if (SRC_REG > 0xffff) {                                                                                   \
+            fprintf(stderr, "MOVSL ESI>64K: %s CS:EIP=%04x:%08x seg.lim_h=%08x SRC=%08x DEST=%08x CNT=%08x CR0=%08x\n", \
+                    #size, CS, cpu_state.pc, cpu_state.ea_seg->limit_high, (uint32_t)SRC_REG, (uint32_t)DEST_REG, (uint32_t)CNT_REG, cr0); \
+        }                                                                                                         \
         while (CNT_REG > 0) {                                                                                     \
                                                                                                                   \
             SEG_CHECK_WRITE_REP(&cpu_state.seg_es);                                                               \
@@ -491,6 +515,10 @@
         int cycles_end = cycles - ((is386 && cpu_use_dynarec) ? 1000 : 100);                                      \
         if (trap)                                                                                                 \
             cycles_end = cycles + 1; /*Force the instruction to end after only one iteration when trap flag set*/ \
+        if (SRC_REG > 0xffff) {                                                                                   \
+            fprintf(stderr, "MOVSL ESI>64K: %s CS:EIP=%04x:%08x seg.lim_h=%08x SRC=%08x DEST=%08x CNT=%08x CR0=%08x\n", \
+                    #size, CS, cpu_state.pc, cpu_state.ea_seg->limit_high, (uint32_t)SRC_REG, (uint32_t)DEST_REG, (uint32_t)CNT_REG, cr0); \
+        }                                                                                                         \
         while (CNT_REG > 0) {                                                                                     \
             SEG_CHECK_READ_REP(cpu_state.ea_seg);                                                                 \
             CHECK_READ_REP(cpu_state.ea_seg, SRC_REG, SRC_REG);                                                   \
@@ -525,6 +553,10 @@
         int cycles_end = cycles - ((is386 && cpu_use_dynarec) ? 1000 : 100);                                      \
         if (trap)                                                                                                 \
             cycles_end = cycles + 1; /*Force the instruction to end after only one iteration when trap flag set*/ \
+        if (SRC_REG > 0xffff) {                                                                                   \
+            fprintf(stderr, "MOVSL ESI>64K: %s CS:EIP=%04x:%08x seg.lim_h=%08x SRC=%08x DEST=%08x CNT=%08x CR0=%08x\n", \
+                    #size, CS, cpu_state.pc, cpu_state.ea_seg->limit_high, (uint32_t)SRC_REG, (uint32_t)DEST_REG, (uint32_t)CNT_REG, cr0); \
+        }                                                                                                         \
         while (CNT_REG > 0) {                                                                                     \
             SEG_CHECK_READ_REP(cpu_state.ea_seg);                                                                 \
             CHECK_READ_REP(cpu_state.ea_seg, SRC_REG, SRC_REG + 1UL);                                             \
@@ -559,6 +591,10 @@
         int cycles_end = cycles - ((is386 && cpu_use_dynarec) ? 1000 : 100);                                      \
         if (trap)                                                                                                 \
             cycles_end = cycles + 1; /*Force the instruction to end after only one iteration when trap flag set*/ \
+        if (SRC_REG > 0xffff) {                                                                                   \
+            fprintf(stderr, "MOVSL ESI>64K: %s CS:EIP=%04x:%08x seg.lim_h=%08x SRC=%08x DEST=%08x CNT=%08x CR0=%08x\n", \
+                    #size, CS, cpu_state.pc, cpu_state.ea_seg->limit_high, (uint32_t)SRC_REG, (uint32_t)DEST_REG, (uint32_t)CNT_REG, cr0); \
+        }                                                                                                         \
         while (CNT_REG > 0) {                                                                                     \
             SEG_CHECK_READ_REP(cpu_state.ea_seg);                                                                 \
             CHECK_READ_REP(cpu_state.ea_seg, SRC_REG, SRC_REG + 3UL);                                             \

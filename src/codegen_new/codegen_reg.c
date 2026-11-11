@@ -10,10 +10,10 @@
 #include "codegen_reg.h"
 
 int      max_version_refcount;
-uint16_t reg_dead_list = 0;
+uint32_t reg_dead_list = 0;
 
-uint8_t       reg_last_version[IREG_COUNT];
-reg_version_t reg_version[IREG_COUNT][256];
+uint16_t      reg_last_version[IREG_COUNT];
+reg_version_t reg_version[IREG_COUNT][2048];
 
 ir_reg_t invalid_ir_reg = { IREG_INVALID };
 
@@ -188,16 +188,22 @@ struct
     [IREG_temp1] = { REG_DWORD,         (void *) 20,                        REG_INTEGER, REG_VOLATILE },
     [IREG_temp2] = { REG_DWORD,         (void *) 24,                        REG_INTEGER, REG_VOLATILE },
     [IREG_temp3] = { REG_DWORD,         (void *) 28,                        REG_INTEGER, REG_VOLATILE },
+    [IREG_temp4] = { REG_DWORD,         (void *) 32,                        REG_INTEGER, REG_VOLATILE },
+    [IREG_temp5] = { REG_DWORD,         (void *) 36,                        REG_INTEGER, REG_VOLATILE },
+    [IREG_temp6] = { REG_DWORD,         (void *) 40,                        REG_INTEGER, REG_VOLATILE },
 
-    [IREG_temp0d] = { REG_DOUBLE,        (void *) 40,                        REG_FP,      REG_VOLATILE },
-    [IREG_temp1d] = { REG_DOUBLE,        (void *) 48,                        REG_FP,      REG_VOLATILE },
+    [IREG_temp0d] = { REG_DOUBLE,        (void *) 48,                        REG_FP,      REG_VOLATILE },
+    [IREG_temp1d] = { REG_DOUBLE,        (void *) 56,                        REG_FP,      REG_VOLATILE },
 };
 
 static const uint8_t native_requested_sizes[9][8] = 
 {
     [REG_BYTE][IREG_SIZE_B >> IREG_SIZE_SHIFT]          = 1,
+    [REG_BYTE][IREG_SIZE_L >> IREG_SIZE_SHIFT]          = 1,
     [REG_FPU_ST_BYTE][IREG_SIZE_B >> IREG_SIZE_SHIFT]   = 1,
+    [REG_FPU_ST_BYTE][IREG_SIZE_L >> IREG_SIZE_SHIFT]   = 1,
     [REG_WORD][IREG_SIZE_W >> IREG_SIZE_SHIFT]          = 1,
+    [REG_WORD][IREG_SIZE_L >> IREG_SIZE_SHIFT]          = 1,
     [REG_DWORD][IREG_SIZE_L >> IREG_SIZE_SHIFT]         = 1,
     [REG_QWORD][IREG_SIZE_D >> IREG_SIZE_SHIFT]         = 1,
     [REG_FPU_ST_QWORD][IREG_SIZE_D >> IREG_SIZE_SHIFT]  = 1,
@@ -316,6 +322,16 @@ static void
 codegen_reg_load(host_reg_set_t *reg_set, codeblock_t *block, int c, ir_reg_t ir_reg)
 {
     switch (ireg_data[IREG_GET_REG(ir_reg.reg)].native_size) {
+        case REG_BYTE:
+#ifndef RELEASE_BUILD
+            if (ireg_data[IREG_GET_REG(ir_reg.reg)].type != REG_INTEGER)
+                fatal("codegen_reg_load - REG_BYTE !REG_INTEGER\n");
+            if ((uintptr_t) ireg_data[IREG_GET_REG(ir_reg.reg)].p < 256)
+                fatal("codegen_reg_load - REG_BYTE %p\n", ireg_data[IREG_GET_REG(ir_reg.reg)].p);
+#endif
+            codegen_direct_read_8(block, reg_set->reg_list[c].reg, ireg_data[IREG_GET_REG(ir_reg.reg)].p);
+            break;
+
         case REG_WORD:
 #ifndef RELEASE_BUILD
             if (ireg_data[IREG_GET_REG(ir_reg.reg)].type != REG_INTEGER)
@@ -417,8 +433,12 @@ codegen_reg_writeback(host_reg_set_t *reg_set, codeblock_t *block, int c, int in
     int   ir_reg = IREG_GET_REG(reg_set->regs[c].reg);
     void *p      = ireg_data[ir_reg].p;
 
-    if (!reg_version[ir_reg][reg_set->regs[c].version].refcount && ireg_data[ir_reg].is_volatile)
+    if (!reg_version[ir_reg][reg_set->regs[c].version].refcount && ireg_data[ir_reg].is_volatile) {
+        if (invalidate)
+            reg_set->regs[c] = invalid_ir_reg;
+        reg_set->dirty[c] = 0;
         return;
+    }
 
     switch (ireg_data[ir_reg].native_size) {
         case REG_BYTE:
@@ -635,11 +655,11 @@ codegen_reg_alloc_register(ir_reg_t dest_reg_a, ir_reg_t src_reg_a, ir_reg_t src
     host_fp_reg_set.locked = 0;
 
     if (!ir_reg_is_invalid(dest_reg_a)) {
-        if (!ir_reg_is_invalid(src_reg_a) && IREG_GET_REG(src_reg_a.reg) == IREG_GET_REG(dest_reg_a.reg) && src_reg_a.version == dest_reg_a.version - 1)
+        if (!ir_reg_is_invalid(src_reg_a) && IREG_GET_REG(src_reg_a.reg) == IREG_GET_REG(dest_reg_a.reg) && src_reg_a.version < dest_reg_a.version)
             dest_reference++;
-        if (!ir_reg_is_invalid(src_reg_b) && IREG_GET_REG(src_reg_b.reg) == IREG_GET_REG(dest_reg_a.reg) && src_reg_b.version == dest_reg_a.version - 1)
+        if (!ir_reg_is_invalid(src_reg_b) && IREG_GET_REG(src_reg_b.reg) == IREG_GET_REG(dest_reg_a.reg) && src_reg_b.version < dest_reg_a.version)
             dest_reference++;
-        if (!ir_reg_is_invalid(src_reg_c) && IREG_GET_REG(src_reg_c.reg) == IREG_GET_REG(dest_reg_a.reg) && src_reg_c.version == dest_reg_a.version - 1)
+        if (!ir_reg_is_invalid(src_reg_c) && IREG_GET_REG(src_reg_c.reg) == IREG_GET_REG(dest_reg_a.reg) && src_reg_c.version < dest_reg_a.version)
             dest_reference++;
     }
     if (!ir_reg_is_invalid(src_reg_a))
@@ -650,6 +670,41 @@ codegen_reg_alloc_register(ir_reg_t dest_reg_a, ir_reg_t src_reg_a, ir_reg_t src
         alloc_reg(src_reg_c);
     if (!ir_reg_is_invalid(dest_reg_a))
         alloc_dest_reg(dest_reg_a, dest_reference);
+}
+
+static int
+select_victim_host_reg(const host_reg_set_t *reg_set)
+{
+    int c;
+
+    /* 1. Unused slot or dead volatile register (0 instructions to evict) */
+    for (c = 0; c < reg_set->nr_regs; c++) {
+        if (!(reg_set->locked & (1 << c)) &&
+            (ir_reg_is_invalid(reg_set->regs[c]) ||
+             (!ir_get_refcount(reg_set->regs[c]) && ireg_data[IREG_GET_REG(reg_set->regs[c].reg)].is_volatile)))
+            return c;
+    }
+    /* 2. Clean register with no pending reads (0 instructions to evict) */
+    for (c = 0; c < reg_set->nr_regs; c++) {
+        if (!(reg_set->locked & (1 << c)) && !ir_get_refcount(reg_set->regs[c]) && !reg_set->dirty[c])
+            return c;
+    }
+    /* 3. Any register with no pending reads (1 writeback, 0 future reloads) */
+    for (c = 0; c < reg_set->nr_regs; c++) {
+        if (!(reg_set->locked & (1 << c)) && !ir_get_refcount(reg_set->regs[c]))
+            return c;
+    }
+    /* 4. Any clean unlocked register (0 writebacks) */
+    for (c = 0; c < reg_set->nr_regs; c++) {
+        if (!(reg_set->locked & (1 << c)) && !reg_set->dirty[c])
+            return c;
+    }
+    /* 5. Any unlocked register */
+    for (c = 0; c < reg_set->nr_regs; c++) {
+        if (!(reg_set->locked & (1 << c)))
+            return c;
+    }
+    return reg_set->nr_regs;
 }
 
 ir_host_reg_t
@@ -683,22 +738,11 @@ codegen_reg_alloc_read_reg(codeblock_t *block, ir_reg_t ir_reg, int *host_reg_id
     }
 
     if (c == reg_set->nr_regs) {
-        /*No unused registers. Search for an unlocked register with no pending reads*/
-        for (c = 0; c < reg_set->nr_regs; c++) {
-            if (!(reg_set->locked & (1 << c)) && IREG_GET_REG(reg_set->regs[c].reg) != IREG_INVALID && !ir_get_refcount(reg_set->regs[c]))
-                break;
-        }
-        if (c == reg_set->nr_regs) {
-            /*Search for any unlocked register*/
-            for (c = 0; c < reg_set->nr_regs; c++) {
-                if (!(reg_set->locked & (1 << c)))
-                    break;
-            }
+        c = select_victim_host_reg(reg_set);
 #ifndef RELEASE_BUILD
-            if (c == reg_set->nr_regs)
-                fatal("codegen_reg_alloc_read_reg - out of registers\n");
+        if (c == reg_set->nr_regs)
+            fatal("codegen_reg_alloc_read_reg - out of registers\n");
 #endif
-        }
         /* Flush and invalidate any other copy of this IR register */
         for (int i = 0; i < reg_set->nr_regs; i++) {
             if (i != c && !ir_reg_is_invalid(reg_set->regs[i]) && IREG_GET_REG(reg_set->regs[i].reg) == IREG_GET_REG(ir_reg.reg)) {
@@ -776,23 +820,11 @@ codegen_reg_alloc_write_reg(codeblock_t *block, ir_reg_t ir_reg)
     }
 
     if (c == reg_set->nr_regs) {
-        /*Search for unused registers*/
-        for (c = 0; c < reg_set->nr_regs; c++) {
-            if (ir_reg_is_invalid(reg_set->regs[c]) && !(reg_set->locked & (1 << c)))
-                break;
-        }
-
-        if (c == reg_set->nr_regs) {
-            /*No unused registers. Search for an unlocked register*/
-            for (c = 0; c < reg_set->nr_regs; c++) {
-                if (!(reg_set->locked & (1 << c)))
-                    break;
-            }
+        c = select_victim_host_reg(reg_set);
 #ifndef RELEASE_BUILD
-            if (c == reg_set->nr_regs)
-                fatal("codegen_reg_alloc_write_reg - out of registers\n");
+        if (c == reg_set->nr_regs)
+            fatal("codegen_reg_alloc_write_reg - out of registers\n");
 #endif
-        }
         /* Flush and invalidate any other copy of this IR register */
         for (int i = 0; i < reg_set->nr_regs; i++) {
             if (i != c && !ir_reg_is_invalid(reg_set->regs[i]) && IREG_GET_REG(reg_set->regs[i].reg) == IREG_GET_REG(ir_reg.reg)) {
@@ -950,8 +982,8 @@ void
 codegen_reg_process_dead_list(ir_data_t *ir)
 {
     while (reg_dead_list) {
-        int            version = reg_dead_list & 0xff;
-        int            reg     = reg_dead_list >> 8;
+        int            version = reg_dead_list & 0xffff;
+        int            reg     = reg_dead_list >> 16;
         reg_version_t *regv    = &reg_version[reg][version];
         uop_t         *uop     = &ir->uops[regv->parent_uop];
 

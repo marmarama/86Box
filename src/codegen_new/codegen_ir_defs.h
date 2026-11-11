@@ -218,6 +218,11 @@ extern int codegen_last_flags_op;
 /*UOP_SETCC - dest_reg = (src_reg_a <cond> src_reg_b) ? 1 : 0*/
 #define UOP_SETCC (UOP_TYPE_PARAMS_REGS | UOP_TYPE_PARAMS_IMM | 0x75)
 
+#define UOP_BF_IMM(lsb, width, is_signed) (((uint32_t)(lsb) & 0xff) | (((uint32_t)(width) & 0xff) << 8) | ((uint32_t)(!!(is_signed)) << 16))
+#define UOP_BF_LSB(imm)                   ((int)((imm) & 0xff))
+#define UOP_BF_WIDTH(imm)                 ((int)(((imm) >> 8) & 0xff))
+#define UOP_BF_SIGNED(imm)                ((int)(((imm) >> 16) & 1))
+
 /*UOP_FP_ENTER - must be called before any FPU register accessed*/
 #define UOP_FP_ENTER (UOP_TYPE_PARAMS_IMM | 0x80 | UOP_TYPE_BARRIER)
 /*UOP_FADD - (floating point) dest_reg = src_reg_a + src_reg_b*/
@@ -442,7 +447,7 @@ uop_is_mem_access(uint32_t uop_type)
 static inline int
 uop_is_non_faulting_barrier(uint32_t uop_type)
 {
-    if (uop_type & UOP_TYPE_JUMP)
+    if (uop_type & (UOP_TYPE_JUMP | UOP_TYPE_JUMP_DEST))
         return 1;
     uint32_t m = uop_type & UOP_MASK;
     return m == (UOP_NOP_BARRIER & UOP_MASK) ||
@@ -454,7 +459,7 @@ uop_is_non_faulting_barrier(uint32_t uop_type)
 static inline void
 uop_mark_barrier_dirty_regs(uint32_t uop_type)
 {
-    if (uop_type & (UOP_TYPE_BARRIER | UOP_TYPE_ORDER_BARRIER)) {
+    if (uop_type & (UOP_TYPE_BARRIER | UOP_TYPE_ORDER_BARRIER | UOP_TYPE_JUMP_DEST)) {
 #if defined __amd64__ || defined _M_X64
         if (uop_is_mem_access(uop_type)) {
             dirty_ir_regs[0] |= ~((1ull << IREG_oldpc) | (1ull << IREG_pc));
@@ -482,6 +487,8 @@ uop_alloc(ir_data_t *ir, uint32_t uop_type)
     uop = &ir->uops[ir->wr_pos++];
 
     uop->is_a16     = 0;
+    uop->imm_data   = 0;
+    uop->p          = NULL;
 
     uop->dest_reg_a = invalid_ir_reg;
     uop->src_reg_a  = invalid_ir_reg;
@@ -521,6 +528,8 @@ uop_alloc_unroll(ir_data_t *ir, uint32_t uop_type)
     uop = &ir->uops[ir->wr_pos++];
 
     uop->is_a16     = 0;
+    uop->imm_data   = 0;
+    uop->p          = NULL;
 
     uop->dest_reg_a = invalid_ir_reg;
     uop->src_reg_a  = invalid_ir_reg;
