@@ -329,19 +329,6 @@ do_seg_load(x86seg *s, uint16_t *segdat)
     }
 
     if (s == &cpu_state.seg_ds) {
-        fprintf(stderr, "DS LOADED: sel=%04x, base=%08x, limit=%08x, limit_high=%08x, CS:EIP=%04x:%08x, CR0=%08x\n",
-                s->seg, s->base, s->limit, s->limit_high, CS, cpu_state.pc, cr0);
-        if (CS == 0xf000 && cpu_state.pc >= 0xd310 && cpu_state.pc <= 0xd320) {
-            fprintf(stderr, "=== BIOS INT 15h AH=87h Return Code ===\n");
-            for (uint32_t a = 0xfd300; a < 0xfd360; a += 16) {
-                fprintf(stderr, "  %05x: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
-                        a,
-                        readmembl(a), readmembl(a+1), readmembl(a+2), readmembl(a+3),
-                        readmembl(a+4), readmembl(a+5), readmembl(a+6), readmembl(a+7),
-                        readmembl(a+8), readmembl(a+9), readmembl(a+10), readmembl(a+11),
-                        readmembl(a+12), readmembl(a+13), readmembl(a+14), readmembl(a+15));
-            }
-        }
         if ((s->base == 0) && (s->limit_low == 0) && (s->limit_high == 0xffffffff))
             cpu_cur_status &= ~CPU_STATUS_NOTFLATDS;
         else

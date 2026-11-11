@@ -285,19 +285,15 @@ x86gen(void)
 }
 
 void
-x86gpf(char *s, uint16_t error)
+x86gpf(UNUSED(char *s), uint16_t error)
 {
-    fprintf(stderr, "=== x86gpf: '%s', error=0x%x caller=%p CS:EIP=%04x:%08x CR0=%08x ===\n",
-            s ? s : "(null)", error, __builtin_return_address(0), CS, cpu_state.pc, cr0);
     cpu_state.abrt = ABRT_GPF;
     abrt_error     = error;
 }
 
 void
-x86gpf_expected(char *s, uint16_t error)
+x86gpf_expected(UNUSED(char *s), uint16_t error)
 {
-    fprintf(stderr, "=== x86gpf_expected: '%s', error=0x%x caller=%p CS:EIP=%04x:%08x CR0=%08x ===\n",
-            s ? s : "(null)", error, __builtin_return_address(0), CS, cpu_state.pc, cr0);
     cpu_state.abrt = ABRT_GPF | ABRT_EXPECTED;
     abrt_error     = error;
 }

@@ -4308,12 +4308,12 @@ const uOpFn uop_handlers[UOP_MAX] = {
 void
 codegen_direct_read_8(codeblock_t *block, int host_reg, void *p)
 {
-    host_x86_MOVZX_REG_ABS_32_8(block, host_reg, p);
+    host_x86_MOV8_REG_ABS(block, host_reg, p);
 }
 void
 codegen_direct_read_16(codeblock_t *block, int host_reg, void *p)
 {
-    host_x86_MOVZX_REG_ABS_32_16(block, host_reg, p);
+    host_x86_MOV16_REG_ABS(block, host_reg, p);
 }
 void
 codegen_direct_read_32(codeblock_t *block, int host_reg, void *p)

@@ -405,15 +405,6 @@ resetx86(void)
 void
 softresetx86(void)
 {
-    fprintf(stderr, "=== softresetx86 called from %p! CS:EIP=%04X:%08X (lin=%08x), CS.base=%08x, CR0=%08x ===\n",
-            __builtin_return_address(0), CS, cpu_state.pc, cpu_state.seg_cs.base + cpu_state.pc,
-            cpu_state.seg_cs.base, cr0);
-    fprintf(stderr, "    EAX=%08x EBX=%08x ECX=%08x EDX=%08x ESI=%08x EDI=%08x EBP=%08x ESP=%08x\n",
-            EAX, EBX, ECX, EDX, ESI, EDI, EBP, ESP);
-#if defined(USE_NEW_DYNAREC)
-    extern void codegen_dump_print_flight_recorder(void);
-    codegen_dump_print_flight_recorder();
-#endif
     if (soft_reset_mask)
         return;
 

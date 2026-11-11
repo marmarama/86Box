@@ -671,7 +671,7 @@ codegen_backend_prologue(codeblock_t *block)
     codegen_mem_slowpath_reset();
     block_pos = BLOCK_START; /*Entry code*/
     block->direct_entry_pos = block_pos;
-    if (codegen_dump_is_active() || codegen_profile_active || codegen_hang_detect_active || flight_recorder_enabled) {
+    if (codegen_dump_is_active() || codegen_profile_active || codegen_hang_detect_active) {
         int cycles_disp = (int) offsetof(cpu_state_t, _cycles) - 128;
         host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, cycles_disp, REG_R14);
 #ifdef _WIN64

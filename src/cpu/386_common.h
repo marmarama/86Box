@@ -252,9 +252,6 @@ extern int checkio(uint32_t port, int mask);
 
 #define CHECK_READ(chseg, low, high)                                                                                                                   \
     if ((low < (chseg)->limit_low) || (high > (chseg)->limit_high) || ((msw & 1) && !(cpu_state.eflags & VM_FLAG) && (((chseg)->access & 10) == 8))) { \
-        fprintf(stderr, "CHECK_READ fail: seg=%s, low=0x%lx, limit_low=0x%x, high=0x%lx, limit_high=0x%x, msw=0x%x, access=0x%x, CS:EIP=%04x:%08x\n", \
-                (chseg) == &cpu_state.seg_cs ? "CS" : (chseg) == &cpu_state.seg_ds ? "DS" : (chseg) == &cpu_state.seg_es ? "ES" : (chseg) == &cpu_state.seg_ss ? "SS" : (chseg) == &cpu_state.seg_fs ? "FS" : (chseg) == &cpu_state.seg_gs ? "GS" : "EA", \
-                (unsigned long)(low), (chseg)->limit_low, (unsigned long)(high), (chseg)->limit_high, msw, (chseg)->access, CS, cpu_state.pc); \
         x86gpf("Limit check (READ)", 0);                                                                                                               \
         return 1;                                                                                                                                      \
     }                                                                                                                                                  \
@@ -268,12 +265,6 @@ extern int checkio(uint32_t port, int mask);
 
 #define CHECK_READ_REP(chseg, low, high)                                         \
     if ((low < (chseg)->limit_low) || (high > (chseg)->limit_high)) {            \
-        fprintf(stderr, "CHECK_READ_REP fail at %s:%d in %s: seg=%s (sel=0x%x, base=0x%x, limit=0x%x, limit_high=0x%x), low=0x%lx, high=0x%lx, CS:EIP=%04x:%08x, ESI=0x%x, EDI=0x%x, ECX=0x%x, CR0=0x%x, EFLAGS=0x%x\n", \
-                __FILE__, __LINE__, __func__, \
-                (chseg) == &cpu_state.seg_cs ? "CS" : (chseg) == &cpu_state.seg_ds ? "DS" : (chseg) == &cpu_state.seg_es ? "ES" : (chseg) == &cpu_state.seg_ss ? "SS" : "OTHER", \
-                (chseg)->seg, (chseg)->base, (chseg)->limit, (chseg)->limit_high, \
-                (unsigned long)(low), (unsigned long)(high), CS, cpu_state.pc, \
-                cpu_state.regs[6].l, cpu_state.regs[7].l, cpu_state.regs[1].l, cr0, cpu_state.eflags); \
         x86gpf("Limit check (READ)", 0);                                         \
         break;                                                                   \
     }                                                                            \
