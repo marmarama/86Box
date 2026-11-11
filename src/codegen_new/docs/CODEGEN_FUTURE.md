@@ -10,7 +10,7 @@ This document collects long-term architectural proposals, middle-end/backend des
 | **Proposal 2: Persistent JIT Execution Region & Pinned State** | Execution Model, Allocator & Backend (`codegen_block.c`, `codegen_backend_*`) | Replace per-block C function boundaries (`void (*)(void)`) with a persistent JIT region, pinned guest GPRs, and an in-JIT assembly dispatch stub. | **22.17%** of all JIT instructions are currently prologue/spill/reload glue; **6.58%** of host CPU time is C dispatcher overhead (**199M** C returns). |
 | **Proposal 3: Middle-End IR Liveness & Barrier Refinement** | IR Optimizer (`codegen_ir.c`, `codegen_reg.c`) | Decouple fault barriers from full register flushes; eliminate dead lazy-flag writes and redundant `pc`/`oldpc` stores via an $O(N)$ backward pass. | **961M host cycles** (**115,176** static sites) wasted on dead flag materialization; **137.7M** redundant `pc`/`oldpc` writes. |
 | **Proposal 4: Protected-Mode Segment Descriptor Caching** | Segment & Control-Flow Helpers (`x86seg.c`, `codegen_ops_mov.c`, `codegen_ops_jump.c`) | Cache validated GDT/LDT entries and inline fast-path selector reloads (`MOV seg, r/m`, `IRET`/`LCALL`/`LJMP`). | Top #1 and #2 hottest blocks in Windows 98 (`blk#55748`, `blk#58507`) spend **>1,100 host cycles/exec** in C `loadseg()` / `op_pmodeiret()`. |
-| **Proposal 5: IR Orthogonalization, Sub-Register Canonicalization & Cross-Backend Unification** | IR, Register Allocator, Frontend & Backends (`codegen_ir_defs.h`, `codegen_reg.c`, `codegen_backend_*`) | Canonicalize 8/16-bit sub-registers via explicit `UOP_BFX`/`UOP_BFI`, collapse redundant IR opcodes, template frontend R/M decoding, and share runtime stubs and uOp lowering across `x86-64`, `arm64`, and `loongarch64`. | Eliminates ~60–70% of backend handler code (~10,000+ LOC across 3 backends) and ~5,000 LOC of frontend repetition while unlocking full SSA optimizations on 8/16-bit ops and feature parity across all architectures. |
+| **Proposal 5: IR Orthogonalization, Sub-Register Canonicalization & Cross-Backend Unification** | IR, Register Allocator, Frontend & Backends (`codegen_ir_defs.h`, `codegen_reg.c`, `codegen_backend_*`) | Canonicalize 8/16-bit sub-registers via explicit `UOP_BFX`/`UOP_BFI`, collapse redundant IR opcodes, template frontend R/M decoding, share runtime stubs across backends, and decompose monolithic files into modular units (< 500–800 LOC) optimized for AI coding agent context windows. | Eliminates ~60–70% of backend handler code (~10,000+ LOC across 3 backends), cuts agent context overhead by **75%–90%** (saving 40k–80k tokens per task), and delivers feature parity across all host architectures. |
 
 ---
 
@@ -880,6 +880,110 @@ A few small cleanups in [`codegen_reg.c`](file:///home/marm/src/86Box/src/codege
 
 ---
 
+### 5.6 Modular Sub-Unit Architecture & Directory Layout (Context-Optimized for Coding Agents)
+
+#### The Problem: Monolithic Files and LLM Context Exhaustion
+Today, `codegen_new` contains several monolithic files that create severe cognitive friction and context-window bloat for both human engineers and AI coding agents:
+- `codegen_backend_x86-64_uops.c`: **4,496 lines** (~35,000–45,000 tokens)
+- `codegen_backend_arm64_uops.c`: **4,195 lines** (~35,000 tokens)
+- `codegen_backend_loongarch64_uops.c`: **2,675 lines** (~22,000 tokens)
+- `codegen_ops_jit_wrappers.h`: **1,790 lines** (~15,000 tokens)
+- `codegen_backend_x86-64_ops.c`: **1,583 lines** (~14,000 tokens)
+- `codegen_ir_defs.h`: **1,118 lines** (~10,000 tokens)
+
+When a coding agent is tasked with adding a new instruction lowering (e.g., `DIV` or `CMOV`) or fixing a register allocation bug, it must read 3–4 of these monolithic files simultaneously, consuming **60,000 to 100,000 tokens** before writing a single line of code. This causes:
+1. **Severe Attention Degradation**: High token volume dilutes the agent's attention over long files, increasing hallucination rates and subtle off-by-one errors.
+2. **Accidental Regressions**: In a 4,500-line backend file, an agent editing an ALU handler risks inadvertently modifying or reformatting unrelated FPU, SIMD, or memory handlers in adjacent sections.
+3. **High Latency & Tool Overhead**: Reading and diffing monolithic files across iterative test-edit cycles wastes API quota and slows turnaround times.
+4. **Merge Conflicts**: Multiple agents or developers cannot touch different instruction families within the same backend concurrently without colliding.
+
+#### Target Directory Architecture
+To optimize context utilization, no individual file should exceed **500–800 lines** (the ideal sweet spot for context loading, comprehension, and atomic diffing). The engine is partitioned into five decoupled sub-units separated by narrow, opaque C interface headers:
+
+```
+src/codegen_new/
+├── include/                   # Public contracts & opaque types (< 300 lines each)
+│   ├── ir.h                   # uop_t, ir_data_t, core opcode enums, barrier flags
+│   ├── regalloc.h             # Abstract register allocator API (alloc, read, write, flush)
+│   ├── block.h                # codeblock_t, linking structures (BLOCK_EXIT_*), SMC hooks
+│   └── backend_api.h          # uOp backend interface vtable & handler dispatch signatures
+│
+├── frontend/                  # Tier 1: Guest x86 Lifters (Emits IR only; no host knowledge)
+│   ├── decode_ea.c            # Effective address calculation (16-bit EA & 32-bit SIB) (~500 lines)
+│   ├── ops_alu.c              # ADD, ADC, SUB, SBB, CMP, NEG, INC, DEC (~600 lines)
+│   ├── ops_logic.c            # AND, OR, XOR, NOT, TEST (~400 lines)
+│   ├── ops_shift.c            # SHL, SHR, SAR, ROL, ROR, RCL, RCR, SHLD, SHRD (~650 lines)
+│   ├── ops_branch.c           # Jcc, LOOP, LOOPE, LOOPNE, JCXZ (~450 lines)
+│   ├── ops_jump.c             # JMP, CALL, RET, IRET, INT, INTO (~500 lines)
+│   ├── ops_mov.c              # MOV, MOVZX, MOVSX, CMOVcc, BSWAP, XCHG (~500 lines)
+│   ├── ops_string.c           # In-block REP MOVS, STOS, LODS, SCAS, CMPS (~700 lines)
+│   ├── ops_fpu.c              # x87 floating-point lifters (~600 lines)
+│   └── ops_simd.c             # MMX and 3DNow! lifters (~500 lines)
+│
+├── optimizer/                 # Tier 2: Pure IR Middle-End (No host or guest target dependencies)
+│   ├── pass_liveness.c        # Backward pass: DSE, dead lazy-flags, dead pc/oldpc (~350 lines)
+│   ├── pass_peephole.c        # Forward pass: Constant folding, algebraic identities (~400 lines)
+│   ├── pass_subreg_lower.c    # Sub-register canonicalization (BFX / BFI) (~300 lines)
+│   └── pass_unroll.c          # In-block loop unrolling & duplication (~250 lines)
+│
+├── regalloc/                  # Tier 2: Linear Register Allocator
+│   ├── reg_pool.c             # Host register pool tracking, spill/reload logic (~450 lines)
+│   ├── reg_version.c          # SSA version lifecycle, reference counting, dead list (~350 lines)
+│   └── reg_pinning.c          # Cross-block cycle pinning (R14) & GPR caching (~300 lines)
+│
+├── engine/                    # Tier 2: Architecture-Agnostic JIT Runtime & Chaining
+│   ├── block_cache.c          # Block allocation, page hashing, SMC dirty-mask tracking (~600 lines)
+│   ├── block_link.c           # Direct chaining (DIRECT_1, COND_2), patch_jmp_disp (~500 lines)
+│   ├── host_pacer.c           # Real-time clock synchronization & contention gating (~350 lines)
+│   └── dispatch_loop.c        # Main exec386_dynarec loop and replenishment (~450 lines)
+│
+└── backends/                  # Tier 3: Target Code Emitters (Stateless host encoders only)
+    ├── common/                # Shared across all host architectures
+    │   ├── abi_table.c        # Host C ABI argument register definitions (~150 lines)
+    │   ├── runtime_stubs.c    # Shared codegen_enter_jit, dispatch_stub, event_stub (~450 lines)
+    │   └── mem_routines.c     # Unified fast/slow TLB load/store generator (~500 lines)
+    ├── x86_64/
+    │   ├── emit_x86.h         # Raw instruction encoders (REX, ModR/M, SIB) (~600 lines)
+    │   ├── uop_alu.c          # Integer ALU, logic, bitfield, shifts (~450 lines)
+    │   ├── uop_mem.c          # TLB lookup fast-paths, load/store uOps (~400 lines)
+    │   ├── uop_branch.c       # Jumps, calls, block exits, CMOV, SETcc (~350 lines)
+    │   ├── uop_fpu.c          # x87 floating point uOps (~400 lines)
+    │   └── uop_simd.c         # SSE2, MMX, and 3DNow! vector uOps (~550 lines)
+    ├── arm64/
+    │   ├── emit_arm64.h       # Raw A64 instruction encoders (~500 lines)
+    │   ├── uop_alu.c          # Integer ALU, logic, UBFX/BFI (~400 lines)
+    │   ├── uop_mem.c          # Load/store uOps & TLB handlers (~400 lines)
+    │   ├── uop_branch.c       # Jumps, exits, CMOV, SETcc (~350 lines)
+    │   └── uop_simd.c         # NEON vector uOps (~500 lines)
+    └── loongarch64/
+        ├── emit_loong64.h     # Raw LoongArch64 instruction encoders (~450 lines)
+        ├── uop_alu.c          # Integer ALU & bstrins/bstrpick (~350 lines)
+        ├── uop_mem.c          # Load/store uOps (~350 lines)
+        └── uop_branch.c       # Jumps and exits (~300 lines)
+```
+
+#### Quantitative Impact on Agent Context Usage
+
+| Typical Development Task | Current Architecture (Files Loaded) | Modular Layout (Files Loaded) | Token Reduction |
+| :--- | :--- | :--- | :---: |
+| **Add a new native integer lowering (e.g. `DIV`/`IDIV`)** | `codegen_ir_defs.h` (1,118)<br>`codegen_ops_arith.c` (960)<br>`codegen_backend_x86-64_uops.c` (4,496)<br>**Total: ~6,574 lines (~52,500 tokens)** | `include/ir.h` (250)<br>`frontend/ops_alu.c` (600)<br>`backends/x86_64/uop_alu.c` (450)<br>**Total: ~1,300 lines (~10,400 tokens)** | **-80.2%** |
+| **Enhance constant folding / peephole rules** | `codegen_ir_defs.h` (1,118)<br>`codegen_ir.c` (950)<br>`codegen_reg.h` (470)<br>**Total: ~2,538 lines (~20,300 tokens)** | `include/ir.h` (250)<br>`optimizer/pass_peephole.c` (400)<br>**Total: ~650 lines (~5,200 tokens)** | **-74.4%** |
+| **Tune real-time host pacing & idle sleep** | `codegen.c` (850)<br>`codegen_block.c` (1,600)<br>`codegen_backend_x86-64.c` (1,580)<br>**Total: ~4,030 lines (~32,200 tokens)** | `include/block.h` (250)<br>`engine/host_pacer.c` (350)<br>**Total: ~600 lines (~4,800 tokens)** | **-85.1%** |
+| **Port a uOp to ARM64 (e.g. `UOP_SETCC`)** | `codegen_backend_x86-64_uops.c` (4,496)<br>`codegen_backend_arm64_uops.c` (4,195)<br>**Total: ~8,691 lines (~69,500 tokens)** | `backends/x86_64/uop_branch.c` (350)<br>`backends/arm64/uop_branch.c` (350)<br>**Total: ~700 lines (~5,600 tokens)** | **-91.9%** |
+
+#### Safe, Zero-Downtime Migration Plan
+This reorganization can be executed in three incremental, non-breaking steps without disrupting ongoing dynarec work:
+
+1. **Step 1: Domain Split of Backends (Lowest Risk, Immediate Token Win)**
+   - Split `codegen_backend_x86-64_uops.c` into `uop_alu.c`, `uop_mem.c`, `uop_branch.c`, `uop_simd.c` in place.
+   - Each file simply populates its subset of the global `uop_handlers[UOP_MAX]` jump table. No public interface changes required.
+2. **Step 2: Domain Split of Frontend Emitters**
+   - Partition `codegen_ops_misc.c` (970 lines) and `codegen_ops_branch.c` (968 lines) into dedicated opcode files (`ops_branch.c`, `ops_jump.c`, `ops_mov.c`).
+3. **Step 3: Header Decoupling & Directory Moves**
+   - Extract public types (`ir.h`, `regalloc.h`, `block.h`) into `include/` and relocate C files into their corresponding sub-directories, updating `CMakeLists.txt`.
+
+---
+
 ## 3. Summary of Expected Impact (`Proposal 5`)
 
 | Subsystem | Current State | After Proposal 5 |
@@ -888,6 +992,8 @@ A few small cleanups in [`codegen_reg.c`](file:///home/marm/src/86Box/src/codege
 | **IR Optimizer (`codegen_ir.c`)** | Skips all 8/16-bit ops (`!reg_is_native_size`) due to hidden partial-reg dependencies | Full SSA constant folding, copy propagation, and DSE across 8, 16, and 32-bit operations |
 | **Frontend (`codegen_ops_*.c`)** | ~11,500 LOC of hand-expanded size/mode variants | ~5,500 LOC using composable `emit_rm_read`/`write` & size-parameterized emitters |
 | **Backends (`codegen_backend_*`)** | ~7,600 LOC (`x86-64`), ~7,500 LOC (`arm64`), ~4,500 LOC (`loongarch64`) | ~2,000 LOC per backend + ~2,000 LOC shared `codegen_backend_common.c` (~9,600 LOC saved) |
+| **File Sizing & Modularity** | Monolithic files (up to 4,500 LOC / 45k tokens) | Modular, decoupled files capped at < 500–800 LOC each |
+| **Agent Context Overhead** | 50k–100k tokens per task; high hallucination risk | 5k–10k tokens per task; isolated fault domains (-75% to -90% token reduction) |
 | **Cross-Arch Parity** | `x86-64` has in-JIT dispatch/events/chaining; `arm64` & `loongarch64` lag behind | All 3 backends share `codegen_enter_jit`, `codegen_dispatch_stub`, `codegen_event_stub`, and TLB stubs |
 
 
