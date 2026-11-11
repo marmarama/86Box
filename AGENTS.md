@@ -67,6 +67,19 @@ Skills (`.agents/skills/`): [`run-dos-benchmarks`](.agents/skills/run-dos-benchm
 
 ## 4. Build & Workflow
 
+### HARD RULES FOR AGENTS
+1. **NEVER REVERT OR DISCARD IN-FLIGHT / UNCOMMITTED CHANGES WITHOUT BACKUP**:
+   - **Under NO circumstances** may an agent run `git checkout -- .`, `git restore .`, `git reset --hard`, `git clean -fd`, or selectively discard modified files / work in progress just because a task is difficult, failing tests, or being abandoned.
+   - If an agent is stuck, abandoning an approach, switching tasks, or cleaning up, any in-flight changes **MUST FIRST** be preserved on a temporary or stash branch before touching the working directory:
+     ```bash
+     git checkout -b rescue/<task-or-feature-name>-$(date +%s)
+     git add -A
+     git commit -m "rescue: in-flight work before reset"
+     git checkout -
+     ```
+     Or at the absolute minimum: `git stash create` / `git stash push -u -m "rescue: ..."` and verify the stash SHA exists before resetting.
+   - **Never delete or overwrite human or peer-agent work.** Violating this destroys irreplaceable effort. If you cannot complete a task, leave the files intact or safely committed on a rescue branch, log what failed to Taskwarrior, and ask the user for guidance.
+
 Build both configs (binary: `build/new_dynarec/src/86Box`):
 ```bash
 ninja -C build/new_dynarec -j$(nproc)
