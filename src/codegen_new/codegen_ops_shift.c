@@ -1193,7 +1193,7 @@ ropSHLD_16_imm(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32
         } else if (imm >= 16) {
             uop_SHL_IMM(ir, IREG_temp0_W, IREG_16(src_reg), (imm - 16));
         } else {
-            uop_SHL_IMM(ir, IREG_temp0_W, IREG_temp2, imm);
+            uop_SHL_IMM(ir, IREG_temp0_W, IREG_temp2_W, imm);
             uop_SHR_IMM(ir, IREG_temp1_W, IREG_16(src_reg), 16 - imm);
             uop_OR(ir, IREG_temp0_W, IREG_temp0_W, IREG_temp1_W);
         }
@@ -1303,7 +1303,7 @@ ropSHRD_16_imm(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32
         } else if (imm >= 16) {
             uop_SHR_IMM(ir, IREG_temp0_W, IREG_16(src_reg), (imm - 16));
         } else {
-            uop_SHR_IMM(ir, IREG_temp0_W, IREG_temp2, imm);
+            uop_SHR_IMM(ir, IREG_temp0_W, IREG_temp2_W, imm);
             uop_SHL_IMM(ir, IREG_temp1_W, IREG_16(src_reg), 16 - imm);
             uop_OR(ir, IREG_temp0_W, IREG_temp0_W, IREG_temp1_W);
         }
