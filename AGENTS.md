@@ -141,6 +141,7 @@ python3 scripts/86box-ipc.py arm-trigger --pattern "PINBALL.EXE" --output /tmp/p
 | `0x80` | `LINK_RET` | Monomorphic near `RET` |
 
 - `BOX86_LINK_LIMIT=N`: stop linking after N links. Binary-search N to find the corrupting link.
+- `BOX86_BFX_LIMIT=N`: stop applying sub-register canonicalization / BFX lowering (`codegen_ir_lower_subregs`) after N blocks (see `BOX86_OPT_BFX`). Binary-search N to isolate which compiled block suffers from a sub-register lowering or flag clobber regression.
 - Block dumping (`codegen_block.c`): `BOX86_DUMP_BLOCKS`, `_DUMP_PC`, `_DUMP_PHYS`, `_DUMP_MIN_EXEC`, `_DUMP_PROFILE`, `_PERF_MAP`, `_HANG_DETECT`. See `DEBUG-BLOCK-DUMPER.md` and `scripts/analyze_blocks.py`.
 
 ## 6. Task Tracking (Taskwarrior)

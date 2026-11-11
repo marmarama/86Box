@@ -183,6 +183,7 @@ Runtime policy can be configured without recompiling using the `BOX86_LINK_MASK`
 - `0x37`: Protected-mode policy without `LINK_REAL` (`LINK_JMP | LINK_JCC | LINK_LOOP | LINK_PMODE | LINK_SAME_PAGE`).
 - `0x3f`: **Standard Default Policy** (`LINK_JMP | LINK_JCC | LINK_LOOP | LINK_REAL | LINK_PMODE | LINK_SAME_PAGE`). Verified 100% stable on Windows 98 and DOS benchmarks.
 - `BOX86_LINK_LIMIT=N`: Cuts off linking after N links and logs the Nth link details to identify diverging or corrupting blocks.
+- `BOX86_BFX_LIMIT=N`: Cuts off sub-register canonicalization / BFX lowering (`codegen_ir_lower_subregs`) after N compiled blocks (controlled via `BOX86_OPT_BFX`). Binary-search N to pinpoint which block triggers a regression during sub-register lowering.
 
 ---
 
