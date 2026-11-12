@@ -88,12 +88,15 @@ def check_quake_log(vm_dir: Optional[Path], min_offset: int = 0) -> Optional[Dic
     return None
 
 
-def parse_serial_log(log_path: Path, vm_dir: Optional[Path] = None) -> Dict[str, Any]:
+def parse_serial_log(log_path: Path, vm_dir: Optional[Path] = None, min_quake_offset: int = 0) -> Dict[str, Any]:
     """Parse benchmark scores from the guest serial (COM1) output log."""
     if not log_path.exists():
         return {}
 
-    content = log_path.read_text(encoding="latin1", errors="replace")
+    content = log_path.read_text(encoding="latin1", errors="replace").strip()
+    if not content:
+        return {}
+
     results: Dict[str, Any] = {}
 
     # Extract test sections if present
@@ -113,8 +116,8 @@ def parse_serial_log(log_path: Path, vm_dir: Optional[Path] = None) -> Dict[str,
         results["quake_frames"] = int(qm.group(1))
         results["quake_seconds"] = float(qm.group(2))
         results["quake_fps"] = float(qm.group(3))
-    elif vm_dir:
-        q_disk = check_quake_log(vm_dir)
+    elif vm_dir and min_quake_offset > 0:
+        q_disk = check_quake_log(vm_dir, min_offset=min_quake_offset)
         if q_disk:
             results.update(q_disk)
 
@@ -150,7 +153,7 @@ def parse_serial_log(log_path: Path, vm_dir: Optional[Path] = None) -> Dict[str,
     if vax_match:
         results["dhrystone_vax_mips"] = float(vax_match.group(1))
 
-    results["completed"] = COMPLETION_MARKER in content or "quake_fps" in results
+    results["completed"] = (COMPLETION_MARKER in content)
     return results
 
 
@@ -333,7 +336,7 @@ def run_instance(
     current_test: Optional[str] = None
     current_test_start: Optional[float] = None
     completed = False
-    quake_log_start_len = 0
+    quake_log_start_len = get_quake_log_len(vm_dir)
 
     processed_lines = 0
     should_terminate = False
@@ -462,7 +465,7 @@ def run_instance(
     wall_clock = time.monotonic() - start_time
 
     perf_data = parse_perf_stat(stderr) if use_perf else {}
-    guest_results = parse_serial_log(results_file, vm_dir)
+    guest_results = parse_serial_log(results_file, vm_dir, min_quake_offset=quake_log_start_len)
 
     return {
         "wall_clock_seconds": round(wall_clock, 2),
