@@ -871,7 +871,7 @@ codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
         opt_bfx_count++;
         /* Blocks containing LAHF/SAHF keep the known-good unlowered flag path
            until the 16-bit FLAGS sub-register lowering is correct. */
-        if (!block_has_lahf_sahf(ir))
+        if (getenv("BOX86_BFX_FORCE_LAHF") || !block_has_lahf_sahf(ir))
             codegen_ir_lower_subregs(ir);
     }
 

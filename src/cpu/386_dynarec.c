@@ -701,9 +701,179 @@ block_ended:
 }
 
 #ifdef USE_NEW_DYNAREC
+/* ---- Opt-in single-block lockstep verifier (BOX86_VERIFY_BLOCK=<phys>) ----
+   Snapshots architectural state + RAM, runs one compiled block (block linking
+   is suppressed while the verifier is active so exactly one block executes),
+   rolls back, runs the interpreter for the same guest block, and diffs. */
+static int          dyn_verify_init_done = 0;
+static int          dyn_verify_enabled   = 0;
+static int          dyn_verify_all       = 0;
+static uint32_t     dyn_verify_phys      = 0;
+static uint32_t     dyn_verify_min       = 0;
+static uint32_t     dyn_verify_max       = 0xffffffff;
+static int          dyn_verify_state     = 0;
+static cpu_state_t  dyn_verify_snap;
+static uint8_t     *dyn_verify_ram_pre   = NULL;
+static uint8_t     *dyn_verify_ram_jit   = NULL;
+static uint32_t     dyn_verify_saved_cs, dyn_verify_saved_use32;
+static uint16_t     dyn_verify_saved_CS;
+static int          dyn_verify_saved_block_end;
+static codeblock_t *dyn_verify_block = NULL;
+
+static void
+dyn_verify_init(void)
+{
+    if (dyn_verify_init_done)
+        return;
+    dyn_verify_init_done = 1;
+    const char *p = getenv("BOX86_VERIFY_BLOCK");
+    const char *a = getenv("BOX86_VERIFY_ALL");
+    if ((p && *p) || (a && *a)) {
+        dyn_verify_enabled = 1;
+        dyn_verify_all     = (a && *a) ? 1 : 0;
+        dyn_verify_phys    = (p && *p) ? (uint32_t) strtoul(p, NULL, 16) : 0;
+        const char *mn = getenv("BOX86_VERIFY_MIN");
+        const char *mx = getenv("BOX86_VERIFY_MAX");
+        if (mn && *mn) dyn_verify_min = (uint32_t) strtoul(mn, NULL, 16);
+        if (mx && *mx) dyn_verify_max = (uint32_t) strtoul(mx, NULL, 16);
+        if (!dyn_verify_all) {
+            size_t rsz         = (size_t) mem_size * 1024;
+            dyn_verify_ram_pre = malloc(rsz);
+            dyn_verify_ram_jit = malloc(rsz);
+        }
+        pclog("[VERIFY] %s phys=%08x (linking suppressed)\n",
+              dyn_verify_all ? "all blocks" : "watching", dyn_verify_phys);
+    }
+}
+
+static void
+dyn_verify_begin(codeblock_t *block)
+{
+    dyn_verify_init();
+    if (!dyn_verify_enabled || dyn_verify_state)
+        return;
+    if (!dyn_verify_all && block->phys != dyn_verify_phys)
+        return;
+    if (dyn_verify_all && (block->phys < dyn_verify_min || block->phys > dyn_verify_max))
+        return;
+    if (dyn_verify_all) {
+        /* Skip blocks containing I/O instructions: replaying them in the
+           interpreter re-triggers device side effects and produces false
+           divergences (e.g. the 8042 A20 poll loop). */
+        for (int i = 0; i < 64; i++) {
+            uint8_t b = mem_readb_phys(block->phys + i);
+            if (b == 0xe4 || b == 0xe5 || b == 0xe6 || b == 0xe7 ||
+                b == 0xec || b == 0xed || b == 0xee || b == 0xef)
+                return;
+        }
+    }
+    memcpy(&dyn_verify_snap, &cpu_state, sizeof(cpu_state));
+    if (!dyn_verify_all)
+        memcpy(dyn_verify_ram_pre, ram, (size_t) mem_size * 1024);
+    dyn_verify_saved_cs        = cs;
+    dyn_verify_saved_use32     = use32;
+    dyn_verify_saved_CS        = CS;
+    dyn_verify_saved_block_end = cpu_block_end;
+    dyn_verify_block           = block;
+    dyn_verify_state           = 1;
+}
+
+static void
+dyn_verify_finish(void)
+{
+    if (dyn_verify_state != 1)
+        return;
+    dyn_verify_state = 2;
+
+    flags_rebuild();
+    cpu_state_t post_jit = cpu_state;
+    uint32_t    jit_cs    = cs;
+    uint32_t    jit_use32 = use32;
+    uint16_t    jit_CS    = CS;
+    size_t      rsz       = (size_t) mem_size * 1024;
+    if (!dyn_verify_all)
+        memcpy(dyn_verify_ram_jit, ram, rsz);
+
+    memcpy(&cpu_state, &dyn_verify_snap, sizeof(cpu_state));
+    cpu_state.ea_seg = &cpu_state.seg_ds;
+    if (!dyn_verify_all)
+        memcpy(ram, dyn_verify_ram_pre, rsz);
+    cs           = dyn_verify_saved_cs;
+    use32        = dyn_verify_saved_use32;
+    CS           = dyn_verify_saved_CS;
+    cpu_block_end = 0;
+    trap          = 0;
+
+    {
+        int ins = dyn_verify_block ? dyn_verify_block->ins : 1;
+        for (int i = 0; i < ins; i++) {
+            cpu_end_block_after_ins = 1;
+            exec386_dynarec_int();
+        }
+    }
+
+    flags_rebuild();
+    if (cpu_state.pc == dyn_verify_snap.pc && post_jit.pc != dyn_verify_snap.pc) {
+        if (dyn_verify_all)
+            pclog("[VERIFY] skip phys=%08x: interpreter did not advance (entry abrt=%02x)\n",
+                  dyn_verify_snap.pc, dyn_verify_snap.abrt);
+    } else {
+        int diff = (post_jit.pc != cpu_state.pc) || (post_jit.flags != cpu_state.flags);
+        for (int r = 0; r < 8; r++)
+            if (post_jit.regs[r].l != cpu_state.regs[r].l)
+                diff = 1;
+        if (diff) {
+            pclog("[VERIFY] DIVERGENCE at block phys=%08x pc=%08x: jit pc=%08x int pc=%08x flags jit=%04x int=%04x\n",
+                  dyn_verify_block ? dyn_verify_block->phys : 0, dyn_verify_snap.pc, post_jit.pc, cpu_state.pc,
+                  post_jit.flags, cpu_state.flags);
+            pclog("[VERIFY]   lazy jit fo=%d fr=%08x f1=%08x f2=%08x | int fo=%d fr=%08x f1=%08x f2=%08x\n",
+                  post_jit.flags_op, post_jit.flags_res, post_jit.flags_op1, post_jit.flags_op2,
+                  cpu_state.flags_op, cpu_state.flags_res, cpu_state.flags_op1, cpu_state.flags_op2);
+            {
+                uint32_t pa = dyn_verify_block ? dyn_verify_block->phys : dyn_verify_snap.pc;
+                pclog("[VERIFY]   bytes:");
+                for (int bi = 0; bi < 16; bi++)
+                    pclog(" %02x", mem_readb_phys(pa + bi));
+                pclog("\n");
+            }
+            for (int r = 0; r < 8; r++)
+                if (post_jit.regs[r].l != cpu_state.regs[r].l)
+                    pclog("[VERIFY]   reg%d jit=%08x int=%08x\n", r, post_jit.regs[r].l, cpu_state.regs[r].l);
+            if (dyn_verify_all)
+                dyn_verify_state = 3;   /* stop after first divergence */
+        } else if (!dyn_verify_all) {
+            pclog("[VERIFY] match: pc=%08x flags=%04x\n", post_jit.pc, post_jit.flags);
+        }
+    }
+    if (!dyn_verify_all) {
+        uint32_t ndiff = 0, first = 0;
+        for (size_t i = 0; i < rsz; i++) {
+            if (ram[i] != dyn_verify_ram_jit[i]) {
+                if (!ndiff)
+                    first = (uint32_t) i;
+                ndiff++;
+            }
+        }
+        pclog("[VERIFY] ram diffs=%u first=%08x\n", ndiff, first);
+    }
+
+    memcpy(&cpu_state, &post_jit, sizeof(cpu_state));
+    cpu_state.ea_seg = &cpu_state.seg_ds;
+    if (!dyn_verify_all)
+        memcpy(ram, dyn_verify_ram_jit, rsz);
+    cs    = jit_cs;
+    use32 = jit_use32;
+    CS    = jit_CS;
+    if (dyn_verify_all && dyn_verify_state != 3)
+        dyn_verify_state = 0;
+}
+
 void
 dynarec_link_previous_block(codeblock_t *dst_block, uint16_t prev_block_nr, int prev_exit_idx)
 {
+    dyn_verify_init();
+    if (dyn_verify_enabled)
+        return;
     if (prev_block_nr) {
         codeblock_t *src_block = &codeblock[prev_block_nr];
         int exit_idx = prev_exit_idx;
@@ -945,6 +1115,7 @@ exec386_dynarec_dyn(void)
         }
 #    endif
 #    ifdef USE_NEW_DYNAREC
+        dyn_verify_begin(block);
         if (codegen_profile_active) {
             uint64_t t_now = host_rdtsc();
             codegen_host_profile.tsc_c_dispatcher += (t_now - t_dispatch_start);
@@ -975,6 +1146,9 @@ exec386_dynarec_dyn(void)
                 codegen_profile_exit_chain();
 #    endif
         }
+#    ifdef USE_NEW_DYNAREC
+        dyn_verify_finish();
+#    endif
     } else if (valid_block && !cpu_state.abrt) {
 #    ifdef USE_NEW_DYNAREC
         uint64_t t_compiler_start = 0;
