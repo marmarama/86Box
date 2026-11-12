@@ -799,7 +799,7 @@ Restrict all integer ALU, logical, shift, and comparison uOps to operate **exclu
 5. **Unlocks BMI2 (`SHLX`/`SHRX`/`SARX`/`RORX`) and future X86-S / Intel APX**: BMI2 flagless shifts only exist in 32/64-bit forms, and Intel APX (`R16–R31`, 3-operand `NDD`) deprecates `AH`–`DH` and favors 32/64-bit zero-extending operations.
 6. **Unlocks IR Peephole & DSE on 8/16-Bit Code**: Because `UOP_BFI` makes `prev_dest32` an explicit SSA input, all `reg_is_native_size()` bailouts in `codegen_ir.c` disappear. Back-to-back updates to `AL` or `AX` dead-store-eliminate intermediate `UOP_BFI` merges automatically.
 
-#### Evaluation & Decision (Task 17 Post-Mortem): **NO-GO**
+#### Evaluation & Decision (Task 60 Post-Mortem): **NO-GO**
 A complete prototype of `UOP_BFX` and `UOP_BFI` was implemented across all three backends (`x86-64`, `ARM64`, `LoongArch64`) with an IR lowering pass in `codegen_ir_lower_subregs()`. Empirical testing and disassembly analysis revealed severe flaws with blanket 32-bit lowering on x86-64:
 1. **Semantic Divergence for Non-32-Bit Ops**:
    - In x86, 8-bit and 16-bit shifts and rotates (`ROL8`, `ROR8`, `SAR8`, etc.) have different wrap-around and sign-extension semantics that cannot be executed as 32-bit operations without multi-instruction synthetic emulation. A 32-bit `ROL32` on an 8-bit value rotates bit 7 into bit 8 (and shifts in zeroes at bit 0 from bit 31), corrupting guest calculation in BIOS POST and DOS drivers.
@@ -810,7 +810,9 @@ A complete prototype of `UOP_BFX` and `UOP_BFI` was implemented across all three
 3. **Register Pressure & Merge Stalls**:
    - The required bitfield extracts and merges demand 2-3 temporary scratch registers simultaneously for every binary ALU operation, causing register thrashing.
    - Merging sub-registers via `mov ax, r10w` creates false partial-register dependency stalls on modern Out-of-Order execution pipelines (Intel Core / AMD Zen).
-4. **Conclusion**:
+4. **Register Spill/Reload Invariants Across Native Sizes**:
+   - Sub-register canonicalization revealed subtle interactions with host spill code in `codegen_reg.c`: registers whose `ireg_data[r].native_size` is 16-bit (`flags`, `eflags`, segment registers) are spilled and reloaded via `mov reg16, [mem]`, which does not clear the high 16/48 bits of 64-bit host registers. Tracking zero-extension width (`zext_width`) on non-native registers causes invalid optimizations (e.g. converting `UOP_MOVZX` to 32-bit `UOP_MOV`, leaving upper garbage in flags and hanging Windows 98). `zext_width` must strictly be restricted to 32-bit native registers (`reg_is_dword_native`).
+5. **Conclusion**:
    - Proposal 5.1 is rejected (**NO-GO**) as a general IR lowering pass. Sub-register operations will continue to be dispatched natively in backend handlers (`REG_IS_B`, `REG_IS_W`, `REG_IS_L`), which is both faster and more compact on x86-64.
    - The standalone `UOP_BFX` and `UOP_BFI` opcodes remain defined in `codegen_ir_defs.h` and backend handlers for targeted RISC lowerings (e.g., ARM64/LoongArch64 `UBFX`/`BFI`) when desirable.
 
