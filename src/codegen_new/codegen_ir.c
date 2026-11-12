@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <86box/86box.h>
 #include "cpu.h"
@@ -396,8 +397,7 @@ is_subreg_int(ir_reg_t r)
 {
     if (ir_reg_is_invalid(r) || !reg_is_integer(r))
         return 0;
-    int sz = IREG_GET_SIZE(r.reg);
-    return (sz == IREG_SIZE_B || sz == IREG_SIZE_BH || sz == IREG_SIZE_W);
+    return !reg_is_native_size(r);
 }
 
 static inline int
@@ -506,9 +506,10 @@ codegen_ir_lower_subregs(ir_data_t *ir)
         ir->cur_guest_insn_idx = u->guest_insn_idx;
         ir->cur_guest_pc_off   = u->guest_pc_off;
 
-        if (is_jump_dest[i]) {
+        if (is_jump_dest[i] || (u->type & UOP_TYPE_BARRIER)) {
             memset(zext_width, 0, sizeof(zext_width));
-            uop_mark_barrier_dirty_regs(UOP_TYPE_JUMP_DEST);
+            if (is_jump_dest[i])
+                uop_mark_barrier_dirty_regs(UOP_TYPE_JUMP_DEST);
         }
 
         if (uop_masked == UOP_INVALID)
