@@ -769,52 +769,88 @@ Formalizing the Tier 1 $\rightarrow$ Tier 2 boundary makes **Proposal 1 (`x86gen
 
 ### 5.1 Sub-Register Canonicalization (`UOP_BFX` / `UOP_BFI` & Native 32/64-Bit ALU)
 
-#### The Problem
-Currently, every backend uOp handler in [`codegen_backend_arm64_uops.c`](file:///home/marm/src/86Box/src/codegen_new/codegen_backend_arm64_uops.c#L33-L176), [`codegen_backend_loongarch64_uops.c`](file:///home/marm/src/86Box/src/codegen_new/codegen_backend_loongarch64_uops.c#L55-L235), and [`codegen_backend_x86-64_uops.c`](file:///home/marm/src/86Box/src/codegen_new/codegen_backend_x86-64_uops.c#L44-L240) must handle 6 to 12 combinations of `(dest_size, src_size_a, src_size_b)` across `IREG_SIZE_L`, `IREG_SIZE_W`, `IREG_SIZE_B`, and `IREG_SIZE_BH`.
-- Worse, because writing to `IREG_AL` (`IREG_SIZE_B`), `IREG_AH` (`IREG_SIZE_BH`), or `IREG_AX` (`IREG_SIZE_W`) preserves the upper bits of `EAX` without declaring the previous version of `EAX` as an SSA source operand, [`codegen_ir_peephole()`](file:///home/marm/src/86Box/src/codegen_new/codegen_ir.c#L284-L318) and [`codegen_ir_optimize_liveness()`](file:///home/marm/src/86Box/src/codegen_new/codegen_ir.c#L145-L200) must bail out whenever `!reg_is_native_size(reg)`.
+#### Status & Objective (2026-11-12): Evaluation Reopened
 
-#### The Design
-Restrict all integer ALU, logical, shift, and comparison uOps to operate **exclusively on native 32-bit (or 64-bit) values**, and represent sub-register reads and partial-register merges explicitly via two bitfield uOps:
-- **`UOP_BFX(dest32, src32, lsb, width, is_signed)`**:
-  - Extracts `width` bits (`8` or `16`) starting at `lsb` (`0` or `8`), zero- or sign-extending to 32 bits.
-  - Emits `UBFX`/`SBFX` (`UXTB`/`UXTH`/`SXTB`/`SXTH`) on ARM64, `bstrpick.w`/`ext.w.b`/`ext.w.h` on LoongArch64, and `MOVZX`/`MOVSX` (or `SHR 8` for `BH`) on x86-64.
-- **`UOP_BFI(dest32, prev_dest32, val32, lsb, width)`**:
-  - Merges `val32[width-1:0]` into `prev_dest32` at `[lsb + width - 1 : lsb]`, producing a new 32-bit SSA version `dest32`.
-  - Emits `BFI` on ARM64, `bstrins.w` on LoongArch64, and `mov reg8, val8` / `mov reg16, val16` (for `lsb == 0`) or mask-and-OR (for `lsb == 8`, avoiding legacy `ROL16 8` length-changing prefixes) on x86-64.
-- **Seamless Frontend Compatibility**:
-  - The `uop_*` emitter helpers (or an IR lowering pass at the start of `codegen_ir_compile()`) can automatically wrap any sub-register source operand in `UOP_BFX` and any sub-register destination write in `UOP_BFI`, requiring zero disruptive rewrites of `codegen_ops_*.c` while immediately simplifying all backends.
+**The architectural goal is shared scalar value semantics across x86-64, ARM64 and LoongArch64, not merely faster x86-64 code or identical host instruction sequences.** Guest byte/word behavior should be explicit in shared IR rather than an implicit obligation independently implemented by each backend.
 
-#### Why x86-64 Performance Is a Wash (or Slight Net Win) & How It Expands the Host Register Pool
-1. **Guest flags are already 32-bit lazy values**: `codegen_new` never uses host x86 `RFLAGS` to compute 8/16-bit guest flags; it populates 32-bit `IREG_flags_op1`, `IREG_flags_op2`, and `IREG_flags_res`.
-2. **Eliminates the x86-64 REX Prefix vs. High-Byte (`AH`/`BH`/`CH`/`DH`) Encoding Conflict**:
-   - On 32-bit i386, only `EAX`, `ECX`, `EDX`, `EBX` had 8-bit sub-registers (`AL`/`AH`..`BL`/`BH`); `ESI`, `EDI`, `EBP`, `ESP` could not perform 8-bit operations at all.
-   - On x86-64, AMD added low-byte access (`SIL`, `DIL`, `BPL`, `SPL`, `R8B`–`R15B`) via the REX prefix (`0x40`–`0x4F`), **but repurposed register indices `4..7`**: without a REX prefix, 8-bit indices `4..7` encode `AH`, `CH`, `DH`, `BH`; with *any* REX prefix, indices `4..7` encode `SPL`, `BPL`, `SIL`, `DIL` instead.
-   - Consequently, **it is physically impossible on x86-64 to encode an instruction that accesses `AH`/`BH`/`CH`/`DH` when the other operand is in `R8`–`R15` (or `SIL`/`DIL`/`BPL`/`SPL`)**, and `R8`–`R15` have no high-byte sub-register at all. Because [`codegen_host_reg_list`](file:///home/marm/src/86Box/src/codegen_new/codegen_backend_x86-64.c#L51-L64) maps guest registers to `R10`, `R11`, `R13`, `R15`, [`EMIT_ALU8_BINARY`](file:///home/marm/src/86Box/src/codegen_new/codegen_backend_x86-64_uops.c#L44-L91) already cannot use native high-byte encodings and emits multi-instruction `MOVZX` + `SHR 8` + `ROL16 8` sequences.
-3. **Frees `REG_R8` (and `REG_R9`) to Join the Host Register Allocator Pool (`7` $\rightarrow$ `8+` GPRs)**:
-   - Currently, [`codegen_host_reg_list`](file:///home/marm/src/86Box/src/codegen_new/codegen_backend_x86-64.c#L51-L64) only exposes **7** host GPRs (`EAX`, `EBX`, `EDX`, `R10`, `R11`, `R13`, `R15`) to the register allocator because `REG_R8` is reserved behind the allocator's back as a **second dedicated scratch register alongside `REG_ECX`** specifically for `IREG_SIZE_BH` operations:
-     - [`EMIT_ALU8_BINARY`](file:///home/marm/src/86Box/src/codegen_new/codegen_backend_x86-64_uops.c#L66-L84) and [`codegen_CMP_*`](file:///home/marm/src/86Box/src/codegen_new/codegen_backend_x86-64_uops.c#L615-L617) require two simultaneous scratch registers (`REG_ECX` for `src_b` and `REG_R8` for `src_a`) when both operands are `IREG_SIZE_BH`.
-     - [`EMIT_SHIFT8_CL`](file:///home/marm/src/86Box/src/codegen_new/codegen_backend_x86-64_uops.c#L158-L165) reserves `REG_R8` for `IREG_SIZE_BH` because `REG_ECX` (`CL`) is occupied by the shift count.
-   - With `UOP_BFX` / `UOP_BFI`, each bitfield extraction is a normal unary uOp whose destination is allocated by the register allocator itself rather than hardcoded to `REG_ECX` + `REG_R8`. This frees `REG_R8` (and `REG_R9`) to be added directly to `codegen_host_reg_list`, allowing the x86-64 allocator to hold **all 8 guest GPRs (`EAX`–`EDI`) simultaneously without spilling**.
-4. **Eliminates false partial-register dependencies on temporaries**: Today, `IREG_temp0_B` and `IREG_temp0_W` emit 8/16-bit moves and ALU ops on host registers, creating false dependencies on the upper 16/24 bits on Intel P-cores and AMD Zen 1–5 and preventing 3-operand `LEA` usage.
-5. **Unlocks BMI2 (`SHLX`/`SHRX`/`SARX`/`RORX`) and future X86-S / Intel APX**: BMI2 flagless shifts only exist in 32/64-bit forms, and Intel APX (`R16–R31`, 3-operand `NDD`) deprecates `AH`–`DH` and favors 32/64-bit zero-extending operations.
-6. **Unlocks IR Peephole & DSE on 8/16-Bit Code**: Because `UOP_BFI` makes `prev_dest32` an explicit SSA input, all `reg_is_native_size()` bailouts in `codegen_ir.c` disappear. Back-to-back updates to `AL` or `AX` dead-store-eliminate intermediate `UOP_BFI` merges automatically.
+Tracking:
+- **Task 61** (`bfb03ea3-05c2-40e0-9c91-9e27259e028e`): canonical 32/64-bit scalar value semantics and staged cross-backend implementation/evaluation.
+- **Task 60** (`ff7a765e-40a4-4265-a7e7-7b2591b0a307`): focused FCOM/FTST destination-contract audit; an initial correctness dependency of Task 61, not the historical prototype evaluation.
+- The original prototype task (`71acda6e`, completed) records the earlier **NO-GO** decision. That verdict applies to the evaluated blanket-lowering prototype; it does not settle the revised architecture or current hybrid pass. The previous heading's attribution of that evaluation to "Task 60" was incorrect.
 
-#### Evaluation & Decision (Task 60 Post-Mortem): **NO-GO**
-A complete prototype of `UOP_BFX` and `UOP_BFI` was implemented across all three backends (`x86-64`, `ARM64`, `LoongArch64`) with an IR lowering pass in `codegen_ir_lower_subregs()`. Empirical testing and disassembly analysis revealed severe flaws with blanket 32-bit lowering on x86-64:
-1. **Semantic Divergence for Non-32-Bit Ops**:
-   - In x86, 8-bit and 16-bit shifts and rotates (`ROL8`, `ROR8`, `SAR8`, etc.) have different wrap-around and sign-extension semantics that cannot be executed as 32-bit operations without multi-instruction synthetic emulation. A 32-bit `ROL32` on an 8-bit value rotates bit 7 into bit 8 (and shifts in zeroes at bit 0 from bit 31), corrupting guest calculation in BIOS POST and DOS drivers.
-   - `SAR8`/`SAR16` require the sign bit at bit 7/15; lowering to a 32-bit zero-extended `SAR32` treats negative 8-bit numbers as positive numbers, corrupting arithmetic right shifts.
-2. **Instruction & Code Bloat on x86-64**:
-   - Unlike pure RISC ISAs, x86-64 natively encodes 8-bit and 16-bit ALU instructions (`sub ax, 10` is 4 bytes).
-   - Lowering `sub ax, 10` through BFX/BFI transforms 1 native instruction into 5-6 host instructions (`movzx`, `movzx`, `mov`, `sub`, `mov ax`, `movzx`). In 16-bit blocks, this causes ~400-500% code expansion.
-3. **Register Pressure & Merge Stalls**:
-   - The required bitfield extracts and merges demand 2-3 temporary scratch registers simultaneously for every binary ALU operation, causing register thrashing.
-   - Merging sub-registers via `mov ax, r10w` creates false partial-register dependency stalls on modern Out-of-Order execution pipelines (Intel Core / AMD Zen).
-4. **Register Spill/Reload Invariants Across Native Sizes**:
-   - Sub-register canonicalization revealed subtle interactions with host spill code in `codegen_reg.c`: registers whose `ireg_data[r].native_size` is 16-bit (`flags`, `eflags`, segment registers) are spilled and reloaded via `mov reg16, [mem]`, which does not clear the high 16/48 bits of 64-bit host registers. Tracking zero-extension width (`zext_width`) on non-native registers causes invalid optimizations (e.g. converting `UOP_MOVZX` to 32-bit `UOP_MOV`, leaving upper garbage in flags and hanging Windows 98). `zext_width` must strictly be restricted to 32-bit native registers (`reg_is_dword_native`).
-5. **Conclusion**:
-   - Proposal 5.1 is rejected (**NO-GO**) as a general IR lowering pass. Sub-register operations will continue to be dispatched natively in backend handlers (`REG_IS_B`, `REG_IS_W`, `REG_IS_L`), which is both faster and more compact on x86-64.
-   - The standalone `UOP_BFX` and `UOP_BFI` opcodes remain defined in `codegen_ir_defs.h` and backend handlers for targeted RISC lowerings (e.g., ARM64/LoongArch64 `UBFX`/`BFI`) when desirable.
+**Evidence boundary:** the user reports better RT% with lowering enabled before a hang. This is a reason to continue evaluation, not a verified speedup: execution may diverge before the visible hang, skip work, or misaccount cycles. Historical notes report roughly 400–500% expansion in 16-bit blocks, register pressure and merge costs, but this section does not establish a reproducible, execution-weighted comparison for the current pass. Neither a representative expanded sequence nor a crash alone proves the architecture unprofitable.
+
+#### The Problem & Intended Payoff
+
+Backend uOp handlers currently distinguish combinations of `IREG_SIZE_L`, `IREG_SIZE_W`, `IREG_SIZE_B` and `IREG_SIZE_BH`. Writes to AL/AH/AX preserve other bits of EAX, but those dependencies are not consistently explicit in the IR, forcing middle-end optimizers to avoid some non-native-size operations. Different host instruction sets and spill behavior make these implicit obligations difficult to maintain uniformly.
+
+Making extraction, extension, truncation and merging explicit should:
+- Expose the previous full-register value as a real input to partial writes.
+- Enable shared constant propagation, liveness and dead-store elimination on narrow guest operations; those optimizations still need implementation and verification.
+- Remove high-byte encoding constraints from the shared allocator's value model.
+- Reduce duplicated width-specific backend semantics and make failures easier to classify as lowering, allocation or instruction-selection bugs.
+
+These are design benefits to validate, not guarantees of a particular code-size reduction, spill count or performance gain. Reclaiming x86-64 scratch registers is a separate optimization requiring an audit of every remaining use and both host ABIs.
+
+#### Shared Semantic Contract
+
+1. **Separate three widths:** guest operation width, backing-storage/access width, and canonical computation width. A 16-bit flags field may be loaded into a complete 32-bit value and stored back as exactly 16 bits. Do not mechanically change every `ireg_data[].native_size` to dword: aliasing, dependency tracking and stores depend on the existing layout.
+2. **Use explicit full-value operations:**
+   - `BFX32(src, lsb, width, signed)` returns the selected field, zero- or sign-extended to a defined 32-bit bit pattern.
+   - `BFI32(previous, value, lsb, width)` returns `(previous & ~mask) | ((value << lsb) & mask)`, with the inserted field mask explicit and supported shift/mask cases well-defined.
+   - A partial guest GPR write must name the previous full GPR value. Temporary values must be explicitly truncated when guest-width wraparound is required.
+3. **Define 32-to-64-bit use:** a logical 32-bit value has defined bits 0–31. Physical bits 32–63 must not be consumed without an explicit zero/sign extension unless the IR contract guarantees their contents. Do not assume ARM64, LoongArch64 and x86-64 word-result extension behavior is identical. Pointer and true 64-bit operations remain distinct.
+4. **Keep guest-width semantics explicit:** signed comparisons, narrow overflow, arithmetic shifts, rotations and lazy guest flags retain their original width. Widening an opcode alone is not sufficient. Preserve count masking, zero-count behavior, and existing guest-CPU behavior for edge cases.
+5. **Make flags and boundaries safe:** host-condition consumers must not depend on flags accidentally preserved or clobbered by extraction/merge sequences. The value contract must survive spills, barriers, memory fast/slow paths, helper calls and block exits. Preserve exception ordering and cycle deductions from MMIO/C callouts.
+6. **Preserve exact-width memory accesses:** guest RAM/MMIO and packed host-state fields still require byte/word loads and stores. Widening them can touch neighbors, cross pages, change faults or device side effects, and break SMC handling. SIMD lane widths and FP arithmetic are outside the scalar integer policy; integer FP status/results are inside it.
+
+For example, a guest AX addition has explicit dataflow:
+
+```text
+a       = BFX32(eax_old, 0, 16, unsigned)
+b       = BFX32(operand, 0, 16, unsigned)
+sum     = ADD32(a, b)
+eax_new = BFI32(eax_old, sum, 0, 16)
+```
+
+Any guest flags are computed according to the original 16-bit operation, not inherited indiscriminately from host ADD32. If `sum` is used as a wrapped 16-bit result elsewhere, that truncation must also be explicit.
+
+#### Full-Width x86-64 Baseline vs. Later Instruction Selection
+
+Establish a straightforward **full-width scalar-register baseline** first: no byte/word arithmetic or partial-register result writes, including implicit AH writes. Permit exact-width memory accesses and `MOVZX`/`MOVSX` with a 32-bit destination; a narrow source operand does not make the destination partial. Mask/shift-only extraction can be evaluated separately if avoiding narrow register sources is also desired. Variable shifts may still use architectural CL as a count; this is not a narrow data-result operation.
+
+For this baseline, low-byte/word insertion uses full-width mask/OR operations; boolean results use full-width selection rather than SETcc; FP comparison status must avoid LAHF. This deliberately makes the x86-64 implementation resemble a RISC full-value model for validation.
+
+Backend-specific combines can be considered **after** correctness and baseline measurement. A compact native-width sequence is acceptable only if it implements the same explicit inputs, output bits, flag effects and clobbers without reintroducing hidden dependencies. Keep the strict baseline available for comparison if such combines are added. Semantic uniformity is the architectural requirement; strict host-width selection is a separately testable policy, not a reason to widen memory transactions.
+
+#### Current Implementation & Historical Findings
+
+`codegen_ir_lower_subregs()` is currently a **hybrid**, not a completed canonical pipeline. BFX lowering defaults on in the source and can be disabled/limited with `BOX86_OPT_BFX` / `BOX86_BFX_LIMIT`; those diagnostic controls are not a correctness guarantee or proof that full-width coverage is complete.
+
+- The original blanket widening broke narrow shift/rotate/sign semantics. The current pass explicitly retains native-width shifts and rotates, so that finding motivates proper lowering rather than rejecting the revised approach.
+- Extract/operate/insert sequences can increase code size, register pressure and dependencies. Conversely, explicit values may enable optimization and remove other overhead. Compare emitted code after optimization and weight hot blocks by execution; do not assume either direction wins.
+- Native byte/word spill reloads can leave stale upper host-register bits. The current zero-extension tracking fix restricts propagation to dword-native registers (`reg_is_dword_native`). That is a safeguard for the present allocator, not a replacement for the new value/storage-width contract.
+- BFX/BFI handlers exist across all three backends, but that does not prove equivalent handling of every consumer or boundary. The x86-64 BFI emitter still uses partial low-byte/word writes, and ordinary lowering does not cover all runtime helpers.
+
+#### Staged Implementation Plan
+
+| Stage | Work | Main code / acceptance checkpoint |
+| :--- | :--- | :--- |
+| **1. Correctness baseline and contracts** | Specify value/storage/guest widths and upper-bit rules. Reproduce current divergences; inspect original vs lowered IR and host code. Audit FCOM/FTST integer destinations (Task 60). | `codegen_ir.c`, `codegen_ir_defs.h`, `codegen_ops_fpu_arith.c`, all backend handlers. FCOM/FTST concern is static, not a confirmed cause of the Win98 hang: x86-64 handlers require word destinations while general lowering widens them. |
+| **2. Allocator and boundary invariants** | Use full-value reloads of narrow state; retain exact-width stores. Audit parent dependencies, aliases, spills, barriers, helper args/returns, and memory fast/slow paths. Keep zero-extension tracking conservative until proven across those boundaries. | `codegen_reg.c/.h`, backend direct-read/write and memory helpers. Forced-spill and callout tests must agree with non-spilled execution; no neighboring state corruption. |
+| **3. Full-width insertion and conditions** | Replace partial-register BFI writes with mask/merge. Normalize compare operands and CMOV predicates; preserve signed/unsigned/sign-bit/overflow semantics. Implement wide boolean results for the strict baseline. | `codegen_BFX/BFI`, `codegen_cmp_regs`, branch/test, SETCC and CMOV handlers. Test all operand overlap cases and nonzero upper bits. |
+| **4. Guest-width shifts and rotates** | Replace the narrow-op escape hatch with width-correct wide sequences; audit synthesized SHLD/SHRD and rotate-through-carry paths/fallbacks. Preserve lazy flags and count-zero semantics without introducing allocator-unsafe intra-block control flow. | `codegen_ops_shift.c`, `codegen_ir_lower_subregs()`, backend shift handlers. Cover counts 0, width−1, width, width+1 and masked-count boundaries. |
+| **5. FP status and runtime cleanup** | Give FCOM/FTST a canonical integer result; remove LAHF/partial writes for the strict baseline. Clean up tag tests, IRQ flags, dispatch metadata comparisons, memory result/store-value glue, and argument/return extraction. | `codegen_backend_x86-64_uops.c`, `codegen_backend_x86-64.c`, corresponding RISC paths. Shared semantic contracts apply outside ordinary uOp dispatch too. |
+| **6. Verification and profitability** | Add IR contract checks and emitted-code auditing; compare native/hybrid, strict-wide, and (if implemented) canonical-with-native-combines policies. Remove duplicated narrow handlers only after coverage is demonstrated. | Include diagnostic/fallback paths in the policy audit or explicitly scope the guarantee to canonical mode. Record reproducible correctness, performance and code-size evidence before changing release policy. |
+
+#### Verification & Decision Gates
+
+- **Differential semantics:** test lowered vs original/interpreter execution, including guest GPRs, flags, PC, memory writes and faults. Exercise AL/AH/AX preservation, signed values, arithmetic wraparound, narrow overflow conditions, SETcc/CMOV predicates, FCOM/FTST, overlapping inputs/outputs, forced spills and helper boundaries. Check the same contract on ARM64 and LoongArch64; an untested backend remains unverified.
+- **Expansion safety:** stress near-limit narrow-heavy blocks against IR/uOp and emitted-code capacities, including arrays sized by `UOP_NR_MAX`. Expansion must terminate/split the block or fall back safely before exceeding capacity; verify branch-target and loop-target remapping after expansion. This is a required test, not a confirmed overflow finding.
+- **Memory/timing correctness:** cover byte/word page boundaries, MMIO and SMC with unchanged access sizes and fault behavior. Confirm wait-state and helper cycle deductions survive. Better benchmark scores caused by lost cycle accounting are failures, not wins.
+- **Regression gate:** build both release and developer-debug configurations; run DOS benchmarks and DOS/Win98 boot tests. Use `BOX86_LINK_MASK=0` when isolating codegen from linking and `BOX86_BFX_LIMIT` for localization, but identify the first state divergence rather than treating a late hang or compile count as proof of cause.
+- **Matched-work performance:** compare repeated runs from equivalent guest/disk/configuration state through verified workload/boot milestones. Record RT% over aligned intervals, host time for equivalent work, static and execution-weighted code size, and spill/extract/merge counts. Do not compare unequal boot phases or include post-divergence execution as a speedup.
+- **Decision:** continue the shared-semantics architecture evaluation. No validated performance win, completed cross-backend unification, or shippable strict-wide mode is claimed here. Consider performance tradeoffs alongside reduced semantic duplication and maintainability; record the measured costs and benefits before acceptance.
 
 ---
 
