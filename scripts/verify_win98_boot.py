@@ -326,10 +326,16 @@ def main():
         ipc.close()
         proc.terminate()
         try:
-            proc.wait(timeout=5)
+            out, err = proc.communicate(timeout=5)
         except Exception:
             proc.kill()
-            proc.wait()
+            out, err = proc.communicate()
+        with open("/tmp/emu_out.log", "w") as f:
+            if out: f.write(out)
+            if err: f.write(err)
+        for line in (out + err).splitlines():
+            if any(k in line for k in ("[ABRT]", "[DOUBLE", "[TRIPLE", "[BFX]")):
+                print("  emu log:", line)
 
 if __name__ == "__main__":
     sys.exit(main())
