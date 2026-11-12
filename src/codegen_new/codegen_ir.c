@@ -440,6 +440,10 @@ lower_copy_uop(ir_data_t *ir, const uop_t *u, uint32_t new_type)
     new_uop->guest_pc_off   = u->guest_pc_off;
     new_uop->is_a16         = u->is_a16;
     new_uop->jump_dest_uop  = u->jump_dest_uop;
+    new_uop->dest_reg_a     = u->dest_reg_a;
+    new_uop->src_reg_a      = u->src_reg_a;
+    new_uop->src_reg_b      = u->src_reg_b;
+    new_uop->src_reg_c      = u->src_reg_c;
     return new_uop;
 }
 
@@ -831,6 +835,23 @@ codegen_ir_lower_subregs(ir_data_t *ir)
     ir->cur_guest_pc_off   = saved_pc_off;
 }
 
+static int
+block_has_lahf_sahf(ir_data_t *ir)
+{
+    for (int i = 0; i < ir->wr_pos; i++) {
+        uop_t   *u = &ir->uops[i];
+        uint32_t t = u->type & UOP_MASK;
+        if (t == (UOP_AND_IMM & UOP_MASK)) {
+            int d = IREG_GET_REG(u->dest_reg_a.reg);
+            if (d == IREG_EAX && u->imm_data == 0xffff00ff)
+                return 1;   /* LAHF: AND EAX, 0xffff00ff */
+            if (d == IREG_flagsx && u->imm_data == 0xff00)
+                return 1;   /* SAHF: AND FLAGS, 0xff00 */
+        }
+    }
+    return 0;
+}
+
 void
 codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
 {
@@ -848,7 +869,10 @@ codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
     }
     if (codegen_opt_bfx && (opt_bfx_limit < 0 || opt_bfx_count < opt_bfx_limit)) {
         opt_bfx_count++;
-        codegen_ir_lower_subregs(ir);
+        /* Blocks containing LAHF/SAHF keep the known-good unlowered flag path
+           until the 16-bit FLAGS sub-register lowering is correct. */
+        if (!block_has_lahf_sahf(ir))
+            codegen_ir_lower_subregs(ir);
     }
 
     int jump_target_at_end = -1;
