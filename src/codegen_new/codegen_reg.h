@@ -394,6 +394,16 @@ codegen_reg_read(int reg)
 int reg_is_native_size(ir_reg_t ir_reg);
 int reg_is_integer(ir_reg_t ir_reg);
 
+static inline int
+reg_is_dword_native(int reg)
+{
+    int r_idx = IREG_GET_REG(reg);
+    if (r_idx >= IREG_COUNT)
+        return 0;
+    ir_reg_t r = { (uint16_t)(r_idx | IREG_SIZE_L), 0 };
+    return reg_is_native_size(r);
+}
+
 static inline ir_reg_t
 codegen_reg_write(int reg, int uop_nr)
 {

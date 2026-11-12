@@ -397,7 +397,8 @@ is_subreg_int(ir_reg_t r)
 {
     if (ir_reg_is_invalid(r) || !reg_is_integer(r))
         return 0;
-    return !reg_is_native_size(r);
+    int sz = IREG_GET_SIZE(r.reg);
+    return (sz == IREG_SIZE_B || sz == IREG_SIZE_BH || sz == IREG_SIZE_W);
 }
 
 static inline int
@@ -550,7 +551,10 @@ codegen_ir_lower_subregs(ir_data_t *ir)
                 } else {
                     uop_BFX(ir, target_dreg, sreg | IREG_SIZE_L, s_lsb, s_width, is_signed);
                 }
-                zext_width[dreg] = is_signed ? 0 : (uint8_t) s_width;
+                if (reg_is_dword_native(dreg))
+                    zext_width[dreg] = is_signed ? 0 : (uint8_t) s_width;
+                else if (dreg < IREG_COUNT)
+                    zext_width[dreg] = 0;
             }
             continue;
         }
@@ -688,7 +692,10 @@ codegen_ir_lower_subregs(ir_data_t *ir)
                 zext_width[IREG_temp4] = 8;
             } else {
                 new_uop->dest_reg_a = codegen_reg_write(dreg | IREG_SIZE_L, ir->wr_pos - 1);
-                zext_width[dreg]    = 8;
+                if (reg_is_dword_native(dreg))
+                    zext_width[dreg] = 8;
+                else if (dreg < IREG_COUNT)
+                    zext_width[dreg] = 0;
             }
             continue;
         }
@@ -759,26 +766,33 @@ codegen_ir_lower_subregs(ir_data_t *ir)
                    32-bit temp, then truncate so upper bits never leak. */
                 new_uop->dest_reg_a = codegen_reg_write(IREG_temp4, ir->wr_pos - 1);
                 uop_BFX(ir, dreg | IREG_SIZE_L, IREG_temp4, 0, d_width, 0);
-                zext_width[dreg]       = (uint8_t) d_width;
+                if (reg_is_dword_native(dreg))
+                    zext_width[dreg] = (uint8_t) d_width;
+                else if (dreg < IREG_COUNT)
+                    zext_width[dreg] = 0;
                 zext_width[IREG_temp4] = 0;
             }
         } else if (!ir_reg_is_invalid(u->dest_reg_a)) {
             int full_dreg       = IREG_GET_REG(u->dest_reg_a.reg);
             new_uop->dest_reg_a = codegen_reg_write(u->dest_reg_a.reg, ir->wr_pos - 1);
-            if (uop_masked == (UOP_MOV_IMM & UOP_MASK) || uop_masked == (UOP_AND_IMM & UOP_MASK)) {
-                if (u->imm_data <= 0xffu)
+            if (reg_is_dword_native(full_dreg)) {
+                if (uop_masked == (UOP_MOV_IMM & UOP_MASK) || uop_masked == (UOP_AND_IMM & UOP_MASK)) {
+                    if (u->imm_data <= 0xffu)
+                        zext_width[full_dreg] = 8;
+                    else if (u->imm_data <= 0xffffu)
+                        zext_width[full_dreg] = 16;
+                    else
+                        zext_width[full_dreg] = 0;
+                } else if (uop_masked == (UOP_MOVZX_REG_PTR_8 & UOP_MASK)) {
                     zext_width[full_dreg] = 8;
-                else if (u->imm_data <= 0xffffu)
+                } else if (uop_masked == (UOP_MOVZX_REG_PTR_16 & UOP_MASK)) {
                     zext_width[full_dreg] = 16;
-                else
+                } else if (uop_masked == (UOP_MOV & UOP_MASK) && !ir_reg_is_invalid(new_uop->src_reg_a)) {
+                    zext_width[full_dreg] = zext_width[IREG_GET_REG(new_uop->src_reg_a.reg)];
+                } else {
                     zext_width[full_dreg] = 0;
-            } else if (uop_masked == (UOP_MOVZX_REG_PTR_8 & UOP_MASK)) {
-                zext_width[full_dreg] = 8;
-            } else if (uop_masked == (UOP_MOVZX_REG_PTR_16 & UOP_MASK)) {
-                zext_width[full_dreg] = 16;
-            } else if (uop_masked == (UOP_MOV & UOP_MASK) && !ir_reg_is_invalid(new_uop->src_reg_a)) {
-                zext_width[full_dreg] = zext_width[IREG_GET_REG(new_uop->src_reg_a.reg)];
-            } else {
+                }
+            } else if (full_dreg < IREG_COUNT) {
                 zext_width[full_dreg] = 0;
             }
         }
