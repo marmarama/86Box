@@ -731,6 +731,7 @@ dyn_verify_init(void)
     const char *a = getenv("BOX86_VERIFY_ALL");
     if ((p && *p) || (a && *a)) {
         dyn_verify_enabled = 1;
+        codegen_verify_active = 1;
         dyn_verify_all     = (a && *a) ? 1 : 0;
         dyn_verify_phys    = (p && *p) ? (uint32_t) strtoul(p, NULL, 16) : 0;
         const char *mn = getenv("BOX86_VERIFY_MIN");
@@ -906,11 +907,7 @@ dyn_verify_finish(void)
               dyn_verify_block ? dyn_verify_block->ins : -1, jit_used, int_used);
     }
     flags_rebuild();
-    if (post_jit.pc == dyn_verify_snap.pc) {
-        /* Self-loop block: the JIT block can execute multiple in-block
-           iterations while the interpreter's pc-match stops after the first
-           return to the entry pc. Skip the comparison. */
-    } else if (cpu_state.pc == dyn_verify_snap.pc && post_jit.pc != dyn_verify_snap.pc) {
+    if (cpu_state.pc == dyn_verify_snap.pc && post_jit.pc != dyn_verify_snap.pc) {
         if (dyn_verify_all)
             pclog("[VERIFY] skip phys=%08x: interpreter did not advance (entry abrt=%02x)\n",
                   dyn_verify_snap.pc, dyn_verify_snap.abrt);
