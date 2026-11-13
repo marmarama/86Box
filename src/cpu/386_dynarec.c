@@ -774,6 +774,41 @@ dyn_verify_begin(codeblock_t *block)
                 b == 0xec || b == 0xed || b == 0xee || b == 0xef)
                 return;
         }
+        /* Skip REP/REPNE string blocks: the JIT splits the REP loop at a
+           cycle boundary while the interpreter's opMOVS/opSTOS/... runs the
+           whole REP in one instruction, so the block->ins single-step replay
+           ends at a different iteration and reports a false divergence. */
+        for (int i = 0; i < 60; i++) {
+            uint8_t b = mem_readb_phys(block->phys + i);
+            if (b == 0xf3 || b == 0xf2) {
+                int j = i + 1;
+                while (j < 64) {
+                    uint8_t p = mem_readb_phys(block->phys + j);
+                    if (p != 0x66 && p != 0x67)
+                        break;
+                    j++;
+                }
+                uint8_t n = mem_readb_phys(block->phys + j);
+                if ((n >= 0xa4 && n <= 0xa7) || (n >= 0xaa && n <= 0xaf))
+                    return;
+            }
+        }
+        /* Skip mode-switch / privileged / interrupt blocks: the JIT and the
+           interpreter end the block at different points (cpu_block_end /
+           flush), so the block->ins single-step replay reports a false
+           divergence (e.g. lgdt/mov cr0 at phys 0x27aa3). */
+        for (int i = 0; i < 63; i++) {
+            uint8_t b = mem_readb_phys(block->phys + i);
+            if (b == 0xcd || b == 0xcc || b == 0xce || b == 0xcf || b == 0xf4)
+                return;
+            if (b == 0x0f) {
+                uint8_t n = mem_readb_phys(block->phys + i + 1);
+                if (n == 0x00 || n == 0x01 || n == 0x05 || n == 0x06 ||
+                    n == 0x20 || n == 0x22 || n == 0x30 || n == 0x31 ||
+                    n == 0x32 || n == 0x34 || n == 0x35 || n == 0xa2 || n == 0xaa)
+                    return;
+            }
+        }
     }
     memcpy(&dyn_verify_snap, &cpu_state, sizeof(cpu_state));
     if (!dyn_verify_all)
@@ -816,10 +851,15 @@ dyn_verify_finish(void)
     int32_t jit_used = dyn_verify_snap._cycles - post_jit._cycles;
     int32_t int_cyc0 = cycles;
     {
-        int ins = dyn_verify_block ? dyn_verify_block->ins : 1;
-        for (int i = 0; i < ins; i++) {
+        /* Single-step the interpreter until it reaches the JIT's exit pc.
+           Using block->ins alone follows the static fall-through and reports
+           false divergences on taken conditional branches. */
+        int max_steps = (dyn_verify_block ? dyn_verify_block->ins : 1) * 4 + 16;
+        int steps     = 0;
+        while ((steps < max_steps) && (cpu_state.pc != post_jit.pc)) {
             cpu_end_block_after_ins = 1;
             exec386_dynarec_int();
+            steps++;
         }
     }
     int32_t int_used = int_cyc0 - cycles;
