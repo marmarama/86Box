@@ -331,6 +331,37 @@ io_debug_check_addr(uint16_t port)
 }
 #endif
 
+/* A20/8042 I/O trace (BOX86_IO_TRACE=1): logs port 0x60/0x64/0x92 accesses
+   with the emulated timestamp so the A20 handshake can be compared between
+   configurations. */
+static int   io_a20_trace_init = 0;
+static int   io_a20_trace_on   = 0;
+static int   io_a20_trace_left = 0;
+static FILE *io_a20_fp         = NULL;
+
+static void
+io_a20_trace(const char *dir, uint16_t port, uint8_t val)
+{
+    if (!io_a20_trace_init) {
+        io_a20_trace_init = 1;
+        const char *p = getenv("BOX86_IO_TRACE");
+        if (p && *p) {
+            io_a20_trace_on   = 1;
+            io_a20_trace_left = 200000;
+            io_a20_fp         = fopen("/tmp/io_a20.txt", "w");
+        }
+    }
+    if (!io_a20_trace_on || (io_a20_trace_left <= 0))
+        return;
+    io_a20_trace_left--;
+    if (io_a20_fp) {
+        fprintf(io_a20_fp, "%llu %s %04x %02x cs=%04x pc=%08x\n",
+                (unsigned long long) tsc, dir, port, val, CS, cpu_state.pc);
+        if (io_a20_trace_left == 0)
+            fflush(io_a20_fp);
+    }
+}
+
 uint8_t
 inb(uint16_t port)
 {
@@ -398,6 +429,9 @@ inb(uint16_t port)
     if ((port & 0xfff8) == 0x0200)
         fdc37mx0x_watchdog_reset_ext(0);
 
+    if (port == 0x60 || port == 0x64 || port == 0x92)
+        io_a20_trace("in", port, ret);
+
     return ret;
 }
 
@@ -457,6 +491,9 @@ outb(uint16_t port, uint8_t val)
 
     if ((port & 0xfff8) == 0x0200)
         fdc37mx0x_watchdog_reset_ext(0);
+
+    if (port == 0x60 || port == 0x64 || port == 0x92)
+        io_a20_trace("out", port, val);
 }
 
 uint16_t
