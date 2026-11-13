@@ -104,7 +104,7 @@ static int
 opLAHF(UNUSED(uint32_t fetchdat))
 {
     flags_rebuild();
-    AH = cpu_state.flags & 0xff;
+    AH = (cpu_state.flags & 0xd5) | 0x02;
     CLOCK_CYCLES(3);
     PREFETCH_RUN(3, 1, -1, 0, 0, 0, 0, 0);
     return 0;
