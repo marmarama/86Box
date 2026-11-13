@@ -456,6 +456,14 @@ extern void mem_debug_check_addr(uint32_t addr, int write);
 
 extern void mem_a20_init(void);
 extern void mem_a20_recalc(void);
+
+/* Lockstep verifier RAM write-undo log (see 386_dynarec.c). */
+extern int  mem_verify_force_slow;
+extern void mem_undo_begin(int idx);
+extern void mem_undo_end(void);
+extern int  mem_undo_get_count(int idx);
+extern int  mem_undo_get_overflow(int idx);
+extern void mem_undo_apply(int idx, int redo);
 extern void mem_a20_reset_vector_bypass_once(void);
 
 extern void mem_init(void);

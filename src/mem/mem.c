@@ -124,6 +124,69 @@ int mem_a20_state   = 0;
 int mmuflush        = 0;
 int is_compare      = 0;
 int vram_writelookup_active = 0;
+int mem_verify_force_slow = 0;
+
+/* Lockstep verifier RAM write-undo log (see 386_dynarec.c). Two logs are
+   used: index 0 for the JIT block, index 1 for the interpreter replay. */
+#define MEM_UNDO_MAX 4096
+typedef struct {
+    uint32_t addr;
+    uint8_t  oldv;
+    uint8_t  newv;
+} mem_undo_t;
+static mem_undo_t mem_undo[2][MEM_UNDO_MAX];
+static int        mem_undo_count[2];
+static int        mem_undo_overflow[2];
+static int        mem_undo_active = -1;
+
+void
+mem_undo_begin(int idx)
+{
+    mem_undo_count[idx]    = 0;
+    mem_undo_overflow[idx] = 0;
+    mem_undo_active        = idx;
+}
+
+void
+mem_undo_end(void)
+{
+    mem_undo_active = -1;
+}
+
+int
+mem_undo_get_count(int idx)
+{
+    return mem_undo_count[idx];
+}
+
+int
+mem_undo_get_overflow(int idx)
+{
+    return mem_undo_overflow[idx];
+}
+
+void
+mem_undo_apply(int idx, int redo)
+{
+    for (int i = 0; i < mem_undo_count[idx]; i++)
+        ram[mem_undo[idx][i].addr] = redo ? mem_undo[idx][i].newv : mem_undo[idx][i].oldv;
+}
+
+static void
+mem_undo_log(uint32_t addr, uint8_t oldv, uint8_t newv)
+{
+    if (mem_undo_active < 0)
+        return;
+    int idx = mem_undo_active;
+    if (mem_undo_count[idx] < MEM_UNDO_MAX) {
+        mem_undo[idx][mem_undo_count[idx]].addr = addr;
+        mem_undo[idx][mem_undo_count[idx]].oldv = oldv;
+        mem_undo[idx][mem_undo_count[idx]].newv = newv;
+        mem_undo_count[idx]++;
+    } else {
+        mem_undo_overflow[idx] = 1;
+    }
+}
 
 #ifdef USE_NEW_DYNAREC
 uint64_t *byte_dirty_mask;
@@ -771,7 +834,8 @@ addwritelookup(uint32_t virt, uint32_t phys)
         page_lookup[virt >> 12]  = &pages[phys >> 12];
     } else {
 
-        writelookup2[virt >> 12] = (uintptr_t) &ram[(uintptr_t) (phys & ~0xFFF) - (uintptr_t) (virt & ~0xfff)];
+        writelookup2[virt >> 12] = mem_verify_force_slow ? (uintptr_t) LOOKUP_INV
+                                                         : (uintptr_t) &ram[(uintptr_t) (phys & ~0xFFF) - (uintptr_t) (virt & ~0xfff)];
     }
 
     writelookup[writelnext++] = virt >> 12;
@@ -2284,6 +2348,7 @@ mem_write_ramb_page(uint32_t addr, uint8_t val, page_t *page)
         int      byte_offset = (addr >> PAGE_BYTE_MASK_SHIFT) & PAGE_BYTE_MASK_OFFSET_MASK;
         uint64_t byte_mask   = (uint64_t) 1 << (addr & PAGE_BYTE_MASK_MASK);
 
+        mem_undo_log(addr, page->mem[addr & 0xfff], val);
         page->mem[addr & 0xfff] = val;
         page->dirty_mask |= mask;
         page->byte_dirty_mask[byte_offset] |= byte_mask;
@@ -2311,6 +2376,8 @@ mem_write_ramw_page(uint32_t addr, uint16_t val, page_t *page)
 
         if ((addr & 0xf) == 0xf)
             mask |= (mask << 1);
+        mem_undo_log(addr, page->mem[addr & 0xfff], val & 0xff);
+        mem_undo_log(addr + 1, page->mem[(addr + 1) & 0xfff], (val >> 8) & 0xff);
         *(uint16_t *) &page->mem[addr & 0xfff] = val;
         page->dirty_mask |= mask;
         if (page->code_present_mask & mask)
@@ -2348,6 +2415,8 @@ mem_write_raml_page(uint32_t addr, uint32_t val, page_t *page)
 
         if ((addr & 0xf) >= 0xd)
             mask |= (mask << 1);
+        for (int i = 0; i < 4; i++)
+            mem_undo_log(addr + i, page->mem[(addr + i) & 0xfff], (val >> (i * 8)) & 0xff);
         *(uint32_t *) &page->mem[addr & 0xfff] = val;
         page->dirty_mask |= mask;
         page->byte_dirty_mask[byte_offset] |= byte_mask;

@@ -744,6 +744,14 @@ dyn_verify_init(void)
         }
         pclog("[VERIFY] %s phys=%08x (linking suppressed)\n",
               dyn_verify_all ? "all blocks" : "watching", dyn_verify_phys);
+        if (dyn_verify_all) {
+            /* Force all guest stores through the mem_write_ram*_page slow path
+               so the RAM undo log sees them (the JIT fast path writes directly
+               to the host RAM pointer). */
+            mem_verify_force_slow = 1;
+            for (int i = 0; i < 1048576; i++)
+                writelookup2[i] = LOOKUP_INV;
+        }
     }
 }
 
@@ -811,7 +819,9 @@ dyn_verify_begin(codeblock_t *block)
         }
     }
     memcpy(&dyn_verify_snap, &cpu_state, sizeof(cpu_state));
-    if (!dyn_verify_all)
+    if (dyn_verify_all)
+        mem_undo_begin(0);
+    else
         memcpy(dyn_verify_ram_pre, ram, (size_t) mem_size * 1024);
     dyn_verify_saved_cs        = cs;
     dyn_verify_saved_use32     = use32;
@@ -835,8 +845,12 @@ dyn_verify_finish(void)
     uint32_t    jit_use32 = use32;
     uint16_t    jit_CS    = CS;
     size_t      rsz       = (size_t) mem_size * 1024;
-    if (!dyn_verify_all)
+    if (dyn_verify_all) {
+        mem_undo_end();
+        mem_undo_apply(0, 0);   /* undo JIT writes -> pre-RAM */
+    } else {
         memcpy(dyn_verify_ram_jit, ram, rsz);
+    }
 
     memcpy(&cpu_state, &dyn_verify_snap, sizeof(cpu_state));
     cpu_state.ea_seg = &cpu_state.seg_ds;
@@ -847,6 +861,9 @@ dyn_verify_finish(void)
     CS           = dyn_verify_saved_CS;
     cpu_block_end = 0;
     trap          = 0;
+
+    if (dyn_verify_all)
+        mem_undo_begin(1);
 
     int32_t jit_used = dyn_verify_snap._cycles - post_jit._cycles;
     int32_t int_cyc0 = cycles;
@@ -863,6 +880,15 @@ dyn_verify_finish(void)
         }
     }
     int32_t int_used = int_cyc0 - cycles;
+
+    if (dyn_verify_all) {
+        int overflow = mem_undo_get_overflow(0) | mem_undo_get_overflow(1);
+        mem_undo_end();
+        mem_undo_apply(1, 0);   /* undo interpreter writes -> pre-RAM */
+        mem_undo_apply(0, 1);   /* redo JIT writes -> JIT post-RAM */
+        if (overflow)
+            dyn_verify_state = 3;   /* incomplete RAM restore; stop the sweep */
+    }
 
     if (!dyn_verify_all && jit_used != int_used) {
         /* Pre-existing JIT-vs-interpreter timing-model difference; reported for
