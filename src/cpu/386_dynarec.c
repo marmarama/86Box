@@ -751,6 +751,13 @@ static void
 dyn_verify_begin(codeblock_t *block)
 {
     dyn_verify_init();
+    if (dyn_verify_enabled && block->phys == 0x28ae) {
+        uint32_t si = cpu_state.regs[6].l & 0xffff;   /* ESI = SI at the A20 test */
+        uint32_t lo = (uint32_t) ram[si] | ((uint32_t) ram[si + 1] << 8);
+        uint32_t hi = (uint32_t) ram[0x100000 + si] | ((uint32_t) ram[0x100000 + si + 1] << 8);
+        pclog("[A20T] si=%04x low=%04x high=%04x a20=%d tsc=%llu\n",
+              si, lo, hi, mem_a20_state, (unsigned long long) tsc);
+    }
     if (!dyn_verify_enabled || dyn_verify_state)
         return;
     if (!dyn_verify_all && block->phys != dyn_verify_phys)
