@@ -718,6 +718,7 @@ static uint8_t     *dyn_verify_ram_jit   = NULL;
 static uint32_t     dyn_verify_saved_cs, dyn_verify_saved_use32;
 static uint16_t     dyn_verify_saved_CS;
 static int          dyn_verify_saved_block_end;
+static int32_t      dyn_verify_saved_cycles;
 static codeblock_t *dyn_verify_block = NULL;
 
 static void
@@ -774,6 +775,7 @@ dyn_verify_begin(codeblock_t *block)
     dyn_verify_saved_use32     = use32;
     dyn_verify_saved_CS        = CS;
     dyn_verify_saved_block_end = cpu_block_end;
+    dyn_verify_saved_cycles    = cycles;
     dyn_verify_block           = block;
     dyn_verify_state           = 1;
 }
@@ -804,6 +806,8 @@ dyn_verify_finish(void)
     cpu_block_end = 0;
     trap          = 0;
 
+    int32_t jit_used = dyn_verify_snap._cycles - post_jit._cycles;
+    int32_t int_cyc0 = cycles;
     {
         int ins = dyn_verify_block ? dyn_verify_block->ins : 1;
         for (int i = 0; i < ins; i++) {
@@ -811,7 +815,15 @@ dyn_verify_finish(void)
             exec386_dynarec_int();
         }
     }
+    int32_t int_used = int_cyc0 - cycles;
 
+    if (!dyn_verify_all && jit_used != int_used) {
+        /* Pre-existing JIT-vs-interpreter timing-model difference; reported for
+           the watched block only, not treated as a lowering divergence. */
+        pclog("[VERIFY] cycles differ at phys=%08x pc=%08x ins=%d: jit_used=%d int_used=%d\n",
+              dyn_verify_block ? dyn_verify_block->phys : 0, dyn_verify_snap.pc,
+              dyn_verify_block ? dyn_verify_block->ins : -1, jit_used, int_used);
+    }
     flags_rebuild();
     if (cpu_state.pc == dyn_verify_snap.pc && post_jit.pc != dyn_verify_snap.pc) {
         if (dyn_verify_all)
