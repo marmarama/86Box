@@ -3618,5 +3618,10 @@ mem_a20_recalc(void)
         flushmmucache();
     }
 
+    if ((state != mem_a20_state) && getenv("BOX86_IO_TRACE"))
+        pclog("[A20] %d -> %d key=%d alt=%d chipset=%d tsc=%llu\n",
+              mem_a20_state, state, mem_a20_key, mem_a20_alt, mem_a20_chipset,
+              (unsigned long long) tsc);
+
     mem_a20_state = state;
 }
