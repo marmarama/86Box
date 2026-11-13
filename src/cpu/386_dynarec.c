@@ -772,6 +772,12 @@ dyn_verify_begin(codeblock_t *block)
         return;
     if (dyn_verify_all && (block->phys < dyn_verify_min || block->phys > dyn_verify_max))
         return;
+    if (dyn_verify_all && (block->unroll_count > 1)) {
+        /* Unrolled self-loops execute more instructions than block->ins;
+           the interpreter's natural block end is one iteration, so the
+           comparison is meaningless. */
+        return;
+    }
     if (dyn_verify_all) {
         /* Skip blocks containing I/O instructions: replaying them in the
            interpreter re-triggers device side effects and produces false
@@ -871,7 +877,9 @@ dyn_verify_finish(void)
         /* Single-step the interpreter until it reaches the JIT's exit pc.
            Using block->ins alone follows the static fall-through and reports
            false divergences on taken conditional branches. */
-        int max_steps = (dyn_verify_block ? dyn_verify_block->ins : 1) * 4 + 16;
+        /* Generous bound: unrolled loop blocks execute more instructions than
+           block->ins (the static count). The loop exits at the pc match. */
+        int max_steps = (dyn_verify_block ? dyn_verify_block->ins : 1) * 64 + 256;
         int steps     = 0;
         while ((steps < max_steps) && (cpu_state.pc != post_jit.pc)) {
             cpu_end_block_after_ins = 1;
@@ -898,7 +906,11 @@ dyn_verify_finish(void)
               dyn_verify_block ? dyn_verify_block->ins : -1, jit_used, int_used);
     }
     flags_rebuild();
-    if (cpu_state.pc == dyn_verify_snap.pc && post_jit.pc != dyn_verify_snap.pc) {
+    if (post_jit.pc == dyn_verify_snap.pc) {
+        /* Self-loop block: the JIT block can execute multiple in-block
+           iterations while the interpreter's pc-match stops after the first
+           return to the entry pc. Skip the comparison. */
+    } else if (cpu_state.pc == dyn_verify_snap.pc && post_jit.pc != dyn_verify_snap.pc) {
         if (dyn_verify_all)
             pclog("[VERIFY] skip phys=%08x: interpreter did not advance (entry abrt=%02x)\n",
                   dyn_verify_snap.pc, dyn_verify_snap.abrt);

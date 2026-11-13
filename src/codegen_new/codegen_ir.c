@@ -855,6 +855,7 @@ block_has_lahf_sahf(ir_data_t *ir)
 void
 codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
 {
+    block->unroll_count = (uint8_t) codegen_unroll_count;
     static int opt_bfx_initialized = 0;
     static int opt_bfx_limit = -1;
     static int opt_bfx_count = 0;

@@ -98,6 +98,7 @@ typedef struct codeblock_t {
     uint16_t flags;
     uint8_t  ins;
     uint8_t  TOP;
+    uint8_t  unroll_count;   /* loop unroll factor used when compiling */
     /* Per-block retry counter used to delay NO_IMMEDIATES promotion until
        churn repeats, reducing premature slow-immediate mode. */
     uint8_t  dirty_list_recompile_hits;
