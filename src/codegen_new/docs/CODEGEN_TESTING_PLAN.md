@@ -19,7 +19,7 @@ flowchart TD
     L2["Phase 2: Synthetic Single-Block Differential Tests\n(tests/codegen/ops_diff_test.cpp)"]
     L3["Phase 3: Multi-Block Chaining, SMC & Exception Torture\n(tests/codegen/block_chain_test.cpp)"]
     L4["Phase 4: Real-Program Block Corpus Capture & Replay\n(tests/codegen/corpus_replay_test.cpp)"]
-    L5["Phase 5: In-Emulator Lockstep Shadow Verifier\n(BOX86_VERIFY_LOCKSTEP=1 in 386_dynarec.c)"]
+    L5["Phase 5: In-Emulator Lockstep Block Verifier\n(BOX86_VERIFY_BLOCK / BOX86_VERIFY_ALL)"]
 
     L1 --> L2 --> L3 --> L4 --> L5
 ```
@@ -28,7 +28,7 @@ flowchart TD
 2. **Synthetic Single-Block Differential Tests**: Assemble targeted x86 instruction streams into a flat 4 MB test RAM buffer, execute the block once under the reference interpreter (`exec386_dynarec_int`) and once under `codegen_new`, and assert bit-for-bit equality of architectural registers, rebuilt `EFLAGS`, FPU state, `pc`, `cycles`, and RAM writes.
 3. **Multi-Block Chaining, SMC & Exception Torture**: Execute controlled multi-block graphs testing direct block linking (`jmp rel32`), cross-alias self-modifying code invalidation (`writelookup2`), cross-page blocks (`phys_2`), FPU `TOP` rotation, and precise exception state when a memory access faults between dead-store-eliminated register writes.
 4. **Real-Program Block Corpus Capture & Replay**: Dump and deduplicate real basic blocks + entry state snapshots from live runs of FreeDOS, Doom, Quake, PCPBench, and Windows 98 SE into a compact binary corpus, then replay all ~20,000+ blocks headlessly inside a fast (<1s) GoogleTest binary against the interpreter.
-5. **In-Emulator Lockstep Shadow Verifier**: An opt-in runtime mode (`BOX86_VERIFY_LOCKSTEP=1`) in `exec386_dynarec_dyn()` that snapshots `cpu_state` and RAM writes before each compiled block, runs `code()`, rolls back, runs `exec386_dynarec_int()`, and immediately catches the first diverging block in any live VM with zero timer drift.
+5. **In-Emulator Lockstep Block Verifier**: An opt-in runtime mode (`BOX86_VERIFY_BLOCK=<phys>` / `BOX86_VERIFY_ALL=1`) in `exec386_dynarec_dyn()` that snapshots `cpu_state` (and RAM), runs one compiled block, rolls back, single-steps the interpreter for the same `block->ins` instructions, and diffs the result. Block linking is suppressed while active, so there is no timer/interrupt drift between the two runs. **Implemented** — see §7.
 
 ---
 
@@ -274,27 +274,53 @@ When a previously unseen block is about to execute (or up to `K = 2` distinct en
 
 ---
 
-## 7. Phase 5: In-Emulator Lockstep Shadow Verifier (`BOX86_VERIFY_LOCKSTEP=1`)
+## 7. Phase 5: In-Emulator Lockstep Block Verifier (implemented)
 
-**Location**: `src/cpu/386_dynarec.c` (compiled in when `RECOMPILER_DEBUG` or `ENABLE_LOCKSTEP_VERIFY` is defined).
+**Location**: `src/cpu/386_dynarec.c` (`#ifdef USE_NEW_DYNAREC`, always compiled; opt-in at runtime, no rebuild required).
 
-### How It Works in a Live VM
-When `BOX86_VERIFY_LOCKSTEP=1` is set in the environment:
-1. Block linking is automatically disabled (`codegen_link_set_policy(0, 0)`) so every block exits back to `exec386_dynarec_dyn()`.
-2. Before calling `code()` on a compiled block (`valid_block && (block->flags & CODEBLOCK_WAS_RECOMPILED)`):
-   - If the block contains `IN`/`OUT` instructions or hits device MMIO (tracked by a flag set in `codegen_generate_call` / `readmem*`), it executes normally without shadow replay (since hardware I/O reads are non-idempotent).
-   - Otherwise:
-     1. Save `pre_state = cpu_state` and enable a 64-entry RAM write undo log in `writemem*` (and temporarily set `writelookup2` to trap stores or snapshot modified stack/EA pages).
-     2. Run `code()` (the JIT block).
-     3. Call `flags_rebuild()`, save `jit_post_state = cpu_state` and `jit_writes`, then restore `cpu_state = pre_state` and revert the RAM writes.
-     4. Run the reference interpreter (`exec386_dynarec_int()`) for `block->ins` instructions.
-     5. Call `flags_rebuild()` and compare `cpu_state` and RAM writes against `jit_post_state`.
-3. **On Mismatch**:
-   - Prints a complete diagnostic report and calls `fatal()`:
-     - Guest `CS:EIP`, `cpu_cur_status`, and raw hex instruction bytes of the block
-     - Full IR dump (`codegen_ir_dump`)
-     - Register, `EFLAGS`, FPU, and memory write diff (`Expected (Interpreter)` vs. `Actual (JIT)`)
-   - Optionally writes the failing block directly as a standalone `codegen_corpus_entry_t` file (`crash_block.bin`) so it can be replayed and debugged in `gdb ./codegen_tests` in milliseconds.
+This is the first implemented layer of the plan. It replays individual compiled blocks against the interpreter inside a live VM. While the verifier is active, block linking is suppressed, so each compiled block exits back to `exec386_dynarec_dyn()` and exactly one block is checked per snapshot; timer and interrupt drift therefore cannot create false positives.
+
+### Environment variables
+
+| Variable | Meaning |
+| :--- | :--- |
+| `BOX86_VERIFY_BLOCK=<hex phys>` | Verify the single block at physical address `<hex phys>`, once. |
+| `BOX86_VERIFY_ALL=1` | Verify every block that executes (until the first divergence or exit). |
+| `BOX86_VERIFY_MIN=<hex>` / `BOX86_VERIFY_MAX=<hex>` | Optional physical-address bounds for `VERIFY_ALL`. |
+| `BOX86_BFX_FORCE_LAHF=1` | Bypass the LAHF/SAHF block-lowering skip, so the verifier can compare the lowered form against the interpreter. |
+
+### How it works
+
+1. Snapshot `cpu_state` (and, in single-block mode, the full `ram`) *before* the compiled block runs.
+2. Run the compiled block normally.
+3. `flags_rebuild()`, then capture the JIT post-state.
+4. Restore the snapshot (state + RAM), reset `cpu_block_end` and `trap`, and single-step the interpreter with `cpu_end_block_after_ins = 1` for exactly `block->ins` instructions (the same guest instructions the JIT block executed).
+5. `flags_rebuild()` on both sides and diff EAX..EDI, rebuilt flags, `pc`, and (single-block mode) RAM.
+6. Restore the JIT post-state so the guest continues normally from the compiled result.
+
+On a mismatch, `VERIFY_ALL` prints the block physical address, guest instruction bytes, register/flag/lazy-flag differences, stops verifying, and lets the guest continue. Single-block mode prints either `match` or the diff and RAM delta.
+
+### Example
+
+```bash
+# Verify one block (here the case-insensitive string-compare block that
+# previously hung Win98 when lowered).
+BOX86_VERIFY_BLOCK=87ba2 build/new_dynarec/src/86Box -P ... --ipc /tmp/86box.sock
+
+# Verify the *lowered* form of the same block:
+BOX86_BFX_FORCE_LAHF=1 BOX86_VERIFY_BLOCK=87ba2 build/new_dynarec/src/86Box ...
+
+# Sweep the boot loader/HIMEM region and report the first divergence:
+BOX86_VERIFY_ALL=1 BOX86_VERIFY_MIN=80000 \
+    build/new_dynarec/src/86Box -P ...
+```
+
+### Current limitations
+
+- **I/O blocks are skipped** in `VERIFY_ALL`: replaying `IN`/`OUT` re-triggers device side effects (e.g. the 8042 status port in the HIMEM A20 poll) and produces false divergences.
+- Blocks that execute **data** (after an earlier guest divergence) or that fault during the interpreter replay can still produce noise; the verifier logs `interpreter did not advance` and skips those.
+- **Cycle accounting** (`_cycles`) and helper/argument side effects are not compared yet — the next refinement, and the likely discriminator for the timing-sensitive A20 hang.
+- The replay interpreter is the emulator's own interpreter, so the verifier validates the lowering against 86Box's interpreter (not an independent hardware model).
 
 ---
 
@@ -306,4 +332,4 @@ When `BOX86_VERIFY_LOCKSTEP=1` is set in the environment:
 | **Step 2** | `ops_diff_test.cpp` (P0 Sentinel + `REP` Cycle Clobber + Flag Fast-Paths) | Medium | Reproduces and guards the `new_pc == 0/-1` sentinel bugs, `LES` `is_a16` wrap, and `REP` LFB cycle clobber in <50ms. |
 | **Step 3** | `ir_unit_test.cpp` (DSE + Peephole + `HOST_REG_FLAG_NO_BH` + Intra-Block Jumps) | Medium | Proves DSE precise-exception safety and `R8`–`R15` vs. `AH`–`DH` register allocation invariants. |
 | **Step 4** | `block_chain_test.cpp` (SMC Alias + `phys_2` + `exit_request` + FPU `TOP`) | Medium | Torture-tests Phase 4 direct block linking without needing to boot Windows 98. |
-| **Step 5** | Lockstep Verifier (`BOX86_VERIFY_LOCKSTEP=1`) + Corpus Dumper (`corpus_replay_test.cpp`) | Medium | Harvests 20,000+ real basic blocks from FreeDOS/Doom/Quake/PCPBench/Win98 into a sub-second CI regression suite. |
+| **Step 5** | Lockstep Verifier (**done**: `BOX86_VERIFY_BLOCK` / `BOX86_VERIFY_ALL`) + Corpus Dumper (`corpus_replay_test.cpp`) | Medium | Harvests 20,000+ real basic blocks from FreeDOS/Doom/Quake/PCPBench/Win98 into a sub-second CI regression suite. |
