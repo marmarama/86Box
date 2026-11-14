@@ -28,7 +28,7 @@ flowchart TD
 2. **Synthetic Single-Block Differential Tests**: Assemble targeted x86 instruction streams into a flat 4 MB test RAM buffer, execute the block once under the reference interpreter (`exec386_dynarec_int`) and once under `codegen_new`, and assert bit-for-bit equality of architectural registers, rebuilt `EFLAGS`, FPU state, `pc`, `cycles`, and RAM writes.
 3. **Multi-Block Chaining, SMC & Exception Torture**: Execute controlled multi-block graphs testing direct block linking (`jmp rel32`), cross-alias self-modifying code invalidation (`writelookup2`), cross-page blocks (`phys_2`), FPU `TOP` rotation, and precise exception state when a memory access faults between dead-store-eliminated register writes.
 4. **Real-Program Block Corpus Capture & Replay**: Dump and deduplicate real basic blocks + entry state snapshots from live runs of FreeDOS, Doom, Quake, PCPBench, and Windows 98 SE into a compact binary corpus, then replay all ~20,000+ blocks headlessly inside a fast (<1s) GoogleTest binary against the interpreter.
-5. **In-Emulator Lockstep Block Verifier**: An opt-in runtime mode (`BOX86_VERIFY_BLOCK=<phys>` / `BOX86_VERIFY_ALL=1`) in `exec386_dynarec_dyn()` that snapshots `cpu_state` (and RAM), runs one compiled block, rolls back, single-steps the interpreter for the same `block->ins` instructions, and diffs the result. Block linking is suppressed while active, so there is no timer/interrupt drift between the two runs. **Implemented** — see §7.
+5. **In-Emulator Lockstep Block Verifier**: An opt-in runtime mode (`BOX86_VERIFY_BLOCK=<phys>` / `BOX86_VERIFY_ALL=1`) in `exec386_dynarec_dyn()` that snapshots `cpu_state` (and RAM), runs one compiled block, rolls back, runs the interpreter for exactly the number of guest instructions the compiled block executed (counted at runtime by `IREG_verify_insns`, so unrolled loops and in-block back-edges are handled), and diffs the result. Block linking is suppressed while active, so there is no timer/interrupt drift between the two runs. **Implemented** — see §7.
 
 ---
 
@@ -291,14 +291,16 @@ This is the first implemented layer of the plan. It replays individual compiled 
 
 ### How it works
 
-1. Snapshot `cpu_state` (and, in single-block mode, the full `ram`) *before* the compiled block runs.
+1. Snapshot `cpu_state` (and, in single-block mode, the full `ram`) *before* the compiled block runs, and clear `cpu_state.verify_insns`.
 2. Run the compiled block normally.
 3. `flags_rebuild()`, then capture the JIT post-state.
-4. Restore the snapshot (state + RAM), reset `cpu_block_end` and `trap`, and single-step the interpreter with `cpu_end_block_after_ins = 1` for exactly `block->ins` instructions (the same guest instructions the JIT block executed).
+4. Restore the snapshot (state + RAM), reset `cpu_block_end` and `trap`, and run the interpreter with `cpu_end_block_after_ins = 1` for exactly `post_jit.verify_insns` instructions.
 5. `flags_rebuild()` on both sides and diff EAX..EDI, rebuilt flags, `pc`, and (single-block mode) RAM.
 6. Restore the JIT post-state so the guest continues normally from the compiled result.
 
-On a mismatch, `VERIFY_ALL` prints the block physical address, guest instruction bytes, register/flag/lazy-flag differences, stops verifying, and lets the guest continue. Single-block mode prints either `match` or the diff and RAM delta.
+The instruction count comes from a memory-backed IR register, `IREG_verify_insns` (backed by `cpu_state.verify_insns`). While `codegen_verify_active` is set, `codegen_generate_call()` emits one `uop_ADD_IMM(IREG_verify_insns, 1)` per guest instruction, right after the `generate_call:` label and **before** the opcode recompiler. Emitting it there (rather than after `codegen_skip:`) is important: recompiled control-flow instructions return early through the `new_pc`/exit-type branch and would otherwise never be counted, and loop unrolling duplicates the uop so the runtime count tracks every executed iteration. Because the count is dynamic, loop unrolling stays enabled while verifying (no need to disable it or skip unrolled/self-loop blocks).
+
+On a mismatch, `VERIFY_ALL` prints the block physical address, the executed instruction count, guest instruction bytes, register/flag/lazy-flag differences, stops verifying, and lets the guest continue. Single-block mode prints either `match` or the diff and RAM delta.
 
 ### Example
 
@@ -318,7 +320,9 @@ BOX86_VERIFY_ALL=1 BOX86_VERIFY_MIN=80000 \
 ### Current limitations
 
 - **I/O blocks are skipped** in `VERIFY_ALL`: replaying `IN`/`OUT` re-triggers device side effects (e.g. the 8042 status port in the HIMEM A20 poll) and produces false divergences.
-- Blocks that execute **data** (after an earlier guest divergence) or that fault during the interpreter replay can still produce noise; the verifier logs `interpreter did not advance` and skips those.
+- **REP/REPNE string blocks are skipped**: the JIT can split the REP loop at a cycle boundary while the interpreter runs the whole REP as one instruction, so the replay would stop at a different iteration.
+- **Mode-switch / privileged / interrupt blocks are skipped**: `lgdt`/`mov cr0`/`mov cr3`/`wrmsr`/`cpuid`/`int`/`iret`/`hlt`/... end the block at different points in the JIT and interpreter.
+- Blocks whose interpreter replay faults or does not advance (entry `abrt`) are silently skipped rather than reported.
 - **Cycle accounting** (`_cycles`) and helper/argument side effects are not compared yet — the next refinement, and the likely discriminator for the timing-sensitive A20 hang.
 - The replay interpreter is the emulator's own interpreter, so the verifier validates the lowering against 86Box's interpreter (not an independent hardware model).
 
