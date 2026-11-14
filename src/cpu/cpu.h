@@ -449,6 +449,8 @@ typedef struct {
 #endif
 
     uint32_t exit_request;
+    /* Runtime guest-instruction counter for the lockstep verifier. */
+    uint32_t verify_insns;
 } cpu_state_t;
 
 #define in_smm   cpu_state._in_smm

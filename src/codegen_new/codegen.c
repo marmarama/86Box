@@ -636,6 +636,9 @@ generate_call:
     codegen_instructions[block->ins].first_uop = ir->wr_pos;
     codegen_instructions[block->ins].len       = 0;
 
+    if (codegen_verify_active)
+        uop_ADD_IMM(ir, IREG_verify_insns, IREG_verify_insns, 1);
+
     codegen_timing_opcode(opcode, fetchdat, op_32, op_pc);
 
     codegen_accumulate(ir, ACCREG_cycles, -codegen_block_cycles);

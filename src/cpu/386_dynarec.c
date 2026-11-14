@@ -773,12 +773,6 @@ dyn_verify_begin(codeblock_t *block)
         return;
     if (dyn_verify_all && (block->phys < dyn_verify_min || block->phys > dyn_verify_max))
         return;
-    if (dyn_verify_all && (block->unroll_count > 1)) {
-        /* Unrolled self-loops execute more instructions than block->ins;
-           the interpreter's natural block end is one iteration, so the
-           comparison is meaningless. */
-        return;
-    }
     if (dyn_verify_all) {
         /* Skip blocks containing I/O instructions: replaying them in the
            interpreter re-triggers device side effects and produces false
@@ -825,6 +819,7 @@ dyn_verify_begin(codeblock_t *block)
             }
         }
     }
+    cpu_state.verify_insns = 0;
     memcpy(&dyn_verify_snap, &cpu_state, sizeof(cpu_state));
     if (dyn_verify_all)
         mem_undo_begin(0);
@@ -875,17 +870,14 @@ dyn_verify_finish(void)
     int32_t jit_used = dyn_verify_snap._cycles - post_jit._cycles;
     int32_t int_cyc0 = cycles;
     {
-        /* Single-step the interpreter until it reaches the JIT's exit pc.
-           Using block->ins alone follows the static fall-through and reports
-           false divergences on taken conditional branches. */
-        /* Generous bound: unrolled loop blocks execute more instructions than
-           block->ins (the static count). The loop exits at the pc match. */
-        int max_steps = (dyn_verify_block ? dyn_verify_block->ins : 1) * 64 + 256;
-        int steps     = 0;
-        while ((steps < max_steps) && (cpu_state.pc != post_jit.pc)) {
+        /* Execute exactly the number of guest instructions the JIT block
+           executed (counted at runtime by IREG_verify_insns). This handles
+           unrolled loops and in-block back-edges, where block->ins and the
+           exit pc are not enough. */
+        int jit_insns = (int) post_jit.verify_insns;
+        for (int i = 0; i < jit_insns; i++) {
             cpu_end_block_after_ins = 1;
             exec386_dynarec_int();
-            steps++;
         }
     }
     int32_t int_used = int_cyc0 - cycles;
@@ -908,17 +900,17 @@ dyn_verify_finish(void)
     }
     flags_rebuild();
     if (cpu_state.pc == dyn_verify_snap.pc && post_jit.pc != dyn_verify_snap.pc) {
-        if (dyn_verify_all)
-            pclog("[VERIFY] skip phys=%08x: interpreter did not advance (entry abrt=%02x)\n",
-                  dyn_verify_snap.pc, dyn_verify_snap.abrt);
+        /* Interpreter replay did not advance (fault/block-end edge case);
+           skip silently. */
     } else {
         int diff = (post_jit.pc != cpu_state.pc) || (post_jit.flags != cpu_state.flags);
         for (int r = 0; r < 8; r++)
             if (post_jit.regs[r].l != cpu_state.regs[r].l)
                 diff = 1;
         if (diff) {
-            pclog("[VERIFY] DIVERGENCE at block phys=%08x pc=%08x: jit pc=%08x int pc=%08x flags jit=%04x int=%04x\n",
-                  dyn_verify_block ? dyn_verify_block->phys : 0, dyn_verify_snap.pc, post_jit.pc, cpu_state.pc,
+            pclog("[VERIFY] DIVERGENCE at block phys=%08x pc=%08x ins=%d: jit pc=%08x int pc=%08x flags jit=%04x int=%04x\n",
+                  dyn_verify_block ? dyn_verify_block->phys : 0, dyn_verify_snap.pc,
+                  (int) post_jit.verify_insns, post_jit.pc, cpu_state.pc,
                   post_jit.flags, cpu_state.flags);
             pclog("[VERIFY]   lazy jit fo=%d fr=%08x f1=%08x f2=%08x | int fo=%d fr=%08x f1=%08x f2=%08x\n",
                   post_jit.flags_op, post_jit.flags_res, post_jit.flags_op1, post_jit.flags_op2,
@@ -998,6 +990,7 @@ static __inline void
 exec386_dynarec_dyn(void)
 {
 #ifdef USE_NEW_DYNAREC
+    dyn_verify_init();
     x86_was_reset = 0;
     cpu_update_exit_request();
     if (codegen_code_write_pending)

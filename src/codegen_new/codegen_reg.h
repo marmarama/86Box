@@ -147,6 +147,10 @@ enum {
     IREG_fpu_ea, */
     IREG_sf_exc,
 
+    /* Runtime guest-instruction counter used only by the lockstep verifier
+       (codegen_verify_active). Memory-backed so it survives block exits. */
+    IREG_verify_insns,
+
     IREG_COUNT,
 
     IREG_INVALID = 255,
@@ -439,6 +443,10 @@ codegen_reg_write(int reg, int uop_nr)
     version->refcount   = 0;
     version->flags      = 0;
     version->parent_uop = uop_nr;
+    /* The verifier's runtime instruction counter has no IR readers, so keep
+       every write so it can be accumulated and written back. */
+    if (IREG_GET_REG(reg) == IREG_verify_insns)
+        version->flags |= REG_FLAGS_REQUIRED;
 #if 0
     pclog("codegen_reg_write: %i\n", reg & IREG_REG_MASK);
 #endif

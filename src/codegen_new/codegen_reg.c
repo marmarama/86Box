@@ -100,6 +100,8 @@ struct
     [IREG_cycles]       = { REG_DWORD,         &cpu_state._cycles,                 REG_INTEGER, REG_PERMANENT},
     [IREG_exit_request] = { REG_DWORD,         &cpu_state.exit_request,            REG_INTEGER, REG_PERMANENT},
 
+    [IREG_verify_insns] = { REG_DWORD,         &cpu_state.verify_insns,            REG_INTEGER, REG_PERMANENT},
+
     [IREG_CS_base] = { REG_DWORD,         &cpu_state.seg_cs.base,             REG_INTEGER, REG_PERMANENT},
     [IREG_DS_base] = { REG_DWORD,         &cpu_state.seg_ds.base,             REG_INTEGER, REG_PERMANENT},
     [IREG_ES_base] = { REG_DWORD,         &cpu_state.seg_es.base,             REG_INTEGER, REG_PERMANENT},
