@@ -468,11 +468,16 @@ op0F01_common(UNUSED(uint32_t fetchdat), int is32, int is286, UNUSED(int ea32))
                 tempw |= (msw & 0x10);
             } else
                 tempw &= 0xF;
-            msw = tempw;
-            if (msw & 1)
-                cpu_cur_status |= CPU_STATUS_PMODE;
-            else
-                cpu_cur_status &= ~CPU_STATUS_PMODE;
+            {
+                uint16_t old_msw = msw;
+                msw              = tempw;
+                if (msw & 1)
+                    cpu_cur_status |= CPU_STATUS_PMODE;
+                else
+                    cpu_cur_status &= ~CPU_STATUS_PMODE;
+                if ((old_msw ^ msw) & 1)
+                    seg_desc_cache_update_pages();
+            }
             PREFETCH_RUN(2, 2, rmdat, 0, 0, (cpu_mod == 3) ? 0 : 1, 0, ea32);
             break;
 
