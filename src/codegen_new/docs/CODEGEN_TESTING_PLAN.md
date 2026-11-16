@@ -287,7 +287,6 @@ This is the first implemented layer of the plan. It replays individual compiled 
 | `BOX86_VERIFY_BLOCK=<hex phys>` | Verify the single block at physical address `<hex phys>`, once. |
 | `BOX86_VERIFY_ALL=1` | Verify every block that executes (until the first divergence or exit). |
 | `BOX86_VERIFY_MIN=<hex>` / `BOX86_VERIFY_MAX=<hex>` | Optional physical-address bounds for `VERIFY_ALL`. |
-| `BOX86_BFX_FORCE_LAHF=1` | Bypass the LAHF/SAHF block-lowering skip, so the verifier can compare the lowered form against the interpreter. |
 
 ### How it works
 
@@ -308,9 +307,6 @@ On a mismatch, `VERIFY_ALL` prints the block physical address, the executed inst
 # Verify one block (here the case-insensitive string-compare block that
 # previously hung Win98 when lowered).
 BOX86_VERIFY_BLOCK=87ba2 build/new_dynarec/src/86Box -P ... --ipc /tmp/86box.sock
-
-# Verify the *lowered* form of the same block:
-BOX86_BFX_FORCE_LAHF=1 BOX86_VERIFY_BLOCK=87ba2 build/new_dynarec/src/86Box ...
 
 # Sweep the boot loader/HIMEM region and report the first divergence:
 BOX86_VERIFY_ALL=1 BOX86_VERIFY_MIN=80000 \

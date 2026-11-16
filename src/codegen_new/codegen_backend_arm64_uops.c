@@ -738,7 +738,7 @@ codegen_FTST(codeblock_t *block, uop_t *uop)
     int dest_size  = IREG_GET_SIZE(uop->dest_reg_a_real);
     int src_size_a = IREG_GET_SIZE(uop->src_reg_a_real);
 
-    if (REG_IS_W(dest_size) && REG_IS_D(src_size_a)) {
+    if ((REG_IS_W(dest_size) || REG_IS_L(dest_size)) && REG_IS_D(src_size_a)) {
         host_arm64_FSUB_D(block, REG_V_TEMP, REG_V_TEMP, REG_V_TEMP);
         host_arm64_MOVZ_IMM(block, dest_reg, 0);
         host_arm64_FCMP_D(block, src_reg_a, REG_V_TEMP);
@@ -781,7 +781,7 @@ codegen_FCOM(codeblock_t *block, uop_t *uop)
     int src_size_a = IREG_GET_SIZE(uop->src_reg_a_real);
     int src_size_b = IREG_GET_SIZE(uop->src_reg_b_real);
 
-    if (REG_IS_W(dest_size) && REG_IS_D(src_size_a) && REG_IS_D(src_size_b)) {
+    if ((REG_IS_W(dest_size) || REG_IS_L(dest_size)) && REG_IS_D(src_size_a) && REG_IS_D(src_size_b)) {
         host_arm64_MOVZ_IMM(block, dest_reg, 0);
         host_arm64_FCMP_D(block, src_reg_a, src_reg_b);
         host_arm64_ORR_IMM(block, REG_TEMP, dest_reg, FPU_SW_C3);
@@ -999,7 +999,7 @@ codegen_LOAD_SEG(codeblock_t *block, uop_t *uop)
     int src_reg  = HOST_REG_GET(uop->src_reg_a_real);
     int src_size = IREG_GET_SIZE(uop->src_reg_a_real);
 
-    if (!REG_IS_W(src_size))
+    if (!REG_IS_W(src_size) && !REG_IS_L(src_size))
         fatal("LOAD_SEG %02x %p\n", uop->src_reg_a_real, uop->p);
 
     host_arm64_MOVX_IMM(block, REG_ARG1, (uint64_t) uop->p);

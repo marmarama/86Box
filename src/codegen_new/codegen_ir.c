@@ -709,7 +709,9 @@ codegen_ir_lower_subregs(ir_data_t *ir)
         int src_a_norm   = u->src_reg_a.reg;
         int src_b_norm   = u->src_reg_b.reg;
         int src_c_norm   = u->src_reg_c.reg;
-        int src_a_signed = (uop_masked == (UOP_SAR & UOP_MASK) || uop_masked == (UOP_SAR_IMM & UOP_MASK));
+        int src_a_signed = (uop_masked == (UOP_SAR & UOP_MASK) ||
+                            uop_masked == (UOP_SAR_IMM & UOP_MASK) ||
+                            uop_masked == (UOP_MOV_DOUBLE_INT & UOP_MASK));
 
         if (is_subreg_int(u->src_reg_a)) {
             src_a_norm = lower_read_subreg(ir, u->src_reg_a, src_a_signed, IREG_temp5, zext_width);
@@ -757,7 +759,9 @@ codegen_ir_lower_subregs(ir_data_t *ir)
                        uop_masked == (UOP_OR & UOP_MASK) ||
                        uop_masked == (UOP_XOR & UOP_MASK) ||
                        uop_masked == (UOP_MOV & UOP_MASK) ||
-                       uop_masked == (UOP_CMOV & UOP_MASK)) {
+                       uop_masked == (UOP_CMOV & UOP_MASK) ||
+                       uop_masked == (UOP_FCOM & UOP_MASK) ||
+                       uop_masked == (UOP_FTST & UOP_MASK)) {
                 result_is_zext = 1;
             }
 
@@ -836,23 +840,6 @@ codegen_ir_lower_subregs(ir_data_t *ir)
     ir->cur_guest_pc_off   = saved_pc_off;
 }
 
-static int
-block_has_lahf_sahf(ir_data_t *ir)
-{
-    for (int i = 0; i < ir->wr_pos; i++) {
-        uop_t   *u = &ir->uops[i];
-        uint32_t t = u->type & UOP_MASK;
-        if (t == (UOP_AND_IMM & UOP_MASK)) {
-            int d = IREG_GET_REG(u->dest_reg_a.reg);
-            if (d == IREG_EAX && u->imm_data == 0xffff00ff)
-                return 1;   /* LAHF: AND EAX, 0xffff00ff */
-            if (d == IREG_flagsx && u->imm_data == 0xff00)
-                return 1;   /* SAHF: AND FLAGS, 0xff00 */
-        }
-    }
-    return 0;
-}
-
 void
 codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
 {
@@ -871,10 +858,7 @@ codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
     }
     if (codegen_opt_bfx && (opt_bfx_limit < 0 || opt_bfx_count < opt_bfx_limit)) {
         opt_bfx_count++;
-        /* Blocks containing LAHF/SAHF keep the known-good unlowered flag path
-           until the 16-bit FLAGS sub-register lowering is correct. */
-        if (getenv("BOX86_BFX_FORCE_LAHF") || !block_has_lahf_sahf(ir))
-            codegen_ir_lower_subregs(ir);
+        codegen_ir_lower_subregs(ir);
     }
 
     int jump_target_at_end = -1;

@@ -849,16 +849,22 @@ codegen_FTST(codeblock_t *block, uop_t *uop)
     int dest_size  = IREG_GET_SIZE(uop->dest_reg_a_real);
     int src_size_a = IREG_GET_SIZE(uop->src_reg_a_real);
 
-    if (REG_IS_W(dest_size) && REG_IS_D(src_size_a)) {
+    if ((REG_IS_W(dest_size) || REG_IS_L(dest_size)) && REG_IS_D(src_size_a)) {
         host_x86_PXOR_XREG_XREG(block, REG_XMM_TEMP, REG_XMM_TEMP);
         if (dest_reg != REG_EAX)
             host_x86_MOV32_REG_REG(block, REG_ECX, REG_EAX);
         host_x86_XOR32_REG_REG(block, REG_EAX, REG_EAX);
         host_x86_COMISD_XREG_XREG(block, src_reg_a, REG_XMM_TEMP);
         host_x86_LAHF(block);
-        host_x86_AND16_REG_IMM(block, REG_EAX, FPU_SW_C0 | FPU_SW_C2 | FPU_SW_C3);
+        if (REG_IS_L(dest_size))
+            host_x86_AND32_REG_IMM(block, REG_EAX, FPU_SW_C0 | FPU_SW_C2 | FPU_SW_C3);
+        else
+            host_x86_AND16_REG_IMM(block, REG_EAX, FPU_SW_C0 | FPU_SW_C2 | FPU_SW_C3);
         if (dest_reg != REG_EAX) {
-            host_x86_MOV16_REG_REG(block, dest_reg, REG_EAX);
+            if (REG_IS_L(dest_size))
+                host_x86_MOV32_REG_REG(block, dest_reg, REG_EAX);
+            else
+                host_x86_MOV16_REG_REG(block, dest_reg, REG_EAX);
             host_x86_MOV32_REG_REG(block, REG_EAX, REG_ECX);
         }
     }
@@ -898,15 +904,21 @@ codegen_FCOM(codeblock_t *block, uop_t *uop)
     int src_size_a = IREG_GET_SIZE(uop->src_reg_a_real);
     int src_size_b = IREG_GET_SIZE(uop->src_reg_b_real);
 
-    if (REG_IS_W(dest_size) && REG_IS_D(src_size_a) && REG_IS_D(src_size_b)) {
+    if ((REG_IS_W(dest_size) || REG_IS_L(dest_size)) && REG_IS_D(src_size_a) && REG_IS_D(src_size_b)) {
         if (dest_reg != REG_EAX)
             host_x86_MOV32_REG_REG(block, REG_ECX, REG_EAX);
         host_x86_XOR32_REG_REG(block, REG_EAX, REG_EAX);
         host_x86_COMISD_XREG_XREG(block, src_reg_a, src_reg_b);
         host_x86_LAHF(block);
-        host_x86_AND16_REG_IMM(block, REG_EAX, FPU_SW_C0 | FPU_SW_C2 | FPU_SW_C3);
+        if (REG_IS_L(dest_size))
+            host_x86_AND32_REG_IMM(block, REG_EAX, FPU_SW_C0 | FPU_SW_C2 | FPU_SW_C3);
+        else
+            host_x86_AND16_REG_IMM(block, REG_EAX, FPU_SW_C0 | FPU_SW_C2 | FPU_SW_C3);
         if (dest_reg != REG_EAX) {
-            host_x86_MOV16_REG_REG(block, dest_reg, REG_EAX);
+            if (REG_IS_L(dest_size))
+                host_x86_MOV32_REG_REG(block, dest_reg, REG_EAX);
+            else
+                host_x86_MOV16_REG_REG(block, dest_reg, REG_EAX);
             host_x86_MOV32_REG_REG(block, REG_EAX, REG_ECX);
         }
     }
@@ -1323,7 +1335,7 @@ codegen_LOAD_SEG(codeblock_t *block, uop_t *uop)
 
 #    ifdef RECOMPILER_DEBUG
     int src_size = IREG_GET_SIZE(uop->src_reg_a_real);
-    if (!REG_IS_W(src_size))
+    if (!REG_IS_W(src_size) && !REG_IS_L(src_size))
         fatal("LOAD_SEG %02x %p\n", uop->src_reg_a_real, uop->p);
 #    endif
 #    if _WIN64
