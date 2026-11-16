@@ -1414,8 +1414,13 @@ codegen_BFI(codeblock_t *block, uop_t *uop)
     int lsb      = uop->imm_data & 0xff;
     int width    = (uop->imm_data >> 8) & 0xff;
 
-    if (dest_reg != prev_reg)
+    if (dest_reg != prev_reg) {
+        if (dest_reg == val_reg) {
+            host_arm64_MOV_REG(block, REG_TEMP, val_reg, 0);
+            val_reg = REG_TEMP;
+        }
         host_arm64_MOV_REG(block, dest_reg, prev_reg, 0);
+    }
     host_arm64_BFI(block, dest_reg, val_reg, lsb, width);
     return 0;
 }

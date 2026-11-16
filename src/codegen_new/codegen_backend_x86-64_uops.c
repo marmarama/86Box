@@ -2024,47 +2024,16 @@ codegen_BFI(codeblock_t *block, uop_t *uop)
     int val_reg  = HOST_REG_GET(uop->src_reg_b_real);
     int lsb      = uop->imm_data & 0xff;
     int width    = (uop->imm_data >> 8) & 0xff;
+    uint32_t mask = ((width >= 32) ? 0xffffffffu : ((1u << width) - 1u)) << lsb;
 
-    if (lsb == 0 && width == 8) {
-        if (dest_reg == val_reg) {
-            host_x86_MOV32_REG_REG(block, REG_ECX, val_reg);
-            val_reg = REG_ECX;
-        }
-        if (dest_reg != prev_reg)
-            host_x86_MOV32_REG_REG(block, dest_reg, prev_reg);
-        host_x86_MOV8_REG_REG(block, dest_reg, val_reg);
-    } else if (lsb == 0 && width == 16) {
-        if (dest_reg == val_reg) {
-            host_x86_MOV32_REG_REG(block, REG_ECX, val_reg);
-            val_reg = REG_ECX;
-        }
-        if (dest_reg != prev_reg)
-            host_x86_MOV32_REG_REG(block, dest_reg, prev_reg);
-        host_x86_MOV16_REG_REG(block, dest_reg, val_reg);
-    } else if (lsb == 8 && width == 8) {
-        int val_size = IREG_GET_SIZE(uop->src_reg_b_real);
-        if (val_size == IREG_SIZE_BH) {
-            host_x86_MOV32_REG_REG(block, REG_ECX, val_reg);
-            host_x86_SHR32_IMM(block, REG_ECX, 8);
-            val_reg = REG_ECX;
-        }
-        host_x86_MOVZX_REG_32_8(block, REG_ECX, val_reg);
-        host_x86_SHL32_IMM(block, REG_ECX, 8);
-        if (dest_reg != prev_reg)
-            host_x86_MOV32_REG_REG(block, dest_reg, prev_reg);
-        host_x86_AND32_REG_IMM(block, dest_reg, 0xffff00ff);
-        host_x86_OR32_REG_REG(block, dest_reg, REG_ECX);
-    } else {
-        uint32_t mask = ((width >= 32) ? 0xffffffffu : ((1u << width) - 1)) << lsb;
-        host_x86_MOV32_REG_REG(block, REG_ECX, val_reg);
-        if (lsb > 0)
-            host_x86_SHL32_IMM(block, REG_ECX, lsb);
-        host_x86_AND32_REG_IMM(block, REG_ECX, mask);
-        if (dest_reg != prev_reg)
-            host_x86_MOV32_REG_REG(block, dest_reg, prev_reg);
-        host_x86_AND32_REG_IMM(block, dest_reg, ~mask);
-        host_x86_OR32_REG_REG(block, dest_reg, REG_ECX);
-    }
+    host_x86_MOV32_REG_REG(block, REG_ECX, val_reg);
+    if (lsb > 0)
+        host_x86_SHL32_IMM(block, REG_ECX, lsb);
+    host_x86_AND32_REG_IMM(block, REG_ECX, mask);
+    if (dest_reg != prev_reg)
+        host_x86_MOV32_REG_REG(block, dest_reg, prev_reg);
+    host_x86_AND32_REG_IMM(block, dest_reg, ~mask);
+    host_x86_OR32_REG_REG(block, dest_reg, REG_ECX);
     return 0;
 }
 
@@ -3750,10 +3719,11 @@ codegen_SETCC(codeblock_t *block, uop_t *uop)
         host_x86_ROL16_IMM(block, dest_reg, 8);
         host_x86_MOV8_REG_REG(block, dest_reg, REG_ECX);
         host_x86_ROL16_IMM(block, dest_reg, 8);
-    } else {
+    } else if (REG_IS_B(dest_size)) {
         host_x86_SETcc_REG(block, cond, dest_reg);
-        if (!REG_IS_B(dest_size))
-            host_x86_MOVZX_REG_32_8(block, dest_reg, dest_reg);
+    } else {
+        host_x86_SETcc_REG(block, cond, REG_ECX);
+        host_x86_MOVZX_REG_32_8(block, dest_reg, REG_ECX);
     }
 
     return 0;
@@ -4320,12 +4290,12 @@ const uOpFn uop_handlers[UOP_MAX] = {
 void
 codegen_direct_read_8(codeblock_t *block, int host_reg, void *p)
 {
-    host_x86_MOV8_REG_ABS(block, host_reg, p);
+    host_x86_MOVZX_REG_ABS_32_8(block, host_reg, p);
 }
 void
 codegen_direct_read_16(codeblock_t *block, int host_reg, void *p)
 {
-    host_x86_MOV16_REG_ABS(block, host_reg, p);
+    host_x86_MOVZX_REG_ABS_32_16(block, host_reg, p);
 }
 void
 codegen_direct_read_32(codeblock_t *block, int host_reg, void *p)
@@ -4356,6 +4326,7 @@ codegen_direct_read_st_8(codeblock_t *block, int host_reg, void *base, int reg_i
     host_x86_ADD32_REG_IMM(block, REG_ECX, reg_idx);
     host_x86_AND32_REG_IMM(block, REG_ECX, 7);
     host_x86_MOV8_REG_ABS_REG_REG_SHIFT(block, host_reg, offset, REG_RBP, REG_ECX, 0);
+    host_x86_MOVZX_REG_32_8(block, host_reg, host_reg);
 }
 void
 codegen_direct_read_st_64(codeblock_t *block, int host_reg, void *base, int reg_idx)
@@ -4449,6 +4420,7 @@ void
 codegen_direct_read_16_stack(codeblock_t *block, int host_reg, int stack_offset)
 {
     host_x86_MOV16_REG_BASE_OFFSET(block, host_reg, REG_ESP, stack_offset);
+    host_x86_MOVZX_REG_32_16(block, host_reg, host_reg);
 }
 void
 codegen_direct_read_32_stack(codeblock_t *block, int host_reg, int stack_offset)

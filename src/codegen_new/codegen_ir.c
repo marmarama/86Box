@@ -626,16 +626,48 @@ codegen_ir_lower_subregs(ir_data_t *ir)
 
         /* 5. Read-only subreg consumers (function args, branches, SETCC) */
         if (uop_masked >= (UOP_LOAD_FUNC_ARG_0 & UOP_MASK) && uop_masked <= (UOP_LOAD_FUNC_ARG_3 & UOP_MASK)) {
+            int src_a_reg = u->src_reg_a.reg;
+            if (is_subreg_int(u->src_reg_a))
+                src_a_reg = lower_read_subreg(ir, u->src_reg_a, 0, IREG_temp5, zext_width);
             uop_t *new_uop     = lower_copy_uop(ir, u, u->type);
-            new_uop->src_reg_a = codegen_reg_read(u->src_reg_a.reg);
+            new_uop->src_reg_a = codegen_reg_read(src_a_reg);
             continue;
         }
-        if (uop_masked == (UOP_TEST_JNS_DEST & UOP_MASK) || uop_masked == (UOP_TEST_JS_DEST & UOP_MASK) ||
-            uop_masked == (UOP_CMP_IMM_JZ & UOP_MASK) || uop_masked == (UOP_CMP_IMM_JZ_DEST & UOP_MASK) ||
-            uop_masked == (UOP_CMP_IMM_JNZ_DEST & UOP_MASK) || uop_masked == (UOP_CMP_IMM_JLE_DEST & UOP_MASK) ||
-            uop_masked == (UOP_CMP_IMM_JNLE_DEST & UOP_MASK)) {
+        if (uop_masked == (UOP_TEST_JNS_DEST & UOP_MASK) || uop_masked == (UOP_TEST_JS_DEST & UOP_MASK)) {
+            int src_a_reg = u->src_reg_a.reg;
+            if (is_subreg_int(u->src_reg_a))
+                src_a_reg = lower_read_subreg(ir, u->src_reg_a, 1, IREG_temp5, zext_width);
             uop_t *new_uop     = lower_copy_uop(ir, u, u->type);
-            new_uop->src_reg_a = codegen_reg_read(u->src_reg_a.reg);
+            new_uop->src_reg_a = codegen_reg_read(src_a_reg);
+            memset(zext_width, 0, sizeof(zext_width));
+            continue;
+        }
+        if (uop_masked == (UOP_CMP_IMM_JZ & UOP_MASK) || uop_masked == (UOP_CMP_IMM_JZ_DEST & UOP_MASK) ||
+            uop_masked == (UOP_CMP_IMM_JNZ_DEST & UOP_MASK)) {
+            int      src_a_reg = u->src_reg_a.reg;
+            uint32_t imm       = u->imm_data;
+            if (is_subreg_int(u->src_reg_a)) {
+                int w = subreg_width(src_a_reg);
+                imm &= (w == 8) ? 0xffu : 0xffffu;
+                src_a_reg = lower_read_subreg(ir, u->src_reg_a, 0, IREG_temp5, zext_width);
+            }
+            uop_t *new_uop     = lower_copy_uop(ir, u, u->type);
+            new_uop->src_reg_a = codegen_reg_read(src_a_reg);
+            new_uop->imm_data  = imm;
+            memset(zext_width, 0, sizeof(zext_width));
+            continue;
+        }
+        if (uop_masked == (UOP_CMP_IMM_JLE_DEST & UOP_MASK) || uop_masked == (UOP_CMP_IMM_JNLE_DEST & UOP_MASK)) {
+            int      src_a_reg = u->src_reg_a.reg;
+            uint32_t imm       = u->imm_data;
+            if (is_subreg_int(u->src_reg_a)) {
+                int w = subreg_width(src_a_reg);
+                imm = (w == 8) ? (uint32_t) (int32_t) (int8_t) imm : (uint32_t) (int32_t) (int16_t) imm;
+                src_a_reg = lower_read_subreg(ir, u->src_reg_a, 1, IREG_temp5, zext_width);
+            }
+            uop_t *new_uop     = lower_copy_uop(ir, u, u->type);
+            new_uop->src_reg_a = codegen_reg_read(src_a_reg);
+            new_uop->imm_data  = imm;
             memset(zext_width, 0, sizeof(zext_width));
             continue;
         }
@@ -643,21 +675,23 @@ codegen_ir_lower_subregs(ir_data_t *ir)
             uop_masked == (UOP_CMP_JB & UOP_MASK) || uop_masked == (UOP_CMP_JNBE & UOP_MASK)) {
             int src_a_reg = u->src_reg_a.reg;
             int src_b_reg = u->src_reg_b.reg;
-            int is_unsigned_cmp = (uop_masked == (UOP_CMP_JB_DEST & UOP_MASK) ||
+            int is_unsigned_cmp = (uop_masked == (UOP_CMP_JB & UOP_MASK) ||
+                                   uop_masked == (UOP_CMP_JNBE & UOP_MASK) ||
+                                   uop_masked == (UOP_CMP_JB_DEST & UOP_MASK) ||
                                    uop_masked == (UOP_CMP_JNB_DEST & UOP_MASK) ||
                                    uop_masked == (UOP_CMP_JZ_DEST & UOP_MASK) ||
                                    uop_masked == (UOP_CMP_JNZ_DEST & UOP_MASK) ||
                                    uop_masked == (UOP_CMP_JBE_DEST & UOP_MASK) ||
                                    uop_masked == (UOP_CMP_JNBE_DEST & UOP_MASK));
-            if (is_unsigned_cmp && is_subreg_int(u->src_reg_a) && is_subreg_int(u->src_reg_b)) {
-                int ra = IREG_GET_REG(src_a_reg), rb = IREG_GET_REG(src_b_reg);
-                int wa = subreg_width(src_a_reg), wb = subreg_width(src_b_reg);
-                if (subreg_lsb(src_a_reg) == 0 && subreg_lsb(src_b_reg) == 0 &&
-                    zext_width[ra] != 0 && zext_width[ra] <= wa &&
-                    zext_width[rb] != 0 && zext_width[rb] <= wb) {
-                    src_a_reg = ra | IREG_SIZE_L;
-                    src_b_reg = rb | IREG_SIZE_L;
-                }
+            int is_signed_cmp = (uop_masked == (UOP_CMP_JL_DEST & UOP_MASK) ||
+                                 uop_masked == (UOP_CMP_JNL_DEST & UOP_MASK) ||
+                                 uop_masked == (UOP_CMP_JLE_DEST & UOP_MASK) ||
+                                 uop_masked == (UOP_CMP_JNLE_DEST & UOP_MASK));
+            if (is_unsigned_cmp || is_signed_cmp) {
+                if (is_subreg_int(u->src_reg_a))
+                    src_a_reg = lower_read_subreg(ir, u->src_reg_a, is_signed_cmp, IREG_temp5, zext_width);
+                if (is_subreg_int(u->src_reg_b))
+                    src_b_reg = lower_read_subreg(ir, u->src_reg_b, is_signed_cmp, IREG_temp6, zext_width);
             }
             uop_t *new_uop     = lower_copy_uop(ir, u, u->type);
             new_uop->src_reg_a = codegen_reg_read(src_a_reg);
@@ -672,15 +706,13 @@ codegen_ir_lower_subregs(ir_data_t *ir)
             int is_unsigned_cmp = (cond_base == COND_B || cond_base == COND_NB ||
                                    cond_base == COND_E || cond_base == COND_NE ||
                                    cond_base == COND_BE || cond_base == COND_NBE);
-            if (is_unsigned_cmp && is_subreg_int(u->src_reg_a) && is_subreg_int(u->src_reg_b)) {
-                int ra = IREG_GET_REG(src_a_reg), rb = IREG_GET_REG(src_b_reg);
-                int wa = subreg_width(src_a_reg), wb = subreg_width(src_b_reg);
-                if (subreg_lsb(src_a_reg) == 0 && subreg_lsb(src_b_reg) == 0 &&
-                    zext_width[ra] != 0 && zext_width[ra] <= wa &&
-                    zext_width[rb] != 0 && zext_width[rb] <= wb) {
-                    src_a_reg = ra | IREG_SIZE_L;
-                    src_b_reg = rb | IREG_SIZE_L;
-                }
+            int is_signed_cmp = (cond_base == COND_L || cond_base == COND_NL ||
+                                 cond_base == COND_LE || cond_base == COND_NLE);
+            if (is_unsigned_cmp || is_signed_cmp) {
+                if (is_subreg_int(u->src_reg_a))
+                    src_a_reg = lower_read_subreg(ir, u->src_reg_a, is_signed_cmp, IREG_temp5, zext_width);
+                if (is_subreg_int(u->src_reg_b))
+                    src_b_reg = lower_read_subreg(ir, u->src_reg_b, is_signed_cmp, IREG_temp6, zext_width);
             }
             int dreg      = IREG_GET_REG(u->dest_reg_a.reg);
             int d_is_sub  = is_subreg_int(u->dest_reg_a);
@@ -720,14 +752,7 @@ codegen_ir_lower_subregs(ir_data_t *ir)
             src_b_norm = lower_read_subreg(ir, u->src_reg_b, 0, IREG_temp6, zext_width);
         }
         if (is_subreg_int(u->src_reg_c)) {
-            if (uop_masked == (UOP_CMOV & UOP_MASK)) {
-                int rc = IREG_GET_REG(u->src_reg_c.reg);
-                int wc = subreg_width(u->src_reg_c.reg);
-                if (subreg_lsb(u->src_reg_c.reg) == 0 && zext_width[rc] != 0 && zext_width[rc] <= wc)
-                    src_c_norm = rc | IREG_SIZE_L;
-            } else {
-                src_c_norm = lower_read_subreg(ir, u->src_reg_c, 0, IREG_temp3, zext_width);
-            }
+            src_c_norm = lower_read_subreg(ir, u->src_reg_c, 0, IREG_temp3, zext_width);
         }
 
         int dest_is_sub = is_subreg_int(u->dest_reg_a);
