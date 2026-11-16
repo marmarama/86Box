@@ -112,14 +112,24 @@ def ocr_screen(path):
         )
         combined_text = (res6.stdout + "\n" + res11.stdout).lower()
 
-        # Check splash screen indicators
+        # Normalize non-empty unique OCR lines while preserving order
+        ocr_lines = []
+        seen_lines = set()
+        for raw_line in (res6.stdout + "\n" + res11.stdout).splitlines():
+            line = " ".join(raw_line.split())
+            if line and line.lower() not in seen_lines:
+                seen_lines.add(line.lower())
+                ocr_lines.append(line)
+
+        # Check splash / scandisk indicators
+        is_scandisk = "scandisk" in combined_text
         is_splash = any(k in combined_text for k in [
             "windows98", "windows 98", "microsoft windows 98"
         ])
 
         # Check desktop indicators
         has_my_computer = "my computer" in combined_text
-        has_start = any(k in combined_text for k in ["start", "mstart", "astan"])
+        has_start = (not is_scandisk) and any(k in combined_text for k in ["start", "mstart", "astan"])
         has_recycle_bin = "recycle bin" in combined_text
         has_network = "network" in combined_text or "neighborhood" in combined_text
         has_my_docs = "my documents" in combined_text or "dacurnents" in combined_text
@@ -136,18 +146,20 @@ def ocr_screen(path):
         if has_my_docs:
             detected_items.append("My Documents")
 
-        # Desktop is confirmed if we have at least 2 distinct desktop UI elements AND not stuck on splash
-        is_desktop = (len(detected_items) >= 2) and not is_splash
+        # Desktop is confirmed if we have at least 2 distinct desktop UI elements AND not stuck on splash/scandisk
+        is_desktop = (len(detected_items) >= 2) and not is_splash and not is_scandisk
 
         return {
             "is_desktop": is_desktop,
             "is_splash": is_splash,
+            "is_scandisk": is_scandisk,
             "detected_items": detected_items,
+            "ocr_lines": ocr_lines,
             "raw_text": combined_text
         }
     except Exception as e:
         print(f"[!] OCR error on {path}: {e}")
-        return {"is_desktop": False, "is_splash": False, "detected_items": [], "raw_text": ""}
+        return {"is_desktop": False, "is_splash": False, "is_scandisk": False, "detected_items": [], "ocr_lines": [], "raw_text": ""}
 
 def analyze_image(path):
     """Returns (num_unique_colors, is_all_black, top_colors)"""
@@ -288,22 +300,25 @@ def main():
                 ipc.call("take_screenshot", {"path": str(final_ss)})
                 colors_cnt, is_black, top_cols = analyze_image(str(final_ss))
 
-                if is_black or colors_cnt < 8:
+                if is_black or colors_cnt <= 1:
                     print(f"[{elapsed:4.1f}s] Desktop Check: Screen is blank/black (colors={colors_cnt})")
                 else:
                     ocr_res = ocr_screen(str(final_ss))
                     if ocr_res["is_splash"]:
-                        print(f"[{elapsed:4.1f}s] Desktop Check: Still on Windows 98 Splash Screen (OCR detected splash)")
+                        print(f"[{elapsed:4.1f}s] Desktop Check: Still on Windows 98 Splash Screen (OCR: {ocr_res['ocr_lines']})")
+                    elif ocr_res["is_scandisk"]:
+                        print(f"[{elapsed:4.1f}s] Desktop Check: ScanDisk active (OCR: {ocr_res['ocr_lines']})")
                     elif ocr_res["is_desktop"]:
                         print(f"\n[SUCCESS] Windows 98 Desktop GUI Verified!")
                         print(f"  - POST: Passed")
                         print(f"  - Dynarec cache hits: {last_hits:,}")
                         print(f"  - Screen status: Displaying desktop GUI ({colors_cnt} unique colors)")
                         print(f"  - OCR detected elements: {', '.join(ocr_res['detected_items'])}")
+                        print(f"  - OCR full text: {' | '.join(ocr_res['ocr_lines'])}")
                         print(f"  - Screenshot saved: {final_ss}")
                         return 0
                     else:
-                        print(f"[{elapsed:4.1f}s] Desktop Check: Waiting for desktop UI (detected: {ocr_res['detected_items']})")
+                        print(f"[{elapsed:4.1f}s] Desktop Check: Waiting for desktop UI (detected: {ocr_res['detected_items']}, OCR: {ocr_res['ocr_lines']})")
 
         # If timeout reached without desktop
         final_ss = Path(args.screenshot).resolve()
@@ -313,12 +328,20 @@ def main():
         ocr_res = ocr_screen(str(final_ss))
         if ocr_res["is_splash"]:
             print(f"\n[FAIL] Windows 98 hung on Splash Screen after {args.timeout}s.")
+        elif ocr_res["is_scandisk"]:
+            print(f"\n[FAIL] Windows 98 still in ScanDisk after {args.timeout}s.")
         else:
             print(f"\n[FAIL] Windows 98 failed to reach desktop within {args.timeout}s.")
         print(f"  - Last PC: {last_pc}")
         print(f"  - Final Dynarec cache hits: {last_hits:,}")
         print(f"  - Final Screenshot colors: {colors_cnt} (is_black={is_black})")
-        print(f"  - OCR Status: splash={ocr_res['is_splash']}, desktop_items={ocr_res['detected_items']}")
+        print(f"  - OCR Status: splash={ocr_res['is_splash']}, scandisk={ocr_res['is_scandisk']}, desktop_items={ocr_res['detected_items']}")
+        if ocr_res["ocr_lines"]:
+            print(f"  - OCR Full Text:")
+            for line in ocr_res["ocr_lines"]:
+                print(f"      {line}")
+        else:
+            print(f"  - OCR Full Text: <none>")
         print(f"  - Saved failure screenshot: {final_ss}")
         return 3
 
