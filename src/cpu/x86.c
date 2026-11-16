@@ -348,6 +348,7 @@ reset_common(int hard)
     if (!hard)
         flushmmucache();
     cpu_cache_invalidate();
+    cpu_is_halted = 0;
     x86_was_reset = 1;
     cpu_state.exit_request |= EXIT_STATUS_RESET;
     cpu_alt_reset = 0;
