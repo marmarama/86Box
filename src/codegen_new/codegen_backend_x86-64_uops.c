@@ -1456,6 +1456,9 @@ codegen_mem_emit_abrt_check(codeblock_t *block, uint32_t oldpc)
 {
     int oldpc_disp = (int) offsetof(cpu_state_t, oldpc) - 128;
 
+    /* Keep the short forward branch and abort stub inside the same mem_block chunk */
+    codegen_alloc_bytes(block, 32);
+
     host_x86_TEST32_REG(block, REG_ESI, REG_ESI);
     uint8_t *no_abrt = host_x86_JZ_short(block);
     host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, oldpc_disp, oldpc);
