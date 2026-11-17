@@ -466,6 +466,33 @@ lower_read_subreg(ir_data_t *ir, ir_reg_t src_reg, int is_signed, int temp_reg,
 }
 
 static void
+lower_write_subreg_32(ir_data_t *ir, ir_reg_t dest_reg, int val_32, int width,
+                      int result_is_zext, uint8_t *zext_width)
+{
+    int dreg     = IREG_GET_REG(dest_reg.reg);
+    int d_is_sub = is_subreg_int(dest_reg);
+    int d_lsb    = d_is_sub ? subreg_lsb(dest_reg.reg) : 0;
+
+    if (d_is_sub && reg_needs_bfi(dreg)) {
+        uop_BFI(ir, dreg | IREG_SIZE_L, dreg | IREG_SIZE_L, val_32, d_lsb, width);
+        zext_width[dreg] = 0;
+    } else if (result_is_zext) {
+        if (dreg != IREG_GET_REG(val_32))
+            uop_MOV(ir, dreg | IREG_SIZE_L, val_32);
+        if (reg_is_dword_native(dreg))
+            zext_width[dreg] = (uint8_t) width;
+        else if (dreg < IREG_COUNT)
+            zext_width[dreg] = 0;
+    } else {
+        uop_BFX(ir, dreg | IREG_SIZE_L, val_32, 0, width, 0);
+        if (reg_is_dword_native(dreg))
+            zext_width[dreg] = (uint8_t) width;
+        else if (dreg < IREG_COUNT)
+            zext_width[dreg] = 0;
+    }
+}
+
+static void
 codegen_ir_lower_subregs(ir_data_t *ir)
 {
     int      orig_count     = ir->wr_pos;
@@ -592,35 +619,53 @@ codegen_ir_lower_subregs(ir_data_t *ir)
             continue;
         }
 
-        /* 4. Native Shifts and Rotates: keep hardware semantics intact */
-        if (uop_masked == (UOP_ROL & UOP_MASK) || uop_masked == (UOP_ROL_IMM & UOP_MASK) ||
-            uop_masked == (UOP_ROR & UOP_MASK) || uop_masked == (UOP_ROR_IMM & UOP_MASK) ||
-            uop_masked == (UOP_SHL & UOP_MASK) || uop_masked == (UOP_SHL_IMM & UOP_MASK) ||
-            uop_masked == (UOP_SHR & UOP_MASK) || uop_masked == (UOP_SHR_IMM & UOP_MASK) ||
-            uop_masked == (UOP_SAR & UOP_MASK) || uop_masked == (UOP_SAR_IMM & UOP_MASK)) {
-            uop_t *new_uop     = lower_copy_uop(ir, u, u->type);
-            if (!ir_reg_is_invalid(u->src_reg_a))
-                new_uop->src_reg_a = codegen_reg_read(u->src_reg_a.reg);
-            if (!ir_reg_is_invalid(u->src_reg_b))
-                new_uop->src_reg_b = codegen_reg_read(u->src_reg_b.reg);
-            if (!ir_reg_is_invalid(u->src_reg_c))
-                new_uop->src_reg_c = codegen_reg_read(u->src_reg_c.reg);
-            if (!ir_reg_is_invalid(u->dest_reg_a)) {
-                int dreg = IREG_GET_REG(u->dest_reg_a.reg);
-                if (is_subreg_int(u->dest_reg_a) && reg_needs_bfi(dreg)) {
-                    int d_lsb      = subreg_lsb(u->dest_reg_a.reg);
-                    int d_width    = subreg_width(u->dest_reg_a.reg);
-                    int temp_sized = IREG_temp4 | (d_width == 16 ? IREG_SIZE_W : IREG_SIZE_B);
-                    new_uop->dest_reg_a = codegen_reg_write(temp_sized, ir->wr_pos - 1);
-                    uop_BFI(ir, dreg | IREG_SIZE_L, dreg | IREG_SIZE_L, IREG_temp4, d_lsb, d_width);
-                    zext_width[dreg]       = 0;
-                    zext_width[IREG_temp4] = (uop_masked == (UOP_SHR & UOP_MASK) || uop_masked == (UOP_SHR_IMM & UOP_MASK)) ? (uint8_t) d_width : 0;
-                } else {
-                    new_uop->dest_reg_a = codegen_reg_write(u->dest_reg_a.reg, ir->wr_pos - 1);
-                    if (dreg < IREG_COUNT)
-                        zext_width[dreg] = 0;
-                }
+        /* 4. Guest-width rotates lowered to 32-bit sequences (shifts fall through to general lowering) */
+        if ((uop_masked == (UOP_ROL & UOP_MASK) || uop_masked == (UOP_ROL_IMM & UOP_MASK) ||
+             uop_masked == (UOP_ROR & UOP_MASK) || uop_masked == (UOP_ROR_IMM & UOP_MASK)) &&
+            (is_subreg_int(u->src_reg_a) || is_subreg_int(u->dest_reg_a))) {
+            int is_imm  = (uop_masked == (UOP_ROL_IMM & UOP_MASK) || uop_masked == (UOP_ROR_IMM & UOP_MASK));
+            int is_rol  = (uop_masked == (UOP_ROL & UOP_MASK) || uop_masked == (UOP_ROL_IMM & UOP_MASK));
+            int w       = is_subreg_int(u->dest_reg_a) ? subreg_width(u->dest_reg_a.reg) : subreg_width(u->src_reg_a.reg);
+            int src_a_z = is_subreg_int(u->src_reg_a)
+                              ? lower_read_subreg(ir, u->src_reg_a, 0, IREG_temp5, zext_width)
+                              : u->src_reg_a.reg;
+            if (!is_subreg_int(u->src_reg_a)) {
+                uop_BFX(ir, IREG_temp5, src_a_z | IREG_SIZE_L, 0, w, 0);
+                src_a_z = IREG_temp5;
             }
+
+            if (is_imm) {
+                uint32_t c = u->imm_data & (uint32_t) (w - 1);
+                if (c == 0) {
+                    lower_write_subreg_32(ir, u->dest_reg_a, src_a_z, w, 1, zext_width);
+                } else {
+                    uint32_t s1 = is_rol ? c : ((uint32_t) w - c);
+                    uint32_t s2 = (uint32_t) w - s1;
+                    uop_SHL_IMM(ir, IREG_temp4, src_a_z, s1);
+                    uop_SHR_IMM(ir, IREG_temp6, src_a_z, s2);
+                    uop_OR(ir, IREG_temp4, IREG_temp4, IREG_temp6);
+                    lower_write_subreg_32(ir, u->dest_reg_a, IREG_temp4, w, 0, zext_width);
+                }
+            } else {
+                int src_b_z = is_subreg_int(u->src_reg_b)
+                                  ? lower_read_subreg(ir, u->src_reg_b, 0, IREG_temp6, zext_width)
+                                  : u->src_reg_b.reg;
+                if (w == 16) {
+                    uop_SHL_IMM(ir, IREG_temp4, src_a_z, 16);
+                    uop_OR(ir, IREG_temp4, IREG_temp4, src_a_z);
+                } else {
+                    uop_SHL_IMM(ir, IREG_temp4, src_a_z, 8);
+                    uop_OR(ir, IREG_temp4, IREG_temp4, src_a_z);
+                    uop_SHL_IMM(ir, IREG_temp5, IREG_temp4, 16);
+                    uop_OR(ir, IREG_temp4, IREG_temp4, IREG_temp5);
+                }
+                if (is_rol)
+                    uop_ROL(ir, IREG_temp4, IREG_temp4, src_b_z);
+                else
+                    uop_ROR(ir, IREG_temp4, IREG_temp4, src_b_z);
+                lower_write_subreg_32(ir, u->dest_reg_a, IREG_temp4, w, 0, zext_width);
+            }
+            zext_width[IREG_temp4] = 0;
             continue;
         }
 
