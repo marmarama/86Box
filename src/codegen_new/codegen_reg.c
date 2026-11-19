@@ -17,16 +17,20 @@ reg_version_t reg_version[IREG_COUNT][2048];
 
 ir_reg_t invalid_ir_reg = { IREG_INVALID };
 
-ir_reg_t       _host_regs[CODEGEN_HOST_REGS];
-static uint8_t _host_reg_dirty[CODEGEN_HOST_REGS];
+ir_reg_t        _host_regs[CODEGEN_HOST_REGS];
+static uint8_t  _host_reg_dirty[CODEGEN_HOST_REGS];
+static uint32_t _host_reg_last_used[CODEGEN_HOST_REGS];
 
-ir_reg_t       host_fp_regs[CODEGEN_HOST_FP_REGS];
-static uint8_t host_fp_reg_dirty[CODEGEN_HOST_FP_REGS];
+ir_reg_t        host_fp_regs[CODEGEN_HOST_FP_REGS];
+static uint8_t  host_fp_reg_dirty[CODEGEN_HOST_FP_REGS];
+static uint32_t host_fp_reg_last_used[CODEGEN_HOST_FP_REGS];
 
 typedef struct host_reg_set_t {
     ir_reg_t       *regs;
     uint8_t        *dirty;
+    uint32_t       *last_used;
     host_reg_def_t *reg_list;
+    uint32_t        clock;
     uint16_t        locked;
     int             nr_regs;
 } host_reg_set_t;
@@ -242,12 +246,16 @@ codegen_reg_reset(void)
 
     host_reg_set.regs        = _host_regs;
     host_reg_set.dirty       = _host_reg_dirty;
+    host_reg_set.last_used   = _host_reg_last_used;
     host_reg_set.reg_list    = codegen_host_reg_list;
+    host_reg_set.clock       = 0;
     host_reg_set.locked      = 0;
     host_reg_set.nr_regs     = CODEGEN_HOST_REGS;
     host_fp_reg_set.regs     = host_fp_regs;
     host_fp_reg_set.dirty    = host_fp_reg_dirty;
+    host_fp_reg_set.last_used = host_fp_reg_last_used;
     host_fp_reg_set.reg_list = codegen_host_fp_reg_list;
+    host_fp_reg_set.clock    = 0;
     host_fp_reg_set.locked   = 0;
     host_fp_reg_set.nr_regs  = CODEGEN_HOST_FP_REGS;
 
@@ -259,12 +267,14 @@ codegen_reg_reset(void)
         reg_version[c][0].flags    = 0;
     }
     for (c = 0; c < CODEGEN_HOST_REGS; c++) {
-        host_reg_set.regs[c]  = invalid_ir_reg;
-        host_reg_set.dirty[c] = 0;
+        host_reg_set.regs[c]      = invalid_ir_reg;
+        host_reg_set.dirty[c]     = 0;
+        host_reg_set.last_used[c] = 0;
     }
     for (c = 0; c < CODEGEN_HOST_FP_REGS; c++) {
-        host_fp_reg_set.regs[c]  = invalid_ir_reg;
-        host_fp_reg_set.dirty[c] = 0;
+        host_fp_reg_set.regs[c]      = invalid_ir_reg;
+        host_fp_reg_set.dirty[c]     = 0;
+        host_fp_reg_set.last_used[c] = 0;
     }
 
     reg_dead_list        = 0;
@@ -401,8 +411,14 @@ codegen_reg_writeback(host_reg_set_t *reg_set, codeblock_t *block, int c, int in
     int   ir_reg = IREG_GET_REG(reg_set->regs[c].reg);
     void *p      = ireg_data[ir_reg].p;
 
-    if (!reg_version[ir_reg][reg_set->regs[c].version].refcount && ireg_data[ir_reg].is_volatile)
+    if (!reg_version[ir_reg][reg_set->regs[c].version].refcount && ireg_data[ir_reg].is_volatile) {
+        if (invalidate) {
+            reg_set->regs[c]      = invalid_ir_reg;
+            reg_set->last_used[c] = 0;
+        }
+        reg_set->dirty[c] = 0;
         return;
+    }
 
     switch (ireg_data[ir_reg].native_size) {
         case REG_BYTE:
@@ -505,8 +521,10 @@ codegen_reg_writeback(host_reg_set_t *reg_set, codeblock_t *block, int c, int in
             fatal("codegen_reg_flush - native_size=%i\n", ireg_data[ir_reg].native_size);
     }
 
-    if (invalidate)
-        reg_set->regs[c] = invalid_ir_reg;
+    if (invalidate) {
+        reg_set->regs[c]      = invalid_ir_reg;
+        reg_set->last_used[c] = 0;
+    }
     reg_set->dirty[c] = 0;
 }
 
@@ -636,6 +654,72 @@ codegen_reg_alloc_register(ir_reg_t dest_reg_a, ir_reg_t src_reg_a, ir_reg_t src
         alloc_dest_reg(dest_reg_a, dest_reference);
 }
 
+/* Pick the lowest-cost unlocked host slot using eviction tier (empty, dead
+ * volatile, zero-refcount clean/dirty, then live clean/dirty) with LRU
+ * tie-breaking, flush/invalidate any alias of ir_reg, and evict the victim. */
+static int
+codegen_reg_alloc_victim(host_reg_set_t *reg_set, codeblock_t *block, ir_reg_t ir_reg, const char *caller)
+{
+    int      best_c    = -1;
+    int      best_tier = 99;
+    uint32_t best_used = UINT32_MAX;
+
+    for (int i = 0; i < reg_set->nr_regs; i++) {
+        int      tier;
+        uint32_t used;
+
+        if (reg_set->locked & (1 << i))
+            continue;
+        if (ir_reg_is_invalid(reg_set->regs[i])) {
+            best_c = i;
+            break;
+        }
+
+        int reg_idx = IREG_GET_REG(reg_set->regs[i].reg);
+        int is_vol  = ireg_data[reg_idx].is_volatile;
+        int dirty   = reg_set->dirty[i];
+        int refcnt  = ir_get_refcount(reg_set->regs[i]);
+
+        if (!refcnt) {
+            if (is_vol)
+                tier = 1;
+            else if (!dirty)
+                tier = 2;
+            else
+                tier = 3;
+        } else {
+            tier = dirty ? 5 : 4;
+        }
+
+        used = reg_set->last_used[i];
+        if (tier < best_tier || (tier == best_tier && used < best_used)) {
+            best_c    = i;
+            best_tier = tier;
+            best_used = used;
+        }
+    }
+
+    if (best_c == -1)
+        fatal("%s - out of registers\n", caller);
+
+    /* Flush and invalidate any other copy of this IR register. */
+    for (int i = 0; i < reg_set->nr_regs; i++) {
+        if (i != best_c && !ir_reg_is_invalid(reg_set->regs[i]) && IREG_GET_REG(reg_set->regs[i].reg) == IREG_GET_REG(ir_reg.reg)) {
+            if (reg_set->dirty[i])
+                codegen_reg_writeback(reg_set, block, i, 1);
+            else {
+                reg_set->regs[i]      = invalid_ir_reg;
+                reg_set->dirty[i]     = 0;
+                reg_set->last_used[i] = 0;
+            }
+        }
+    }
+    if (reg_set->dirty[best_c])
+        codegen_reg_writeback(reg_set, block, best_c, 1);
+
+    return best_c;
+}
+
 ir_host_reg_t
 codegen_reg_alloc_read_reg(codeblock_t *block, ir_reg_t ir_reg, int *host_reg_idx)
 {
@@ -667,40 +751,13 @@ codegen_reg_alloc_read_reg(codeblock_t *block, ir_reg_t ir_reg, int *host_reg_id
     }
 
     if (c == reg_set->nr_regs) {
-        /*No unused registers. Search for an unlocked register with no pending reads*/
-        for (c = 0; c < reg_set->nr_regs; c++) {
-            if (!(reg_set->locked & (1 << c)) && IREG_GET_REG(reg_set->regs[c].reg) != IREG_INVALID && !ir_get_refcount(reg_set->regs[c]))
-                break;
-        }
-        if (c == reg_set->nr_regs) {
-            /*Search for any unlocked register*/
-            for (c = 0; c < reg_set->nr_regs; c++) {
-                if (!(reg_set->locked & (1 << c)))
-                    break;
-            }
-#ifndef RELEASE_BUILD
-            if (c == reg_set->nr_regs)
-                fatal("codegen_reg_alloc_read_reg - out of registers\n");
-#endif
-        }
-        /* Flush and invalidate any other copy of this IR register */
-        for (int i = 0; i < reg_set->nr_regs; i++) {
-            if (i != c && !ir_reg_is_invalid(reg_set->regs[i]) && IREG_GET_REG(reg_set->regs[i].reg) == IREG_GET_REG(ir_reg.reg)) {
-                if (reg_set->dirty[i])
-                    codegen_reg_writeback(reg_set, block, i, 1);
-                else {
-                    reg_set->regs[i]  = invalid_ir_reg;
-                    reg_set->dirty[i] = 0;
-                }
-            }
-        }
-        if (reg_set->dirty[c])
-            codegen_reg_writeback(reg_set, block, c, 1);
+        c = codegen_reg_alloc_victim(reg_set, block, ir_reg, "codegen_reg_alloc_read_reg");
         codegen_reg_load(reg_set, block, c, ir_reg);
         reg_set->locked |= (1 << c);
         reg_set->dirty[c] = 0;
     }
 
+    reg_set->last_used[c] = ++reg_set->clock;
     reg_version[IREG_GET_REG(reg_set->regs[c].reg)][reg_set->regs[c].version].refcount--;
 #ifndef RELEASE_BUILD
     if (reg_version[IREG_GET_REG(reg_set->regs[c].reg)][reg_set->regs[c].version].refcount == (uint8_t) -1)
@@ -737,41 +794,13 @@ codegen_reg_alloc_write_reg(codeblock_t *block, ir_reg_t ir_reg)
     }
 
     if (c == reg_set->nr_regs) {
-        /*Search for unused registers*/
-        for (c = 0; c < reg_set->nr_regs; c++) {
-            if (ir_reg_is_invalid(reg_set->regs[c]) && !(reg_set->locked & (1 << c)))
-                break;
-        }
-
-        if (c == reg_set->nr_regs) {
-            /*No unused registers. Search for an unlocked register*/
-            for (c = 0; c < reg_set->nr_regs; c++) {
-                if (!(reg_set->locked & (1 << c)))
-                    break;
-            }
-#ifndef RELEASE_BUILD
-            if (c == reg_set->nr_regs)
-                fatal("codegen_reg_alloc_write_reg - out of registers\n");
-#endif
-        }
-        /* Flush and invalidate any other copy of this IR register */
-        for (int i = 0; i < reg_set->nr_regs; i++) {
-            if (i != c && !ir_reg_is_invalid(reg_set->regs[i]) && IREG_GET_REG(reg_set->regs[i].reg) == IREG_GET_REG(ir_reg.reg)) {
-                if (reg_set->dirty[i])
-                    codegen_reg_writeback(reg_set, block, i, 1);
-                else {
-                    reg_set->regs[i]  = invalid_ir_reg;
-                    reg_set->dirty[i] = 0;
-                }
-            }
-        }
-        if (reg_set->dirty[c])
-            codegen_reg_writeback(reg_set, block, c, 1);
+        c = codegen_reg_alloc_victim(reg_set, block, ir_reg, "codegen_reg_alloc_write_reg");
     }
 
     reg_set->regs[c].reg     = ir_reg.reg;
     reg_set->regs[c].version = ir_reg.version;
     reg_set->dirty[c]        = 1;
+    reg_set->last_used[c]    = ++reg_set->clock;
     return reg_set->reg_list[c].reg | IREG_GET_SIZE(ir_reg.reg);
 }
 
@@ -828,8 +857,9 @@ codegen_reg_rename(codeblock_t *block, ir_reg_t src, ir_reg_t dst)
     target = c;
     if (reg_set->dirty[target])
         codegen_reg_writeback(reg_set, block, target, 0);
-    reg_set->regs[target]  = dst;
-    reg_set->dirty[target] = 1;
+    reg_set->regs[target]      = dst;
+    reg_set->dirty[target]     = 1;
+    reg_set->last_used[target] = ++reg_set->clock;
 #if 0
     pclog("renamed reg %i dest=%i.%i\n", target, dst.reg, dst.version);
 #endif
@@ -839,8 +869,9 @@ codegen_reg_rename(codeblock_t *block, ir_reg_t src, ir_reg_t dst)
         if (c == target)
             continue;
         if (!ir_reg_is_invalid(reg_set->regs[c]) && IREG_GET_REG(reg_set->regs[c].reg) == IREG_GET_REG(dst.reg)) {
-            reg_set->regs[c]  = invalid_ir_reg;
-            reg_set->dirty[c] = 0;
+            reg_set->regs[c]      = invalid_ir_reg;
+            reg_set->dirty[c]     = 0;
+            reg_set->last_used[c] = 0;
         }
     }
 }
@@ -860,8 +891,9 @@ codegen_reg_flush(UNUSED(ir_data_t *ir), codeblock_t *block)
             (!ir_reg_is_invalid(reg_set->regs[c]) &&
              (IREG_GET_REG(reg_set->regs[c].reg) == IREG_cycles ||
               IREG_GET_REG(reg_set->regs[c].reg) == IREG_exit_request))) {
-            reg_set->regs[c]  = invalid_ir_reg;
-            reg_set->dirty[c] = 0;
+            reg_set->regs[c]      = invalid_ir_reg;
+            reg_set->dirty[c]     = 0;
+            reg_set->last_used[c] = 0;
         }
     }
 
@@ -874,8 +906,9 @@ codegen_reg_flush(UNUSED(ir_data_t *ir), codeblock_t *block)
             (!ir_reg_is_invalid(reg_set->regs[c]) &&
              (IREG_GET_REG(reg_set->regs[c].reg) == IREG_cycles ||
               IREG_GET_REG(reg_set->regs[c].reg) == IREG_exit_request))) {
-            reg_set->regs[c]  = invalid_ir_reg;
-            reg_set->dirty[c] = 0;
+            reg_set->regs[c]      = invalid_ir_reg;
+            reg_set->dirty[c]     = 0;
+            reg_set->last_used[c] = 0;
         }
     }
 }
@@ -891,8 +924,9 @@ codegen_reg_flush_invalidate(UNUSED(ir_data_t *ir), codeblock_t *block)
         if (!ir_reg_is_invalid(reg_set->regs[c]) && reg_set->dirty[c]) {
             codegen_reg_writeback(reg_set, block, c, 1);
         }
-        reg_set->regs[c]  = invalid_ir_reg;
-        reg_set->dirty[c] = 0;
+        reg_set->regs[c]      = invalid_ir_reg;
+        reg_set->dirty[c]     = 0;
+        reg_set->last_used[c] = 0;
     }
 
     reg_set = &host_fp_reg_set;
@@ -900,8 +934,9 @@ codegen_reg_flush_invalidate(UNUSED(ir_data_t *ir), codeblock_t *block)
         if (!ir_reg_is_invalid(reg_set->regs[c]) && reg_set->dirty[c]) {
             codegen_reg_writeback(reg_set, block, c, 1);
         }
-        reg_set->regs[c]  = invalid_ir_reg;
-        reg_set->dirty[c] = 0;
+        reg_set->regs[c]      = invalid_ir_reg;
+        reg_set->dirty[c]     = 0;
+        reg_set->last_used[c] = 0;
     }
 }
 
