@@ -1,6 +1,5 @@
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <86box/86box.h>
 #include "cpu.h"
@@ -157,60 +156,43 @@ codegen_ir_optimize_liveness(ir_data_t *ir)
             int version = uop->dest_reg_a.version;
             int refcount = reg_version[dreg][version].refcount;
             int required = (reg_version[dreg][version].flags & REG_FLAGS_REQUIRED) != 0;
-            int is_native = reg_is_native_size(uop->dest_reg_a);
 
             if (dreg == IREG_flags_op) {
-                if (!(flags_live & FLAG_LIVE_OP) && is_native && refcount == 0 && !required) {
+                if (!(flags_live & FLAG_LIVE_OP) && refcount == 0 && !required) {
                     invalidate_dead_uop(uop);
                     continue;
                 }
                 flags_live &= ~FLAG_LIVE_OP;
             } else if (dreg == IREG_flags_res) {
-                if (!(flags_live & FLAG_LIVE_RES) && is_native && refcount == 0 && !required) {
+                if (!(flags_live & FLAG_LIVE_RES) && refcount == 0 && !required) {
                     invalidate_dead_uop(uop);
                     continue;
                 }
                 flags_live &= ~FLAG_LIVE_RES;
             } else if (dreg == IREG_flags_op1) {
-                if (!(flags_live & FLAG_LIVE_OP1) && is_native && refcount == 0 && !required) {
+                if (!(flags_live & FLAG_LIVE_OP1) && refcount == 0 && !required) {
                     invalidate_dead_uop(uop);
                     continue;
                 }
                 flags_live &= ~FLAG_LIVE_OP1;
             } else if (dreg == IREG_flags_op2) {
-                if (!(flags_live & FLAG_LIVE_OP2) && is_native && refcount == 0 && !required) {
+                if (!(flags_live & FLAG_LIVE_OP2) && refcount == 0 && !required) {
                     invalidate_dead_uop(uop);
                     continue;
                 }
                 flags_live &= ~FLAG_LIVE_OP2;
             } else if (dreg == IREG_oldpc) {
-                if (!oldpc_live && is_native && refcount == 0 && !required) {
+                if (!oldpc_live && refcount == 0 && !required) {
                     invalidate_dead_uop(uop);
                     continue;
                 }
                 oldpc_live = 0;
             } else if (dreg == IREG_pc) {
-                if (!pc_live && is_native && refcount == 0 && !required) {
+                if (!pc_live && refcount == 0 && !required) {
                     invalidate_dead_uop(uop);
                     continue;
                 }
                 pc_live = 0;
-            }
-
-            /* Partial (non-native size) writes have an implicit dependency on the previous version */
-            if (!is_native) {
-                if (dreg == IREG_flags_op)
-                    flags_live |= FLAG_LIVE_OP;
-                else if (dreg == IREG_flags_res)
-                    flags_live |= FLAG_LIVE_RES;
-                else if (dreg == IREG_flags_op1)
-                    flags_live |= FLAG_LIVE_OP1;
-                else if (dreg == IREG_flags_op2)
-                    flags_live |= FLAG_LIVE_OP2;
-                else if (dreg == IREG_oldpc)
-                    oldpc_live = 1;
-                else if (dreg == IREG_pc)
-                    pc_live = 1;
             }
         }
 
@@ -292,12 +274,10 @@ codegen_ir_peephole(ir_data_t *ir)
 
         uint32_t uop_masked = uop->type & UOP_MASK;
 
-        /* 1. Self-cancelling operations: XOR R, R or SUB R, R -> MOV_IMM 0 (native size integer) */
+        /* 1. Self-cancelling operations: XOR R, R or SUB R, R -> MOV_IMM 0 (integer) */
         if (uop_masked == (UOP_XOR & UOP_MASK) || uop_masked == (UOP_SUB & UOP_MASK)) {
             if (uop->src_reg_a.reg != IREG_INVALID &&
                 reg_is_integer(uop->dest_reg_a) &&
-                reg_is_native_size(uop->dest_reg_a) &&
-                reg_is_native_size(uop->src_reg_a) &&
                 uop->src_reg_a.reg == uop->src_reg_b.reg &&
                 uop->src_reg_a.version == uop->src_reg_b.version) {
                 peephole_release_src_reg(uop->src_reg_a);
@@ -316,10 +296,10 @@ codegen_ir_peephole(ir_data_t *ir)
             }
         }
 
-        /* 2. Check if src_reg_a / src_reg_b have known constants (native size integer) */
+        /* 2. Check if src_reg_a / src_reg_b have known constants (integer) */
         int      src_a_is_const = 0;
         uint32_t c_val_a        = 0;
-        if (uop->src_reg_a.reg != IREG_INVALID && reg_is_integer(uop->src_reg_a) && reg_is_native_size(uop->src_reg_a)) {
+        if (uop->src_reg_a.reg != IREG_INVALID && reg_is_integer(uop->src_reg_a)) {
             int sreg = IREG_GET_REG(uop->src_reg_a.reg);
             if (const_valid[sreg] && const_version[sreg] == uop->src_reg_a.version) {
                 src_a_is_const = 1;
@@ -328,7 +308,7 @@ codegen_ir_peephole(ir_data_t *ir)
         }
         int      src_b_is_const = 0;
         uint32_t c_val_b        = 0;
-        if (uop->src_reg_b.reg != IREG_INVALID && reg_is_integer(uop->src_reg_b) && reg_is_native_size(uop->src_reg_b)) {
+        if (uop->src_reg_b.reg != IREG_INVALID && reg_is_integer(uop->src_reg_b)) {
             int sreg = IREG_GET_REG(uop->src_reg_b.reg);
             if (const_valid[sreg] && const_version[sreg] == uop->src_reg_b.version) {
                 src_b_is_const = 1;
@@ -336,10 +316,8 @@ codegen_ir_peephole(ir_data_t *ir)
             }
         }
 
-        /* 3. Constant propagation into ALU, BFX/BFI, and MOV operations (native size integer) */
-        if ((uop->dest_reg_a.reg != IREG_INVALID) &&
-            reg_is_integer(uop->dest_reg_a) &&
-            reg_is_native_size(uop->dest_reg_a)) {
+        /* 3. Constant propagation into ALU, BFX/BFI, and MOV operations (integer) */
+        if ((uop->dest_reg_a.reg != IREG_INVALID) && reg_is_integer(uop->dest_reg_a)) {
             int      folded = 0;
             uint32_t res    = 0;
 
@@ -419,8 +397,7 @@ codegen_ir_peephole(ir_data_t *ir)
             }
             if (!folded && (src_a_is_const ^ src_b_is_const) &&
                 uop->src_reg_a.reg != IREG_INVALID && uop->src_reg_b.reg != IREG_INVALID &&
-                reg_is_integer(uop->src_reg_a) && reg_is_native_size(uop->src_reg_a) &&
-                reg_is_integer(uop->src_reg_b) && reg_is_native_size(uop->src_reg_b)) {
+                reg_is_integer(uop->src_reg_a) && reg_is_integer(uop->src_reg_b)) {
                 int      can_fold_imm = 0;
                 uint32_t imm_op       = 0;
                 uint32_t k            = src_b_is_const ? c_val_b : c_val_a;
@@ -465,7 +442,7 @@ codegen_ir_peephole(ir_data_t *ir)
             if (!folded && uop_masked == (UOP_AND_IMM & UOP_MASK) && uop->imm_data == 0) {
                 res    = 0;
                 folded = 1;
-            } else if (!folded && uop->src_reg_a.reg != IREG_INVALID && reg_is_native_size(uop->src_reg_a) &&
+            } else if (!folded && uop->src_reg_a.reg != IREG_INVALID && reg_is_integer(uop->src_reg_a) &&
                        ((uop->imm_data == 0 &&
                          (uop_masked == (UOP_ADD_IMM & UOP_MASK) || uop_masked == (UOP_SUB_IMM & UOP_MASK) ||
                           uop_masked == (UOP_OR_IMM & UOP_MASK) || uop_masked == (UOP_XOR_IMM & UOP_MASK) ||
@@ -498,7 +475,7 @@ codegen_ir_peephole(ir_data_t *ir)
         /* 4. Update or invalidate constant tracking on write */
         if (uop->dest_reg_a.reg != IREG_INVALID) {
             int dreg = IREG_GET_REG(uop->dest_reg_a.reg);
-            if ((uop->type & UOP_MASK) == (UOP_MOV_IMM & UOP_MASK) && reg_is_integer(uop->dest_reg_a) && reg_is_native_size(uop->dest_reg_a)) {
+            if ((uop->type & UOP_MASK) == (UOP_MOV_IMM & UOP_MASK) && reg_is_integer(uop->dest_reg_a)) {
                 const_val[dreg]     = uop->imm_data;
                 const_version[dreg] = uop->dest_reg_a.version;
                 const_valid[dreg]   = 1;
@@ -508,8 +485,6 @@ codegen_ir_peephole(ir_data_t *ir)
         }
     }
 }
-
-int codegen_opt_bfx = 1;
 
 static inline int
 is_subreg_int(ir_reg_t r)
@@ -1121,27 +1096,10 @@ void
 codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
 {
     block->unroll_count = (uint8_t) codegen_unroll_count;
-    static int opt_bfx_initialized = 0;
-    static int opt_bfx_limit = -1;
-    static int opt_bfx_count = 0;
-    int        subreg_lowered = 0;
-    if (!opt_bfx_initialized) {
-        opt_bfx_initialized = 1;
-        const char *env = getenv("BOX86_OPT_BFX");
-        if (env)
-            codegen_opt_bfx = atoi(env);
-        const char *lim = getenv("BOX86_BFX_LIMIT");
-        if (lim)
-            opt_bfx_limit = atoi(lim);
-    }
-    if (codegen_opt_bfx && (opt_bfx_limit < 0 || opt_bfx_count < opt_bfx_limit)) {
-        opt_bfx_count++;
-        codegen_ir_lower_subregs(ir);
-        subreg_lowered = 1;
+    codegen_ir_lower_subregs(ir);
 #ifndef RELEASE_BUILD
-        codegen_ir_verify_canonical(ir);
+    codegen_ir_verify_canonical(ir);
 #endif
-    }
 
     int jump_target_at_end = -1;
     int c;
@@ -1182,8 +1140,7 @@ codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
     codegen_reg_mark_as_required();
     codegen_ir_peephole(ir);
 #ifndef RELEASE_BUILD
-    if (subreg_lowered)
-        codegen_ir_verify_canonical(ir);
+    codegen_ir_verify_canonical(ir);
 #endif
     codegen_ir_optimize_liveness(ir);
     codegen_reg_process_dead_list(ir);
@@ -1225,7 +1182,7 @@ codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
             continue;
 
 #ifdef CODEGEN_BACKEND_HAS_MOV_IMM
-        if ((uop->type & UOP_MASK) == (UOP_MOV_IMM & UOP_MASK) && reg_is_integer(uop->dest_reg_a) && reg_is_native_size(uop->dest_reg_a) && !codegen_reg_is_loaded(uop->dest_reg_a) && reg_version[IREG_GET_REG(uop->dest_reg_a.reg)][uop->dest_reg_a.version].refcount <= 0) {
+        if ((uop->type & UOP_MASK) == (UOP_MOV_IMM & UOP_MASK) && reg_is_integer(uop->dest_reg_a) && !codegen_reg_is_loaded(uop->dest_reg_a) && reg_version[IREG_GET_REG(uop->dest_reg_a.reg)][uop->dest_reg_a.version].refcount <= 0) {
             /*Special case for UOP_MOV_IMM - if destination not already in host register
               and won't be used again then just store directly to memory*/
             if (dump_on)
@@ -1235,7 +1192,7 @@ codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
                 dump_host_ends[c] = codegen_dump_get_pos(block_pos);
         } else
 #endif
-            if ((uop->type & UOP_MASK) == (UOP_MOV & UOP_MASK) && reg_version[IREG_GET_REG(uop->src_reg_a.reg)][uop->src_reg_a.version].refcount <= 1 && reg_is_native_size(uop->src_reg_a) && reg_is_native_size(uop->dest_reg_a)) {
+            if ((uop->type & UOP_MASK) == (UOP_MOV & UOP_MASK) && reg_version[IREG_GET_REG(uop->src_reg_a.reg)][uop->src_reg_a.version].refcount <= 1 && reg_is_integer(uop->src_reg_a) == reg_is_integer(uop->dest_reg_a)) {
             /*Special case for UOP_MOV - if source register won't be used again then
               just rename it to dest register instead of moving*/
             codegen_reg_alloc_register(invalid_ir_reg, uop->src_reg_a, invalid_ir_reg, invalid_ir_reg);

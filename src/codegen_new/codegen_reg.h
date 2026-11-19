@@ -395,9 +395,7 @@ codegen_reg_read(int reg)
     return ireg;
 }
 
-int reg_is_native_size(ir_reg_t ir_reg);
 int reg_is_integer(ir_reg_t ir_reg);
-int reg_is_volatile(int reg);
 
 static inline int
 reg_is_dword_native(int reg)
@@ -405,8 +403,8 @@ reg_is_dword_native(int reg)
     int r_idx = IREG_GET_REG(reg);
     if (r_idx >= IREG_COUNT)
         return 0;
-    ir_reg_t r = { (uint16_t)(r_idx | IREG_SIZE_L), 0 };
-    return reg_is_native_size(r);
+    ir_reg_t r = { (uint16_t) r_idx, 0 };
+    return reg_is_integer(r);
 }
 
 static inline ir_reg_t
@@ -425,13 +423,8 @@ codegen_reg_write(int reg, int uop_nr)
     ireg.reg     = reg;
     ireg.version = last_version + 1;
 
-    if (reg_is_native_size(ireg) || reg_is_volatile(reg)) {
-        if (last_version && !reg_version[IREG_GET_REG(reg)][last_version].refcount && !(reg_version[IREG_GET_REG(reg)][last_version].flags & REG_FLAGS_REQUIRED))
-            add_to_dead_list(&reg_version[IREG_GET_REG(reg)][last_version], IREG_GET_REG(reg), last_version);
-    } else if (last_version > 0) {
-        /*Non-native size registers have an implicit dependency on the previous version, so mark it required*/
-        reg_version[IREG_GET_REG(reg)][last_version].flags |= REG_FLAGS_REQUIRED;
-    }
+    if (last_version && !reg_version[IREG_GET_REG(reg)][last_version].refcount && !(reg_version[IREG_GET_REG(reg)][last_version].flags & REG_FLAGS_REQUIRED))
+        add_to_dead_list(&reg_version[IREG_GET_REG(reg)][last_version], IREG_GET_REG(reg), last_version);
 
     reg_last_version[IREG_GET_REG(reg)]++;
 

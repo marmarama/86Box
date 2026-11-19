@@ -198,31 +198,6 @@ struct
     [IREG_temp1d] = { REG_DOUBLE,        (void *) 56,                        REG_FP,      REG_VOLATILE },
 };
 
-static const uint8_t native_requested_sizes[9][8] = 
-{
-    [REG_BYTE][IREG_SIZE_B >> IREG_SIZE_SHIFT]          = 1,
-    [REG_BYTE][IREG_SIZE_L >> IREG_SIZE_SHIFT]          = 1,
-    [REG_FPU_ST_BYTE][IREG_SIZE_B >> IREG_SIZE_SHIFT]   = 1,
-    [REG_FPU_ST_BYTE][IREG_SIZE_L >> IREG_SIZE_SHIFT]   = 1,
-    [REG_WORD][IREG_SIZE_W >> IREG_SIZE_SHIFT]          = 1,
-    [REG_WORD][IREG_SIZE_L >> IREG_SIZE_SHIFT]          = 1,
-    [REG_DWORD][IREG_SIZE_L >> IREG_SIZE_SHIFT]         = 1,
-    [REG_QWORD][IREG_SIZE_D >> IREG_SIZE_SHIFT]         = 1,
-    [REG_FPU_ST_QWORD][IREG_SIZE_D >> IREG_SIZE_SHIFT]  = 1,
-    [REG_DOUBLE][IREG_SIZE_D >> IREG_SIZE_SHIFT]        = 1,
-    [REG_FPU_ST_DOUBLE][IREG_SIZE_D >> IREG_SIZE_SHIFT] = 1,
-    [REG_QWORD][IREG_SIZE_Q >> IREG_SIZE_SHIFT]         = 1,
-    [REG_FPU_ST_QWORD][IREG_SIZE_Q >> IREG_SIZE_SHIFT]  = 1,
-    [REG_DOUBLE][IREG_SIZE_Q >> IREG_SIZE_SHIFT]        = 1,
-    [REG_FPU_ST_DOUBLE][IREG_SIZE_Q >> IREG_SIZE_SHIFT] = 1,
-
-#if defined __ARM_EABI__ || defined _ARM_ || defined _M_ARM || defined __aarch64__ || defined _M_ARM64 || defined __loongarch_lp64
-    [REG_POINTER][IREG_SIZE_Q >> IREG_SIZE_SHIFT] = 1
-#else
-    [REG_POINTER][(sizeof(void *) == 4) ? (IREG_SIZE_L >> IREG_SIZE_SHIFT) : (IREG_SIZE_Q >> IREG_SIZE_SHIFT)] = 1
-#endif
-};
-
 void
 codegen_reg_mark_as_required(void)
 {
@@ -240,25 +215,10 @@ codegen_reg_mark_as_required(void)
 }
 
 int
-reg_is_native_size(ir_reg_t ir_reg)
-{
-    int native_size    = ireg_data[IREG_GET_REG(ir_reg.reg)].native_size;
-    int requested_size = IREG_GET_SIZE(ir_reg.reg);
-
-    return native_requested_sizes[native_size][requested_size >> IREG_SIZE_SHIFT];
-}
-
-int
 reg_is_integer(ir_reg_t ir_reg)
 {
     int reg = IREG_GET_REG(ir_reg.reg);
     return (ireg_data[reg].type == REG_INTEGER && ireg_data[reg].native_size <= REG_DWORD);
-}
-
-int
-reg_is_volatile(int reg)
-{
-    return ireg_data[IREG_GET_REG(reg)].is_volatile == REG_VOLATILE;
 }
 
 void
@@ -762,29 +722,6 @@ codegen_reg_alloc_write_reg(codeblock_t *block, ir_reg_t ir_reg)
 #endif
     host_reg_set_t *reg_set = get_reg_set(ir_reg);
     int             c;
-
-    if (!reg_is_native_size(ir_reg) && !ireg_data[IREG_GET_REG(ir_reg.reg)].is_volatile) {
-        /*Read in parent register so we can do partial accesses to it*/
-        ir_reg_t parent_reg;
-
-        parent_reg.reg     = IREG_GET_REG(ir_reg.reg) | IREG_SIZE_L;
-        parent_reg.version = ir_reg.version - 1;
-        reg_version[IREG_GET_REG(ir_reg.reg)][ir_reg.version - 1].refcount++;
-
-        codegen_reg_alloc_read_reg(block, parent_reg, &c);
-
-#ifndef RELEASE_BUILD
-        if (IREG_GET_REG(reg_set->regs[c].reg) != IREG_GET_REG(ir_reg.reg) || reg_set->regs[c].version > ir_reg.version - 1)
-            fatal("codegen_reg_alloc_write_reg sub_reg - doesn't match  %i %02x.%i %02x.%i\n", c,
-                  reg_set->regs[c].reg, reg_set->regs[c].version,
-                  ir_reg.reg, ir_reg.version);
-#endif
-
-        reg_set->regs[c].reg     = ir_reg.reg;
-        reg_set->regs[c].version = ir_reg.version;
-        reg_set->dirty[c]        = 1;
-        return reg_set->reg_list[c].reg | IREG_GET_SIZE(ir_reg.reg);
-    }
 
     /*Search for previous version in host register*/
     for (c = 0; c < reg_set->nr_regs; c++) {
