@@ -170,8 +170,8 @@ The register allocator maps the infinite virtual `IREG_*` space down to the host
 2. **Write Allocation (`codegen_reg_alloc_write_reg`)**: Allocates a host register for the destination, marking the host register descriptor as **dirty**.
 3. **Register Flushing (`codegen_reg_flush`)**: Traverses the register table; any register marked dirty emits a host store back into `cpu_state` and clears the dirty bit.
 
-#### High-Byte Registers (`AH`/`BH`/`CH`/`DH`) on x86-64
-x86-64 cannot encode `AH`..`DH` alongside a REX prefix. `HOST_REG_FLAG_NO_BH` exists in `codegen_backend.h` but is currently defined as `0` (a no-op), so the allocator does **not** mask any registers. High-byte operands are instead handled inside the backend uOp handlers via temporaries (`MOVZX` + `SHR 8` through `ECX`, see `EMIT_ALU8_BINARY` in `codegen_backend_x86-64_uops.c`).
+#### High-Byte & Sub-Register Canonicalization
+x86-64 cannot encode `AH`..`DH` alongside a REX prefix, and sub-register writes create partial-register dependencies across backends. `codegen_ir_lower_subregs()` in `codegen_ir.c` unconditionally lowers all narrow (`B`/`BH`/`W`) register operations into full 32-bit operations with explicit `UOP_BFX` extracts and `UOP_BFI` merges, leaving only explicit memory-access widths (`UOP_MEM_*`) in the backends (`HOST_REG_FLAG_NO_BH` and `native_size` partial-write checks were retired).
 
 
 ---

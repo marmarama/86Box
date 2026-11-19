@@ -15,7 +15,6 @@ description: Bisect a guest failure (crash, hang, corruption, bad boot) to block
    - `0x20` `LINK_SAME_PAGE`: SMC or cross-page issue.
 4. **Find the exact link.** Set `BOX86_LINK_LIMIT=N` and binary-search N until the failure appears. The Nth link is logged via `pclog` with source/dest block, PC, `cs` and status. Inspect it with the `analyze-block-dump` skill.
 5. **Codegen or lowering bug.**
-   - **Is it sub-register BFX lowering?** Re-run with `BOX86_OPT_BFX=0` (or bisect with `BOX86_BFX_LIMIT=N`). If disabling BFX resolves the failure, binary-search `N` to find the exact block where sub-register canonicalization fails.
    - Dump blocks around the failing PC (see `analyze-block-dump`), run `--lint`, and compare IR and host code against the guest instructions. For single-stepping guest code in GDB, build with `-DGDBSTUB=ON` and use `BOX86_LINK_MASK=0`.
 6. **Check the known gotchas** in `AGENTS.md` §3 before deep diving: loop decrement, runtime vs compile-time `flags_op`, SMC `EXIT_STATUS_BLOCK_END`, intra-block branches, high-byte regs, `IREG_cycles` sync.
 7. **Fix, then record**: add a new pitfall to `AGENTS.md` §3 and `src/codegen_new/docs/`, and commit.

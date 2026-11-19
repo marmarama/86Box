@@ -31,8 +31,6 @@ def parse_args():
     parser.add_argument("--screenshot", default="scratch/win98_verified.png", help="Path to save final screenshot")
     parser.add_argument("--ipc-socket", default="/tmp/verify-win98-ipc.sock", help="Path to IPC socket")
     parser.add_argument("--post-only", action="store_true", help="Only verify POST and exit early")
-    parser.add_argument("--bfx", type=int, default=None, help="Set BOX86_OPT_BFX")
-    parser.add_argument("--bfx-limit", type=int, default=None, help="Set BOX86_BFX_LIMIT")
     parser.add_argument("--link-mask", type=str, default=None, help="Set BOX86_LINK_MASK")
     return parser.parse_args()
 
@@ -213,10 +211,6 @@ def main():
     env = os.environ.copy()
     env["QT_QPA_PLATFORM"] = "offscreen"
     env["ALSOFT_DRIVERS"] = "null"
-    if args.bfx is not None:
-        env["BOX86_OPT_BFX"] = str(args.bfx)
-    if args.bfx_limit is not None:
-        env["BOX86_BFX_LIMIT"] = str(args.bfx_limit)
     if args.link_mask is not None:
         env["BOX86_LINK_MASK"] = str(args.link_mask)
 

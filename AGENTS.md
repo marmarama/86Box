@@ -58,7 +58,7 @@ Skills (`.agents/skills/`): [`run-dos-benchmarks`](.agents/skills/run-dos-benchm
 - **Rule**: use branchless helpers or native `UOP_SETCC` / `UOP_CMOV`.
 
 ### 5. High-byte registers vs REX (x86-64)
-- ModR/M cannot encode `AH`–`DH` alongside a REX prefix. `HOST_REG_FLAG_NO_BH` (`codegen_backend.h`) is currently defined as `0`, so the allocator does not mask registers; the backend uOp handlers work around high bytes with temporaries (`MOVZX` + `SHR 8` via `ECX`). Task 33 tracks emulating high bytes with shifts.
+- ModR/M cannot encode `AH`–`DH` alongside a REX prefix. `codegen_ir_lower_subregs()` now unconditionally canonicalizes all 8/16-bit and high-byte register operations into 32-bit ops plus `UOP_BFX`/`UOP_BFI`, so backends and the register allocator only handle full 32-bit GPR operands (`HOST_REG_FLAG_NO_BH` and `reg_is_native_size` were retired).
 
 ### 6. Cycle sync around C callouts
 - **Symptom**: implausible benchmark scores (PCPBench 60 → 208 FPS).
@@ -141,7 +141,6 @@ python3 scripts/86box-ipc.py arm-trigger --pattern "PINBALL.EXE" --output /tmp/p
 | `0x80` | `LINK_RET` | Monomorphic near `RET` |
 
 - `BOX86_LINK_LIMIT=N`: stop linking after N links. Binary-search N to find the corrupting link.
-- `BOX86_BFX_LIMIT=N`: stop applying sub-register canonicalization / BFX lowering (`codegen_ir_lower_subregs`) after N blocks (see `BOX86_OPT_BFX`). Binary-search N to isolate which compiled block suffers from a sub-register lowering or flag clobber regression.
 - Block dumping (`codegen_block.c`): `BOX86_DUMP_BLOCKS`, `_DUMP_PC`, `_DUMP_PHYS`, `_DUMP_MIN_EXEC`, `_DUMP_PROFILE`, `_PERF_MAP`, `_HANG_DETECT`. See `DEBUG-BLOCK-DUMPER.md` and `scripts/analyze_blocks.py`.
 - **Lockstep block verifier** (`386_dynarec.c`, `codegen_generate_call`): `BOX86_VERIFY_BLOCK=<hex phys>` replays one compiled block against the interpreter (state + RAM diff), `BOX86_VERIFY_ALL=1` with optional `BOX86_VERIFY_MIN`/`_MAX` phys bounds sweeps blocks. Block linking is suppressed while active. The replay length is the number of guest instructions the JIT block actually executed, counted at runtime by `IREG_verify_insns` (`cpu_state.verify_insns`), emitted once per instruction before the opcode recompiler so control-flow, fallback and unrolled paths all count. I/O, REP-string and mode-switch/privileged/interrupt blocks are skipped (device side effects / JIT-vs-interpreter block-end mismatch). See `src/codegen_new/docs/CODEGEN_TESTING_PLAN.md` §7.
 

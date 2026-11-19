@@ -49,15 +49,6 @@ The count includes only links that pass the mask, and counts every link created,
 the result is deterministic only if the guest run is (same disk image, no
 network, same config).
 
-### `BOX86_OPT_BFX` and `BOX86_BFX_LIMIT`
-
-Used for bisecting sub-register canonicalization and BFX/BFI lowering (`codegen_ir_lower_subregs` in `codegen_ir.c`):
-
-- `BOX86_OPT_BFX=0`: Disables BFX/BFI sub-register lowering entirely, leaving sub-registers for the backend to handle natively.
-- `BOX86_BFX_LIMIT=N`: Enables BFX/BFI lowering only for the first N compiled blocks (`N >= 0`). Once `opt_bfx_count >= N`, subsequent blocks skip `codegen_ir_lower_subregs()`.
-
-By binary-searching `BOX86_BFX_LIMIT=N` across deterministic boot runs, you can quickly pinpoint the exact block sequence where sub-register extraction/insertion introduces an incorrect zero-extension, flag clobber, or register corruption.
-
 ## Runtime API
 
 ```c
