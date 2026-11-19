@@ -25,7 +25,6 @@
 #    define REG_IS_L(size)    (size == IREG_SIZE_L)
 #    define REG_IS_W(size)    (size == IREG_SIZE_W)
 #    define REG_IS_B(size)    (size == IREG_SIZE_B)
-#    define REG_IS_BH(size)   (size == IREG_SIZE_BH)
 #    define REG_IS_D(size)    (size == IREG_SIZE_D)
 #    define REG_IS_Q(size)    (size == IREG_SIZE_Q)
 
@@ -41,23 +40,6 @@ codegen_ADD(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(dest_size) && REG_IS_L(src_size_a) && REG_IS_L(src_size_b)) {
         host_arm64_ADD_REG(block, dest_reg, src_reg_a, src_reg_b, 0);
-    } else if (REG_IS_W(dest_size) && REG_IS_W(src_size_a) && REG_IS_W(src_size_b)) {
-        host_arm64_ADD_REG(block, REG_TEMP, src_reg_a, src_reg_b, 0);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 16);
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size_a) && REG_IS_B(src_size_b)) {
-        host_arm64_ADD_REG(block, REG_TEMP, src_reg_a, src_reg_b, 0);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size_a) && REG_IS_BH(src_size_b)) {
-        host_arm64_ADD_REG_LSR(block, REG_TEMP, src_reg_a, src_reg_b, 8);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
-    } else if (REG_IS_BH(dest_size) && REG_IS_BH(src_size_a) && REG_IS_B(src_size_b)) {
-        host_arm64_ADD_REG_LSR(block, REG_TEMP, src_reg_b, src_reg_a, 8);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 8, 8);
-    } else if (REG_IS_BH(dest_size) && REG_IS_BH(src_size_a) && REG_IS_BH(src_size_b)) {
-        host_arm64_AND_IMM(block, REG_TEMP, src_reg_a, 0x0000ff00);
-        host_arm64_ADD_REG(block, REG_TEMP, REG_TEMP, src_reg_b, 0);
-        host_arm64_MOV_REG_LSR(block, REG_TEMP, REG_TEMP, 8);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 8, 8);
     } else
         fatal("ADD %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
 
@@ -74,16 +56,6 @@ codegen_ADD_IMM(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(dest_size) && REG_IS_L(src_size)) {
         host_arm64_ADD_IMM(block, dest_reg, src_reg, uop->imm_data);
-    } else if (REG_IS_W(dest_size) && REG_IS_W(src_size)) {
-        host_arm64_ADD_IMM(block, REG_TEMP, src_reg, uop->imm_data);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 16);
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size)) {
-        host_arm64_ADD_IMM(block, REG_TEMP, src_reg, uop->imm_data);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
-    } else if (REG_IS_BH(dest_size) && REG_IS_BH(src_size)) {
-        host_arm64_ADD_IMM(block, REG_TEMP, src_reg, uop->imm_data << 8);
-        host_arm64_MOV_REG_LSR(block, REG_TEMP, REG_TEMP, 8);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 8, 8);
     } else
         fatal("ADD_IMM %x %x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
 
@@ -111,39 +83,6 @@ codegen_AND(codeblock_t *block, uop_t *uop)
         host_arm64_AND_REG_V(block, dest_reg, src_reg_a, src_reg_b);
     } else if (REG_IS_L(dest_size) && REG_IS_L(src_size_a) && REG_IS_L(src_size_b)) {
         host_arm64_AND_REG(block, dest_reg, src_reg_a, src_reg_b, 0);
-    } else if (REG_IS_W(dest_size) && REG_IS_W(src_size_a) && REG_IS_W(src_size_b) && dest_reg == src_reg_a) {
-        host_arm64_ORR_IMM(block, REG_TEMP, src_reg_b, 0xffff0000);
-        host_arm64_AND_REG(block, dest_reg, src_reg_a, REG_TEMP, 0);
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size_a) && REG_IS_B(src_size_b) && dest_reg == src_reg_a) {
-        host_arm64_ORR_IMM(block, REG_TEMP, src_reg_b, 0xffffff00);
-        host_arm64_AND_REG(block, dest_reg, src_reg_a, REG_TEMP, 0);
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size_a) && REG_IS_BH(src_size_b) && dest_reg == src_reg_a) {
-        host_arm64_ORR_IMM(block, REG_TEMP, src_reg_b, 0xffff00ff);
-        host_arm64_AND_REG_ASR(block, dest_reg, src_reg_a, REG_TEMP, 8);
-    } else if (REG_IS_BH(dest_size) && REG_IS_BH(src_size_a) && REG_IS_B(src_size_b) && dest_reg == src_reg_a) {
-        host_arm64_ORR_IMM(block, REG_TEMP, src_reg_b, 0xffffff00);
-        host_arm64_AND_REG_ROR(block, dest_reg, src_reg_a, REG_TEMP, 24);
-    } else if (REG_IS_BH(dest_size) && REG_IS_BH(src_size_a) && REG_IS_BH(src_size_b) && dest_reg == src_reg_a) {
-        host_arm64_ORR_IMM(block, REG_TEMP, src_reg_b, 0xffff00ff);
-        host_arm64_AND_REG(block, dest_reg, src_reg_a, REG_TEMP, 0);
-    } else if (REG_IS_W(dest_size) && REG_IS_W(src_size_a) && REG_IS_W(src_size_b)) {
-        host_arm64_AND_REG(block, REG_TEMP, src_reg_a, src_reg_b, 0);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 16);
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size_a) && REG_IS_B(src_size_b)) {
-        host_arm64_AND_REG(block, REG_TEMP, src_reg_a, src_reg_b, 0);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size_a) && REG_IS_BH(src_size_b)) {
-        host_arm64_ORR_IMM(block, REG_TEMP, src_reg_b, 0xffff00ff);
-        host_arm64_AND_REG_ROR(block, REG_TEMP, src_reg_a, REG_TEMP, 8);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
-    } else if (REG_IS_B(dest_size) && REG_IS_BH(src_size_a) && REG_IS_B(src_size_b)) {
-        host_arm64_ORR_IMM(block, REG_TEMP, src_reg_a, 0xffff00ff);
-        host_arm64_AND_REG_ROR(block, REG_TEMP, src_reg_b, REG_TEMP, 8);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
-    } else if (REG_IS_B(dest_size) && REG_IS_BH(src_size_a) && REG_IS_BH(src_size_b)) {
-        host_arm64_AND_REG(block, REG_TEMP, src_reg_a, src_reg_b, 0);
-        host_arm64_MOV_REG_LSR(block, REG_TEMP, REG_TEMP, 8);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
     } else
         fatal("AND %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
 
@@ -159,16 +98,6 @@ codegen_AND_IMM(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(dest_size) && REG_IS_L(src_size)) {
         host_arm64_AND_IMM(block, dest_reg, src_reg, uop->imm_data);
-    } else if (REG_IS_W(dest_size) && REG_IS_W(src_size)) {
-        host_arm64_AND_IMM(block, dest_reg, src_reg, uop->imm_data | 0xffff0000);
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size)) {
-        host_arm64_AND_IMM(block, dest_reg, src_reg, uop->imm_data | 0xffffff00);
-    } else if (REG_IS_B(dest_size) && REG_IS_BH(src_size)) {
-        host_arm64_MOV_REG_LSR(block, REG_TEMP, src_reg, 8);
-        host_arm64_AND_IMM(block, REG_TEMP, REG_TEMP, uop->imm_data);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
-    } else if (REG_IS_BH(dest_size) && REG_IS_BH(src_size)) {
-        host_arm64_AND_IMM(block, dest_reg, src_reg, (uop->imm_data << 8) | 0xffff00ff);
     } else
         fatal("AND_IMM %x %x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
 
@@ -248,12 +177,6 @@ codegen_CMP_IMM_JNZ_DEST(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(src_size)) {
         host_arm64_CMP_IMM(block, src_reg, uop->imm_data);
-    } else if (REG_IS_W(src_size)) {
-        host_arm64_AND_IMM(block, REG_TEMP, src_reg, 0xffff);
-        host_arm64_CMP_IMM(block, REG_TEMP, uop->imm_data);
-    } else if (REG_IS_B(src_size)) {
-        host_arm64_AND_IMM(block, REG_TEMP, src_reg, 0xff);
-        host_arm64_CMP_IMM(block, REG_TEMP, uop->imm_data);
     } else
         fatal("CMP_IMM_JNZ_DEST %02x\n", uop->src_reg_a_real);
 
@@ -269,12 +192,6 @@ codegen_CMP_IMM_JZ_DEST(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(src_size)) {
         host_arm64_CMP_IMM(block, src_reg, uop->imm_data);
-    } else if (REG_IS_W(src_size)) {
-        host_arm64_AND_IMM(block, REG_TEMP, src_reg, 0xffff);
-        host_arm64_CMP_IMM(block, REG_TEMP, uop->imm_data);
-    } else if (REG_IS_B(src_size)) {
-        host_arm64_AND_IMM(block, REG_TEMP, src_reg, 0xff);
-        host_arm64_CMP_IMM(block, REG_TEMP, uop->imm_data);
     } else
         fatal("CMP_IMM_JZ_DEST %02x\n", uop->src_reg_a_real);
 
@@ -291,12 +208,6 @@ codegen_CMP_IMM_JLE_DEST(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(src_size)) {
         host_arm64_CMP_IMM(block, src_reg, uop->imm_data);
-    } else if (REG_IS_W(src_size)) {
-        host_arm64_SBFX(block, REG_TEMP, src_reg, 0, 16);
-        host_arm64_CMP_IMM(block, REG_TEMP, uop->imm_data);
-    } else if (REG_IS_B(src_size)) {
-        host_arm64_SBFX(block, REG_TEMP, src_reg, 0, 8);
-        host_arm64_CMP_IMM(block, REG_TEMP, uop->imm_data);
     } else
         fatal("CMP_IMM_JLE_DEST %02x\n", uop->src_reg_a_real);
 
@@ -313,12 +224,6 @@ codegen_CMP_IMM_JNLE_DEST(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(src_size)) {
         host_arm64_CMP_IMM(block, src_reg, uop->imm_data);
-    } else if (REG_IS_W(src_size)) {
-        host_arm64_SBFX(block, REG_TEMP, src_reg, 0, 16);
-        host_arm64_CMP_IMM(block, REG_TEMP, uop->imm_data);
-    } else if (REG_IS_B(src_size)) {
-        host_arm64_SBFX(block, REG_TEMP, src_reg, 0, 8);
-        host_arm64_CMP_IMM(block, REG_TEMP, uop->imm_data);
     } else
         fatal("CMP_IMM_JNLE_DEST %02x\n", uop->src_reg_a_real);
 
@@ -391,12 +296,6 @@ codegen_CMP_JNB_DEST(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(src_size_a) && REG_IS_L(src_size_b)) {
         host_arm64_CMP_REG(block, src_reg_a, src_reg_b);
-    } else if (REG_IS_W(src_size_a) && REG_IS_W(src_size_b)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 16);
-        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 16);
-    } else if (REG_IS_B(src_size_a) && REG_IS_B(src_size_b)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 24);
-        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 24);
     } else
         fatal("CMP_JNB_DEST %02x\n", uop->src_reg_a_real);
 
@@ -414,12 +313,6 @@ codegen_CMP_JNBE_DEST(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(src_size_a) && REG_IS_L(src_size_b)) {
         host_arm64_CMP_REG(block, src_reg_a, src_reg_b);
-    } else if (REG_IS_W(src_size_a) && REG_IS_W(src_size_b)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 16);
-        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 16);
-    } else if (REG_IS_B(src_size_a) && REG_IS_B(src_size_b)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 24);
-        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 24);
     } else
         fatal("CMP_JNBE_DEST %02x\n", uop->src_reg_a_real);
 
@@ -437,12 +330,6 @@ codegen_CMP_JNL_DEST(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(src_size_a) && REG_IS_L(src_size_b)) {
         host_arm64_CMP_REG(block, src_reg_a, src_reg_b);
-    } else if (REG_IS_W(src_size_a) && REG_IS_W(src_size_b)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 16);
-        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 16);
-    } else if (REG_IS_B(src_size_a) && REG_IS_B(src_size_b)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 24);
-        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 24);
     } else
         fatal("CMP_JNL_DEST %02x\n", uop->src_reg_a_real);
 
@@ -460,12 +347,6 @@ codegen_CMP_JNLE_DEST(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(src_size_a) && REG_IS_L(src_size_b)) {
         host_arm64_CMP_REG(block, src_reg_a, src_reg_b);
-    } else if (REG_IS_W(src_size_a) && REG_IS_W(src_size_b)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 16);
-        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 16);
-    } else if (REG_IS_B(src_size_a) && REG_IS_B(src_size_b)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 24);
-        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 24);
     } else
         fatal("CMP_JNLE_DEST %02x\n", uop->src_reg_a_real);
 
@@ -483,12 +364,6 @@ codegen_CMP_JNO_DEST(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(src_size_a) && REG_IS_L(src_size_b)) {
         host_arm64_CMP_REG(block, src_reg_a, src_reg_b);
-    } else if (REG_IS_W(src_size_a) && REG_IS_W(src_size_b)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 16);
-        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 16);
-    } else if (REG_IS_B(src_size_a) && REG_IS_B(src_size_b)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 24);
-        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 24);
     } else
         fatal("CMP_JNO_DEST %02x\n", uop->src_reg_a_real);
 
@@ -506,12 +381,6 @@ codegen_CMP_JNZ_DEST(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(src_size_a) && REG_IS_L(src_size_b)) {
         host_arm64_CMP_REG(block, src_reg_a, src_reg_b);
-    } else if (REG_IS_W(src_size_a) && REG_IS_W(src_size_b)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 16);
-        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 16);
-    } else if (REG_IS_B(src_size_a) && REG_IS_B(src_size_b)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 24);
-        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 24);
     } else
         fatal("CMP_JNZ_DEST %02x\n", uop->src_reg_a_real);
 
@@ -529,12 +398,6 @@ codegen_CMP_JB_DEST(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(src_size_a) && REG_IS_L(src_size_b)) {
         host_arm64_CMP_REG(block, src_reg_a, src_reg_b);
-    } else if (REG_IS_W(src_size_a) && REG_IS_W(src_size_b)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 16);
-        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 16);
-    } else if (REG_IS_B(src_size_a) && REG_IS_B(src_size_b)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 24);
-        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 24);
     } else
         fatal("CMP_JB_DEST %02x\n", uop->src_reg_a_real);
 
@@ -552,12 +415,6 @@ codegen_CMP_JBE_DEST(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(src_size_a) && REG_IS_L(src_size_b)) {
         host_arm64_CMP_REG(block, src_reg_a, src_reg_b);
-    } else if (REG_IS_W(src_size_a) && REG_IS_W(src_size_b)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 16);
-        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 16);
-    } else if (REG_IS_B(src_size_a) && REG_IS_B(src_size_b)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 24);
-        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 24);
     } else
         fatal("CMP_JBE_DEST %02x\n", uop->src_reg_a_real);
 
@@ -575,12 +432,6 @@ codegen_CMP_JL_DEST(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(src_size_a) && REG_IS_L(src_size_b)) {
         host_arm64_CMP_REG(block, src_reg_a, src_reg_b);
-    } else if (REG_IS_W(src_size_a) && REG_IS_W(src_size_b)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 16);
-        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 16);
-    } else if (REG_IS_B(src_size_a) && REG_IS_B(src_size_b)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 24);
-        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 24);
     } else
         fatal("CMP_JL_DEST %02x\n", uop->src_reg_a_real);
 
@@ -598,12 +449,6 @@ codegen_CMP_JLE_DEST(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(src_size_a) && REG_IS_L(src_size_b)) {
         host_arm64_CMP_REG(block, src_reg_a, src_reg_b);
-    } else if (REG_IS_W(src_size_a) && REG_IS_W(src_size_b)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 16);
-        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 16);
-    } else if (REG_IS_B(src_size_a) && REG_IS_B(src_size_b)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 24);
-        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 24);
     } else
         fatal("CMP_JLE_DEST %02x\n", uop->src_reg_a_real);
 
@@ -621,12 +466,6 @@ codegen_CMP_JO_DEST(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(src_size_a) && REG_IS_L(src_size_b)) {
         host_arm64_CMP_REG(block, src_reg_a, src_reg_b);
-    } else if (REG_IS_W(src_size_a) && REG_IS_W(src_size_b)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 16);
-        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 16);
-    } else if (REG_IS_B(src_size_a) && REG_IS_B(src_size_b)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 24);
-        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 24);
     } else
         fatal("CMP_JO_DEST %02x\n", uop->src_reg_a_real);
 
@@ -644,12 +483,6 @@ codegen_CMP_JZ_DEST(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(src_size_a) && REG_IS_L(src_size_b)) {
         host_arm64_CMP_REG(block, src_reg_a, src_reg_b);
-    } else if (REG_IS_W(src_size_a) && REG_IS_W(src_size_b)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 16);
-        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 16);
-    } else if (REG_IS_B(src_size_a) && REG_IS_B(src_size_b)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 24);
-        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 24);
     } else
         fatal("CMP_JZ_DEST %02x\n", uop->src_reg_a_real);
 
@@ -735,7 +568,7 @@ codegen_FTST(codeblock_t *block, uop_t *uop)
     int dest_size  = IREG_GET_SIZE(uop->dest_reg_a_real);
     int src_size_a = IREG_GET_SIZE(uop->src_reg_a_real);
 
-    if ((REG_IS_W(dest_size) || REG_IS_L(dest_size)) && REG_IS_D(src_size_a)) {
+    if (REG_IS_L(dest_size) && REG_IS_D(src_size_a)) {
         host_arm64_FSUB_D(block, REG_V_TEMP, REG_V_TEMP, REG_V_TEMP);
         host_arm64_MOVZ_IMM(block, dest_reg, 0);
         host_arm64_FCMP_D(block, src_reg_a, REG_V_TEMP);
@@ -778,7 +611,7 @@ codegen_FCOM(codeblock_t *block, uop_t *uop)
     int src_size_a = IREG_GET_SIZE(uop->src_reg_a_real);
     int src_size_b = IREG_GET_SIZE(uop->src_reg_b_real);
 
-    if ((REG_IS_W(dest_size) || REG_IS_L(dest_size)) && REG_IS_D(src_size_a) && REG_IS_D(src_size_b)) {
+    if (REG_IS_L(dest_size) && REG_IS_D(src_size_a) && REG_IS_D(src_size_b)) {
         host_arm64_MOVZ_IMM(block, dest_reg, 0);
         host_arm64_FCMP_D(block, src_reg_a, src_reg_b);
         host_arm64_ORR_IMM(block, REG_TEMP, dest_reg, FPU_SW_C3);
@@ -922,13 +755,9 @@ codegen_LOAD_FUNC_ARG0(codeblock_t *block, uop_t *uop)
     int src_reg  = HOST_REG_GET(uop->src_reg_a_real);
     int src_size = IREG_GET_SIZE(uop->src_reg_a_real);
 
-    if (REG_IS_W(src_size)) {
-        host_arm64_AND_IMM(block, REG_ARG0, src_reg, 0xffff);
-    } else if (REG_IS_B(src_size)) {
-        host_arm64_AND_IMM(block, REG_ARG0, src_reg, 0xff);
-    } else {
-        host_arm64_MOV_REG(block, REG_ARG0, src_reg, 0);
-    }
+    if (!REG_IS_L(src_size))
+        fatal("LOAD_FUNC_ARG0 %02x\n", uop->src_reg_a_real);
+    host_arm64_MOV_REG(block, REG_ARG0, src_reg, 0);
 
     return 0;
 }
@@ -938,13 +767,9 @@ codegen_LOAD_FUNC_ARG1(codeblock_t *block, uop_t *uop)
     int src_reg  = HOST_REG_GET(uop->src_reg_a_real);
     int src_size = IREG_GET_SIZE(uop->src_reg_a_real);
 
-    if (REG_IS_W(src_size)) {
-        host_arm64_AND_IMM(block, REG_ARG1, src_reg, 0xffff);
-    } else if (REG_IS_B(src_size)) {
-        host_arm64_AND_IMM(block, REG_ARG1, src_reg, 0xff);
-    } else {
-        host_arm64_MOV_REG(block, REG_ARG1, src_reg, 0);
-    }
+    if (!REG_IS_L(src_size))
+        fatal("LOAD_FUNC_ARG1 %02x\n", uop->src_reg_a_real);
+    host_arm64_MOV_REG(block, REG_ARG1, src_reg, 0);
 
     return 0;
 }
@@ -996,7 +821,7 @@ codegen_LOAD_SEG(codeblock_t *block, uop_t *uop)
     int src_reg  = HOST_REG_GET(uop->src_reg_a_real);
     int src_size = IREG_GET_SIZE(uop->src_reg_a_real);
 
-    if (!REG_IS_W(src_size) && !REG_IS_L(src_size))
+    if (!REG_IS_L(src_size))
         fatal("LOAD_SEG %02x %p\n", uop->src_reg_a_real, uop->p);
 
     host_arm64_MOVX_IMM(block, REG_ARG1, (uint64_t) uop->p);
@@ -1013,10 +838,9 @@ codegen_MEM_LOAD_ABS(codeblock_t *block, uop_t *uop)
     int dest_reg  = HOST_REG_GET(uop->dest_reg_a_real);
     int seg_reg   = HOST_REG_GET(uop->src_reg_a_real);
     int dest_size = uop_mem_size_from_type(uop->type, uop->dest_reg_a_real);
-    int zext_32   = ((uop->type & UOP_MEM_SIZE_MASK) != 0);
 
     host_arm64_ADD_IMM(block, REG_X0, seg_reg, uop->imm_data);
-    if (REG_IS_B(dest_size) || REG_IS_BH(dest_size)) {
+    if (REG_IS_B(dest_size)) {
         host_arm64_call(block, codegen_mem_load_byte);
     } else if (REG_IS_W(dest_size)) {
         host_arm64_call(block, codegen_mem_load_word);
@@ -1026,17 +850,9 @@ codegen_MEM_LOAD_ABS(codeblock_t *block, uop_t *uop)
         fatal("MEM_LOAD_ABS - %02x\n", uop->dest_reg_a_real);
     host_arm64_CBNZ(block, REG_X1, (uintptr_t) codegen_exit_rout);
     if (REG_IS_B(dest_size)) {
-        if (zext_32)
-            host_arm64_UBFX(block, dest_reg, REG_X0, 0, 8);
-        else
-            host_arm64_BFI(block, dest_reg, REG_X0, 0, 8);
-    } else if (REG_IS_BH(dest_size)) {
-        host_arm64_BFI(block, dest_reg, REG_X0, 8, 8);
+        host_arm64_UBFX(block, dest_reg, REG_X0, 0, 8);
     } else if (REG_IS_W(dest_size)) {
-        if (zext_32)
-            host_arm64_UBFX(block, dest_reg, REG_X0, 0, 16);
-        else
-            host_arm64_BFI(block, dest_reg, REG_X0, 0, 16);
+        host_arm64_UBFX(block, dest_reg, REG_X0, 0, 16);
     } else if (REG_IS_L(dest_size)) {
         host_arm64_MOV_REG(block, dest_reg, REG_X0, 0);
     }
@@ -1050,7 +866,6 @@ codegen_MEM_LOAD_REG(codeblock_t *block, uop_t *uop)
     int seg_reg   = HOST_REG_GET(uop->src_reg_a_real);
     int addr_reg  = HOST_REG_GET(uop->src_reg_b_real);
     int dest_size = uop_mem_size_from_type(uop->type, uop->dest_reg_a_real);
-    int zext_32   = ((uop->type & UOP_MEM_SIZE_MASK) != 0);
 
     if (uop->imm_data) {
         if (uop->is_a16) {
@@ -1064,7 +879,7 @@ codegen_MEM_LOAD_REG(codeblock_t *block, uop_t *uop)
     } else {
         host_arm64_ADD_REG(block, REG_X0, seg_reg, addr_reg, 0);
     }
-    if (REG_IS_B(dest_size) || REG_IS_BH(dest_size)) {
+    if (REG_IS_B(dest_size)) {
         host_arm64_call(block, codegen_mem_load_byte);
     } else if (REG_IS_W(dest_size)) {
         host_arm64_call(block, codegen_mem_load_word);
@@ -1076,17 +891,9 @@ codegen_MEM_LOAD_REG(codeblock_t *block, uop_t *uop)
         fatal("MEM_LOAD_REG - %02x\n", uop->dest_reg_a_real);
     host_arm64_CBNZ(block, REG_X1, (uintptr_t) codegen_exit_rout);
     if (REG_IS_B(dest_size)) {
-        if (zext_32)
-            host_arm64_UBFX(block, dest_reg, REG_X0, 0, 8);
-        else
-            host_arm64_BFI(block, dest_reg, REG_X0, 0, 8);
-    } else if (REG_IS_BH(dest_size)) {
-        host_arm64_BFI(block, dest_reg, REG_X0, 8, 8);
+        host_arm64_UBFX(block, dest_reg, REG_X0, 0, 8);
     } else if (REG_IS_W(dest_size)) {
-        if (zext_32)
-            host_arm64_UBFX(block, dest_reg, REG_X0, 0, 16);
-        else
-            host_arm64_BFI(block, dest_reg, REG_X0, 0, 16);
+        host_arm64_UBFX(block, dest_reg, REG_X0, 0, 16);
     } else if (REG_IS_L(dest_size)) {
         host_arm64_MOV_REG(block, dest_reg, REG_X0, 0);
     } else if (REG_IS_Q(dest_size)) {
@@ -1147,9 +954,6 @@ codegen_MEM_STORE_ABS(codeblock_t *block, uop_t *uop)
     if (REG_IS_B(src_size)) {
         host_arm64_AND_IMM(block, REG_W1, src_reg, 0xff);
         host_arm64_call(block, codegen_mem_store_byte);
-    } else if (REG_IS_BH(src_size)) {
-        host_arm64_UBFX(block, REG_W1, src_reg, 8, 8);
-        host_arm64_call(block, codegen_mem_store_byte);
     } else if (REG_IS_W(src_size)) {
         host_arm64_AND_IMM(block, REG_W1, src_reg, 0xffff);
         host_arm64_call(block, codegen_mem_store_word);
@@ -1175,9 +979,6 @@ codegen_MEM_STORE_REG(codeblock_t *block, uop_t *uop)
         host_arm64_ADD_IMM(block, REG_X0, REG_X0, uop->imm_data);
     if (REG_IS_B(src_size)) {
         host_arm64_AND_IMM(block, REG_W1, src_reg, 0xff);
-        host_arm64_call(block, codegen_mem_store_byte);
-    } else if (REG_IS_BH(src_size)) {
-        host_arm64_UBFX(block, REG_W1, src_reg, 8, 8);
         host_arm64_call(block, codegen_mem_store_byte);
     } else if (REG_IS_W(src_size)) {
         host_arm64_AND_IMM(block, REG_W1, src_reg, 0xffff);
@@ -1286,31 +1087,10 @@ codegen_MOV(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(dest_size) && REG_IS_L(src_size)) {
         host_arm64_MOV_REG(block, dest_reg, src_reg, 0);
-    } else if (REG_IS_W(dest_size) && REG_IS_W(src_size)) {
-        host_arm64_BFI(block, dest_reg, src_reg, 0, 16);
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size)) {
-        host_arm64_BFI(block, dest_reg, src_reg, 0, 8);
-    } else if (REG_IS_B(dest_size) && REG_IS_BH(src_size)) {
-        host_arm64_MOV_REG_LSR(block, REG_TEMP, src_reg, 8);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
-    } else if (REG_IS_BH(dest_size) && REG_IS_B(src_size)) {
-        host_arm64_BFI(block, dest_reg, src_reg, 8, 8);
-    } else if (REG_IS_BH(dest_size) && REG_IS_BH(src_size)) {
-        host_arm64_MOV_REG_LSR(block, REG_TEMP, src_reg, 8);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 8, 8);
     } else if (REG_IS_D(dest_size) && REG_IS_D(src_size)) {
         host_arm64_FMOV_D_D(block, dest_reg, src_reg);
     } else if (REG_IS_Q(dest_size) && REG_IS_Q(src_size)) {
         host_arm64_FMOV_D_D(block, dest_reg, src_reg);
-    } else if (REG_IS_W(dest_size) && REG_IS_L(src_size)) {
-        /* Preserve upper destination bits; only replace the architected low 16 bits. */
-        host_arm64_BFI(block, dest_reg, src_reg, 0, 16);
-    } else if (REG_IS_B(dest_size) && REG_IS_L(src_size)) {
-        /* Same truncation rule for 8-bit destinations from 32-bit temps. */
-        host_arm64_BFI(block, dest_reg, src_reg, 0, 8);
-    } else if (REG_IS_B(dest_size) && REG_IS_W(src_size)) {
-        /* 16->8 form follows same low-byte-only semantics as x86 partial register writes. */
-        host_arm64_BFI(block, dest_reg, src_reg, 0, 8);
     } else
         fatal("MOV %x %x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
 
@@ -1324,14 +1104,6 @@ codegen_MOV_IMM(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(dest_size)) {
         host_arm64_mov_imm(block, dest_reg, uop->imm_data);
-    } else if (REG_IS_W(dest_size)) {
-        host_arm64_MOVK_IMM(block, dest_reg, uop->imm_data & 0xffff);
-    } else if (REG_IS_B(dest_size)) {
-        host_arm64_MOVZ_IMM(block, REG_TEMP, uop->imm_data & 0xff);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
-    } else if (REG_IS_BH(dest_size)) {
-        host_arm64_MOVZ_IMM(block, REG_TEMP, uop->imm_data & 0xff);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 8, 8);
     } else
         fatal("MOV_IMM %x\n", uop->dest_reg_a_real);
 
@@ -1348,25 +1120,7 @@ codegen_MOV_PTR(codeblock_t *block, uop_t *uop)
 static int
 codegen_MOVSX(codeblock_t *block, uop_t *uop)
 {
-    int dest_reg  = HOST_REG_GET(uop->dest_reg_a_real);
-    int src_reg   = HOST_REG_GET(uop->src_reg_a_real);
-    int dest_size = IREG_GET_SIZE(uop->dest_reg_a_real);
-    int src_size  = IREG_GET_SIZE(uop->src_reg_a_real);
-
-    if (REG_IS_L(dest_size) && REG_IS_B(src_size)) {
-        host_arm64_SBFX(block, dest_reg, src_reg, 0, 8);
-    } else if (REG_IS_L(dest_size) && REG_IS_BH(src_size)) {
-        host_arm64_SBFX(block, dest_reg, src_reg, 8, 8);
-    } else if (REG_IS_L(dest_size) && REG_IS_W(src_size)) {
-        host_arm64_SBFX(block, dest_reg, src_reg, 0, 16);
-    } else if (REG_IS_W(dest_size) && REG_IS_B(src_size)) {
-        host_arm64_SBFX(block, REG_TEMP, src_reg, 0, 8);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 16);
-    } else if (REG_IS_W(dest_size) && REG_IS_BH(src_size)) {
-        host_arm64_SBFX(block, REG_TEMP, src_reg, 8, 8);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 16);
-    } else
-        fatal("MOVSX %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
+    fatal("MOVSX %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
 
     return 0;
 }
@@ -1382,18 +1136,6 @@ codegen_MOVZX(codeblock_t *block, uop_t *uop)
         host_arm64_FMOV_D_Q(block, dest_reg, src_reg);
     } else if (REG_IS_L(dest_size) && REG_IS_Q(src_size)) {
         host_arm64_FMOV_W_S(block, dest_reg, src_reg);
-    } else if (REG_IS_L(dest_size) && REG_IS_B(src_size)) {
-        host_arm64_AND_IMM(block, dest_reg, src_reg, 0xff);
-    } else if (REG_IS_L(dest_size) && REG_IS_BH(src_size)) {
-        host_arm64_UBFX(block, dest_reg, src_reg, 8, 8);
-    } else if (REG_IS_L(dest_size) && REG_IS_W(src_size)) {
-        host_arm64_AND_IMM(block, dest_reg, src_reg, 0xffff);
-    } else if (REG_IS_W(dest_size) && REG_IS_B(src_size)) {
-        host_arm64_AND_IMM(block, REG_TEMP, src_reg, 0xff);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 16);
-    } else if (REG_IS_W(dest_size) && REG_IS_BH(src_size)) {
-        host_arm64_UBFX(block, REG_TEMP, src_reg, 8, 8);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 16);
     } else
         fatal("MOVZX %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
 
@@ -1446,9 +1188,6 @@ codegen_MOV_DOUBLE_INT(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_D(dest_size) && REG_IS_L(src_size)) {
         host_arm64_SCVTF_D_W(block, dest_reg, src_reg);
-    } else if (REG_IS_D(dest_size) && REG_IS_W(src_size)) {
-        host_arm64_SBFX(block, REG_TEMP, src_reg, 0, 16);
-        host_arm64_SCVTF_D_W(block, dest_reg, REG_TEMP);
     } else if (REG_IS_D(dest_size) && REG_IS_Q(src_size)) {
         host_arm64_FMOV_Q_D(block, REG_TEMP, src_reg);
         host_arm64_SCVTF_D_Q(block, dest_reg, REG_TEMP);
@@ -1469,10 +1208,6 @@ codegen_MOV_INT_DOUBLE(codeblock_t *block, uop_t *uop)
         host_arm64_FMOV_D_D(block, REG_V_TEMP, src_reg);
         host_arm64_call(block, codegen_fp_round);
         host_arm64_MOV_REG(block, dest_reg, REG_TEMP, 0);
-    } else if (REG_IS_W(dest_size) && REG_IS_D(src_size)) {
-        host_arm64_FMOV_D_D(block, REG_V_TEMP, src_reg);
-        host_arm64_call(block, codegen_fp_round);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 16);
     } else
         fatal("MOV_INT_DOUBLE %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
 
@@ -1529,12 +1264,6 @@ codegen_MOVZX_REG_PTR_8(codeblock_t *block, uop_t *uop)
     host_arm64_MOVX_IMM(block, REG_TEMP, (uint64_t) uop->p);
     if (REG_IS_L(dest_size)) {
         host_arm64_LDRB_IMM_W(block, dest_reg, REG_TEMP, 0);
-    } else if (REG_IS_W(dest_size)) {
-        host_arm64_LDRB_IMM_W(block, REG_TEMP, REG_TEMP, 0);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 16);
-    } else if (REG_IS_B(dest_size)) {
-        host_arm64_LDRB_IMM_W(block, REG_TEMP, REG_TEMP, 0);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
     } else
         fatal("MOVZX_REG_PTR_8 %02x\n", uop->dest_reg_a_real);
 
@@ -1549,9 +1278,6 @@ codegen_MOVZX_REG_PTR_16(codeblock_t *block, uop_t *uop)
     host_arm64_MOVX_IMM(block, REG_TEMP, (uint64_t) uop->p);
     if (REG_IS_L(dest_size)) {
         host_arm64_LDRH_IMM(block, dest_reg, REG_TEMP, 0);
-    } else if (REG_IS_W(dest_size)) {
-        host_arm64_LDRH_IMM(block, REG_TEMP, REG_TEMP, 0);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 16);
     } else
         fatal("MOVZX_REG_PTR_16 %02x\n", uop->dest_reg_a_real);
 
@@ -1578,21 +1304,6 @@ codegen_OR(codeblock_t *block, uop_t *uop)
         host_arm64_ORR_REG_V(block, dest_reg, src_reg_a, src_reg_b);
     } else if (REG_IS_L(dest_size) && REG_IS_L(src_size_a) && REG_IS_L(src_size_b)) {
         host_arm64_ORR_REG(block, dest_reg, src_reg_a, src_reg_b, 0);
-    } else if (REG_IS_W(dest_size) && REG_IS_W(src_size_a) && REG_IS_W(src_size_b)) {
-        host_arm64_ORR_REG(block, REG_TEMP, src_reg_a, src_reg_b, 0);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 16);
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size_a) && REG_IS_B(src_size_b) && dest_reg == src_reg_a) {
-        host_arm64_AND_IMM(block, REG_TEMP, src_reg_b, 0xff);
-        host_arm64_ORR_REG(block, dest_reg, src_reg_a, REG_TEMP, 0);
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size_a) && REG_IS_BH(src_size_b) && dest_reg == src_reg_a) {
-        host_arm64_UBFX(block, REG_TEMP, src_reg_b, 8, 8);
-        host_arm64_ORR_REG(block, dest_reg, src_reg_a, REG_TEMP, 0);
-    } else if (REG_IS_BH(dest_size) && REG_IS_BH(src_size_a) && REG_IS_B(src_size_b) && dest_reg == src_reg_a) {
-        host_arm64_AND_IMM(block, REG_TEMP, src_reg_b, 0xff);
-        host_arm64_ORR_REG(block, dest_reg, src_reg_a, REG_TEMP, 8);
-    } else if (REG_IS_BH(dest_size) && REG_IS_BH(src_size_a) && REG_IS_BH(src_size_b) && dest_reg == src_reg_a) {
-        host_arm64_UBFX(block, REG_TEMP, src_reg_b, 8, 8);
-        host_arm64_ORR_REG(block, dest_reg, src_reg_a, REG_TEMP, 8);
     } else
         fatal("OR %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
 
@@ -1608,12 +1319,6 @@ codegen_OR_IMM(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(dest_size) && REG_IS_L(src_size)) {
         host_arm64_ORR_IMM(block, dest_reg, src_reg, uop->imm_data);
-    } else if (REG_IS_W(dest_size) && REG_IS_W(src_size) && dest_reg == src_reg) {
-        host_arm64_ORR_IMM(block, dest_reg, src_reg, uop->imm_data);
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size) && dest_reg == src_reg) {
-        host_arm64_ORR_IMM(block, dest_reg, src_reg, uop->imm_data);
-    } else if (REG_IS_BH(dest_size) && REG_IS_BH(src_size) && dest_reg == src_reg) {
-        host_arm64_ORR_IMM(block, dest_reg, src_reg, uop->imm_data << 8);
     } else
         fatal("OR_IMM %x %x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
 
@@ -2795,30 +2500,6 @@ codegen_ROL(codeblock_t *block, uop_t *uop)
         host_arm64_mov_imm(block, REG_TEMP2, 32);
         host_arm64_SUB_REG(block, REG_TEMP2, REG_TEMP2, shift_reg, 0);
         host_arm64_ROR(block, dest_reg, src_reg, REG_TEMP2);
-    } else if (REG_IS_W(dest_size) && REG_IS_W(src_size)) {
-        host_arm64_mov_imm(block, REG_TEMP2, 16);
-        host_arm64_UBFX(block, REG_TEMP, src_reg, 0, 16);
-        host_arm64_SUB_REG(block, REG_TEMP2, REG_TEMP2, shift_reg, 0);
-        host_arm64_ORR_REG(block, REG_TEMP, REG_TEMP, REG_TEMP, 16);
-        host_arm64_ROR(block, REG_TEMP, REG_TEMP, REG_TEMP2);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 16);
-        cs = cs;
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size)) {
-        host_arm64_mov_imm(block, REG_TEMP2, 8);
-        host_arm64_SUB_REG(block, REG_TEMP2, REG_TEMP2, shift_reg, 0);
-        host_arm64_UBFX(block, REG_TEMP, src_reg, 0, 8);
-        host_arm64_AND_IMM(block, REG_TEMP2, REG_TEMP2, 7);
-        host_arm64_ORR_REG(block, REG_TEMP, REG_TEMP, REG_TEMP, 8);
-        host_arm64_LSR(block, REG_TEMP, REG_TEMP, REG_TEMP2);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
-    } else if (REG_IS_BH(dest_size) && REG_IS_BH(src_size)) {
-        host_arm64_mov_imm(block, REG_TEMP2, 8);
-        host_arm64_SUB_REG(block, REG_TEMP2, REG_TEMP2, shift_reg, 0);
-        host_arm64_UBFX(block, REG_TEMP, src_reg, 8, 8);
-        host_arm64_AND_IMM(block, REG_TEMP2, REG_TEMP2, 7);
-        host_arm64_ORR_REG(block, REG_TEMP, REG_TEMP, REG_TEMP, 8);
-        host_arm64_LSR(block, REG_TEMP, REG_TEMP, REG_TEMP2);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 8, 8);
     } else
         fatal("ROL %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
 
@@ -2839,36 +2520,6 @@ codegen_ROL_IMM(codeblock_t *block, uop_t *uop)
         } else {
             host_arm64_MOV_REG_ROR(block, dest_reg, src_reg, 32 - (uop->imm_data & 31));
         }
-    } else if (REG_IS_W(dest_size) && REG_IS_W(src_size)) {
-        if ((uop->imm_data & 15) == 0) {
-            if (src_reg != dest_reg)
-                host_arm64_BFI(block, dest_reg, src_reg, 0, 16);
-        } else {
-            host_arm64_UBFX(block, REG_TEMP, src_reg, 0, 16);
-            host_arm64_ORR_REG(block, REG_TEMP, REG_TEMP, REG_TEMP, 16);
-            host_arm64_MOV_REG_LSR(block, REG_TEMP, REG_TEMP, 16 - (uop->imm_data & 15));
-            host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 16);
-        }
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size)) {
-        if ((uop->imm_data & 7) == 0) {
-            if (src_reg != dest_reg)
-                host_arm64_BFI(block, dest_reg, src_reg, 0, 8);
-        } else {
-            host_arm64_UBFX(block, REG_TEMP, src_reg, 0, 8);
-            host_arm64_ORR_REG(block, REG_TEMP, REG_TEMP, REG_TEMP, 8);
-            host_arm64_MOV_REG_LSR(block, REG_TEMP, REG_TEMP, 8 - (uop->imm_data & 7));
-            host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
-        }
-    } else if (REG_IS_BH(dest_size) && REG_IS_BH(src_size)) {
-        if ((uop->imm_data & 7) == 0) {
-            if (src_reg != dest_reg)
-                fatal("ROL_IMM %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
-        } else {
-            host_arm64_UBFX(block, REG_TEMP, src_reg, 8, 8);
-            host_arm64_ORR_REG(block, REG_TEMP, REG_TEMP, REG_TEMP, 8);
-            host_arm64_MOV_REG_LSR(block, REG_TEMP, REG_TEMP, 8 - (uop->imm_data & 7));
-            host_arm64_BFI(block, dest_reg, REG_TEMP, 8, 8);
-        }
     } else
         fatal("ROL_IMM %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
 
@@ -2885,24 +2536,6 @@ codegen_ROR(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(dest_size) && REG_IS_L(src_size)) {
         host_arm64_ROR(block, dest_reg, src_reg, shift_reg);
-    } else if (REG_IS_W(dest_size) && REG_IS_W(src_size)) {
-        host_arm64_UBFX(block, REG_TEMP, src_reg, 0, 16);
-        host_arm64_AND_IMM(block, REG_TEMP2, shift_reg, 15);
-        host_arm64_ORR_REG(block, REG_TEMP, REG_TEMP, REG_TEMP, 16);
-        host_arm64_LSR(block, REG_TEMP, REG_TEMP, REG_TEMP2);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 16);
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size)) {
-        host_arm64_UBFX(block, REG_TEMP, src_reg, 0, 8);
-        host_arm64_AND_IMM(block, REG_TEMP2, shift_reg, 7);
-        host_arm64_ORR_REG(block, REG_TEMP, REG_TEMP, REG_TEMP, 8);
-        host_arm64_LSR(block, REG_TEMP, REG_TEMP, REG_TEMP2);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
-    } else if (REG_IS_BH(dest_size) && REG_IS_BH(src_size)) {
-        host_arm64_UBFX(block, REG_TEMP, src_reg, 8, 8);
-        host_arm64_AND_IMM(block, REG_TEMP2, shift_reg, 7);
-        host_arm64_ORR_REG(block, REG_TEMP, REG_TEMP, REG_TEMP, 8);
-        host_arm64_LSR(block, REG_TEMP, REG_TEMP, REG_TEMP2);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 8, 8);
     } else
         fatal("ROR %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
 
@@ -2923,36 +2556,6 @@ codegen_ROR_IMM(codeblock_t *block, uop_t *uop)
         } else {
             host_arm64_MOV_REG_ROR(block, dest_reg, src_reg, uop->imm_data & 31);
         }
-    } else if (REG_IS_W(dest_size) && REG_IS_W(src_size)) {
-        if ((uop->imm_data & 15) == 0) {
-            if (src_reg != dest_reg)
-                fatal("ROR_IMM %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
-        } else {
-            host_arm64_UBFX(block, REG_TEMP, src_reg, 0, 16);
-            host_arm64_ORR_REG(block, REG_TEMP, REG_TEMP, REG_TEMP, 16);
-            host_arm64_MOV_REG_LSR(block, REG_TEMP, REG_TEMP, uop->imm_data & 15);
-            host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 16);
-        }
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size)) {
-        if ((uop->imm_data & 7) == 0) {
-            if (src_reg != dest_reg)
-                fatal("ROR_IMM %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
-        } else {
-            host_arm64_UBFX(block, REG_TEMP, src_reg, 0, 8);
-            host_arm64_ORR_REG(block, REG_TEMP, REG_TEMP, REG_TEMP, 8);
-            host_arm64_MOV_REG_LSR(block, REG_TEMP, REG_TEMP, uop->imm_data & 7);
-            host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
-        }
-    } else if (REG_IS_BH(dest_size) && REG_IS_BH(src_size)) {
-        if ((uop->imm_data & 7) == 0) {
-            if (src_reg != dest_reg)
-                fatal("ROR_IMM %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
-        } else {
-            host_arm64_UBFX(block, REG_TEMP, src_reg, 8, 8);
-            host_arm64_ORR_REG(block, REG_TEMP, REG_TEMP, REG_TEMP, 8);
-            host_arm64_MOV_REG_LSR(block, REG_TEMP, REG_TEMP, uop->imm_data & 7);
-            host_arm64_BFI(block, dest_reg, REG_TEMP, 8, 8);
-        }
     } else
         fatal("ROR_IMM %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
 
@@ -2970,21 +2573,6 @@ codegen_SAR(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(dest_size) && REG_IS_L(src_size)) {
         host_arm64_ASR(block, dest_reg, src_reg, shift_reg);
-    } else if (REG_IS_W(dest_size) && REG_IS_W(src_size)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg, 16);
-        host_arm64_ASR(block, REG_TEMP, REG_TEMP, shift_reg);
-        host_arm64_UBFX(block, REG_TEMP, REG_TEMP, 16, 16);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 16);
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg, 24);
-        host_arm64_ASR(block, REG_TEMP, REG_TEMP, shift_reg);
-        host_arm64_UBFX(block, REG_TEMP, REG_TEMP, 24, 8);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
-    } else if (REG_IS_BH(dest_size) && REG_IS_BH(src_size)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg, 16);
-        host_arm64_ASR(block, REG_TEMP, REG_TEMP, shift_reg);
-        host_arm64_UBFX(block, REG_TEMP, REG_TEMP, 24, 8);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 8, 8);
     } else
         fatal("SAR %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
 
@@ -3000,21 +2588,6 @@ codegen_SAR_IMM(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(dest_size) && REG_IS_L(src_size)) {
         host_arm64_MOV_REG_ASR(block, dest_reg, src_reg, uop->imm_data);
-    } else if (REG_IS_W(dest_size) && REG_IS_W(src_size)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg, 16);
-        host_arm64_MOV_REG_ASR(block, REG_TEMP, REG_TEMP, uop->imm_data);
-        host_arm64_UBFX(block, REG_TEMP, REG_TEMP, 16, 16);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 16);
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg, 24);
-        host_arm64_MOV_REG_ASR(block, REG_TEMP, REG_TEMP, uop->imm_data);
-        host_arm64_UBFX(block, REG_TEMP, REG_TEMP, 24, 8);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
-    } else if (REG_IS_BH(dest_size) && REG_IS_BH(src_size)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg, 16);
-        host_arm64_MOV_REG_ASR(block, REG_TEMP, REG_TEMP, uop->imm_data);
-        host_arm64_UBFX(block, REG_TEMP, REG_TEMP, 24, 8);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 8, 8);
     } else
         fatal("SAR_IMM %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
 
@@ -3031,16 +2604,6 @@ codegen_SHL(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(dest_size) && REG_IS_L(src_size)) {
         host_arm64_LSL(block, dest_reg, src_reg, shift_reg);
-    } else if (REG_IS_W(dest_size) && REG_IS_W(src_size)) {
-        host_arm64_LSL(block, REG_TEMP, src_reg, shift_reg);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 16);
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size)) {
-        host_arm64_LSL(block, REG_TEMP, src_reg, shift_reg);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
-    } else if (REG_IS_BH(dest_size) && REG_IS_BH(src_size)) {
-        host_arm64_UBFX(block, REG_TEMP, src_reg, 8, 8);
-        host_arm64_LSL(block, REG_TEMP, REG_TEMP, shift_reg);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 8, 8);
     } else
         fatal("SHL %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
 
@@ -3056,16 +2619,6 @@ codegen_SHL_IMM(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(dest_size) && REG_IS_L(src_size)) {
         host_arm64_MOV_REG(block, dest_reg, src_reg, uop->imm_data);
-    } else if (REG_IS_W(dest_size) && REG_IS_W(src_size)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg, uop->imm_data);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 16);
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg, uop->imm_data);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
-    } else if (REG_IS_BH(dest_size) && REG_IS_BH(src_size)) {
-        host_arm64_UBFX(block, REG_TEMP, src_reg, 8, 8);
-        host_arm64_MOV_REG(block, REG_TEMP, REG_TEMP, uop->imm_data);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 8, 8);
     } else
         fatal("SHL_IMM %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
 
@@ -3082,18 +2635,6 @@ codegen_SHR(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(dest_size) && REG_IS_L(src_size)) {
         host_arm64_LSR(block, dest_reg, src_reg, shift_reg);
-    } else if (REG_IS_W(dest_size) && REG_IS_W(src_size)) {
-        host_arm64_AND_IMM(block, REG_TEMP, src_reg, 0xffff);
-        host_arm64_LSR(block, REG_TEMP, REG_TEMP, shift_reg);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 16);
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size)) {
-        host_arm64_AND_IMM(block, REG_TEMP, src_reg, 0xff);
-        host_arm64_LSR(block, REG_TEMP, REG_TEMP, shift_reg);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
-    } else if (REG_IS_BH(dest_size) && REG_IS_BH(src_size)) {
-        host_arm64_UBFX(block, REG_TEMP, src_reg, 8, 8);
-        host_arm64_LSR(block, REG_TEMP, REG_TEMP, shift_reg);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 8, 8);
     } else
         fatal("SHR %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
 
@@ -3109,18 +2650,6 @@ codegen_SHR_IMM(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(dest_size) && REG_IS_L(src_size)) {
         host_arm64_MOV_REG_LSR(block, dest_reg, src_reg, uop->imm_data);
-    } else if (REG_IS_W(dest_size) && REG_IS_W(src_size)) {
-        host_arm64_AND_IMM(block, REG_TEMP, src_reg, 0xffff);
-        host_arm64_MOV_REG_LSR(block, REG_TEMP, REG_TEMP, uop->imm_data);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 16);
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size)) {
-        host_arm64_AND_IMM(block, REG_TEMP, src_reg, 0xff);
-        host_arm64_MOV_REG_LSR(block, REG_TEMP, REG_TEMP, uop->imm_data);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
-    } else if (REG_IS_BH(dest_size) && REG_IS_BH(src_size)) {
-        host_arm64_UBFX(block, REG_TEMP, src_reg, 8, 8);
-        host_arm64_MOV_REG_LSR(block, REG_TEMP, REG_TEMP, uop->imm_data);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 8, 8);
     } else
         fatal("SHR_IMM %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
 
@@ -3164,31 +2693,6 @@ codegen_SUB(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(dest_size) && REG_IS_L(src_size_a) && REG_IS_L(src_size_b)) {
         host_arm64_SUB_REG(block, dest_reg, src_reg_a, src_reg_b, 0);
-    } else if (REG_IS_W(dest_size) && REG_IS_W(src_size_a) && REG_IS_W(src_size_b)) {
-        host_arm64_SUB_REG(block, REG_TEMP, src_reg_a, src_reg_b, 0);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 16);
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size_a) && REG_IS_B(src_size_b)) {
-        host_arm64_SUB_REG(block, REG_TEMP, src_reg_a, src_reg_b, 0);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size_a) && REG_IS_BH(src_size_b)) {
-        host_arm64_SUB_REG_LSR(block, REG_TEMP, src_reg_a, src_reg_b, 8);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
-    } else if (REG_IS_B(dest_size) && REG_IS_BH(src_size_a) && REG_IS_B(src_size_b)) {
-        host_arm64_SUB_REG(block, REG_TEMP, src_reg_a, src_reg_b, 8);
-        host_arm64_MOV_REG_LSR(block, REG_TEMP, REG_TEMP, 8);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
-    } else if (REG_IS_B(dest_size) && REG_IS_BH(src_size_a) && REG_IS_BH(src_size_b)) {
-        host_arm64_MOV_REG_LSR(block, REG_TEMP, src_reg_a, 8);
-        host_arm64_SUB_REG_LSR(block, REG_TEMP, REG_TEMP, src_reg_b, 8);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
-    } else if (REG_IS_BH(dest_size) && REG_IS_BH(src_size_a) && REG_IS_B(src_size_b)) {
-        host_arm64_SUB_REG(block, REG_TEMP, src_reg_a, src_reg_b, 8);
-        host_arm64_MOV_REG_LSR(block, REG_TEMP, REG_TEMP, 8);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 8, 8);
-    } else if (REG_IS_BH(dest_size) && REG_IS_BH(src_size_a) && REG_IS_BH(src_size_b)) {
-        host_arm64_MOV_REG_LSR(block, REG_TEMP, src_reg_a, 8);
-        host_arm64_SUB_REG_LSR(block, REG_TEMP, REG_TEMP, src_reg_b, 8);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 8, 8);
     } else
         fatal("SUB %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
 
@@ -3204,20 +2708,6 @@ codegen_SUB_IMM(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(dest_size) && REG_IS_L(src_size)) {
         host_arm64_SUB_IMM(block, dest_reg, src_reg, uop->imm_data);
-    } else if (REG_IS_W(dest_size) && REG_IS_W(src_size)) {
-        host_arm64_SUB_IMM(block, REG_TEMP, src_reg, uop->imm_data);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 16);
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size)) {
-        host_arm64_SUB_IMM(block, REG_TEMP, src_reg, uop->imm_data);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
-    } else if (REG_IS_B(dest_size) && REG_IS_BH(src_size)) {
-        host_arm64_SUB_IMM(block, REG_TEMP, src_reg, uop->imm_data << 8);
-        host_arm64_MOV_REG_LSR(block, REG_TEMP, REG_TEMP, 8);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 0, 8);
-    } else if (REG_IS_BH(dest_size) && REG_IS_BH(src_size)) {
-        host_arm64_SUB_IMM(block, REG_TEMP, src_reg, uop->imm_data << 8);
-        host_arm64_MOV_REG_LSR(block, REG_TEMP, REG_TEMP, 8);
-        host_arm64_BFI(block, dest_reg, REG_TEMP, 8, 8);
     } else
         fatal("SUB_IMM %x %x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
 
@@ -3232,10 +2722,6 @@ codegen_TEST_JNS_DEST(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(src_size)) {
         host_arm64_TST_IMM(block, src_reg, 1 << 31);
-    } else if (REG_IS_W(src_size)) {
-        host_arm64_TST_IMM(block, src_reg, 1 << 15);
-    } else if (REG_IS_B(src_size)) {
-        host_arm64_TST_IMM(block, src_reg, 1 << 7);
     } else
         fatal("TEST_JNS_DEST %02x\n", uop->src_reg_a_real);
 
@@ -3251,10 +2737,6 @@ codegen_TEST_JS_DEST(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(src_size)) {
         host_arm64_TST_IMM(block, src_reg, 1 << 31);
-    } else if (REG_IS_W(src_size)) {
-        host_arm64_TST_IMM(block, src_reg, 1 << 15);
-    } else if (REG_IS_B(src_size)) {
-        host_arm64_TST_IMM(block, src_reg, 1 << 7);
     } else
         fatal("TEST_JS_DEST %02x\n", uop->src_reg_a_real);
 
@@ -3277,21 +2759,6 @@ codegen_XOR(codeblock_t *block, uop_t *uop)
         host_arm64_EOR_REG_V(block, dest_reg, src_reg_a, src_reg_b);
     } else if (REG_IS_L(dest_size) && REG_IS_L(src_size_a) && REG_IS_L(src_size_b)) {
         host_arm64_EOR_REG(block, dest_reg, src_reg_a, src_reg_b, 0);
-    } else if (REG_IS_W(dest_size) && REG_IS_W(src_size_a) && REG_IS_W(src_size_b) && dest_reg == src_reg_a) {
-        host_arm64_AND_IMM(block, REG_TEMP, src_reg_b, 0xffff);
-        host_arm64_EOR_REG(block, dest_reg, src_reg_a, REG_TEMP, 0);
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size_a) && REG_IS_B(src_size_b) && dest_reg == src_reg_a) {
-        host_arm64_AND_IMM(block, REG_TEMP, src_reg_b, 0xff);
-        host_arm64_EOR_REG(block, dest_reg, src_reg_a, REG_TEMP, 0);
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size_a) && REG_IS_BH(src_size_b) && dest_reg == src_reg_a) {
-        host_arm64_UBFX(block, REG_TEMP, src_reg_b, 8, 8);
-        host_arm64_EOR_REG(block, dest_reg, src_reg_a, REG_TEMP, 0);
-    } else if (REG_IS_BH(dest_size) && REG_IS_BH(src_size_a) && REG_IS_B(src_size_b) && dest_reg == src_reg_a) {
-        host_arm64_AND_IMM(block, REG_TEMP, src_reg_b, 0xff);
-        host_arm64_EOR_REG(block, dest_reg, src_reg_a, REG_TEMP, 8);
-    } else if (REG_IS_BH(dest_size) && REG_IS_BH(src_size_a) && REG_IS_BH(src_size_b) && dest_reg == src_reg_a) {
-        host_arm64_UBFX(block, REG_TEMP, src_reg_b, 8, 8);
-        host_arm64_EOR_REG(block, dest_reg, src_reg_a, REG_TEMP, 8);
     } else
         fatal("XOR %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
 
@@ -3307,12 +2774,6 @@ codegen_XOR_IMM(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(dest_size) && REG_IS_L(src_size)) {
         host_arm64_EOR_IMM(block, dest_reg, src_reg, uop->imm_data);
-    } else if (REG_IS_W(dest_size) && REG_IS_W(src_size) && dest_reg == src_reg) {
-        host_arm64_EOR_IMM(block, dest_reg, src_reg, uop->imm_data);
-    } else if (REG_IS_B(dest_size) && REG_IS_B(src_size) && dest_reg == src_reg) {
-        host_arm64_EOR_IMM(block, dest_reg, src_reg, uop->imm_data);
-    } else if (REG_IS_BH(dest_size) && REG_IS_BH(src_size) && dest_reg == src_reg) {
-        host_arm64_EOR_IMM(block, dest_reg, src_reg, uop->imm_data << 8);
     } else
         fatal("XOR_IMM %x %x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
 
@@ -3343,19 +2804,15 @@ codegen_SETCC(codeblock_t *block, uop_t *uop)
     int dest_reg   = HOST_REG_GET(uop->dest_reg_a_real);
     int src_reg_a  = HOST_REG_GET(uop->src_reg_a_real);
     int src_reg_b  = HOST_REG_GET(uop->src_reg_b_real);
+    int dest_size  = IREG_GET_SIZE(uop->dest_reg_a_real);
     int src_size_a = IREG_GET_SIZE(uop->src_reg_a_real);
     int src_size_b = IREG_GET_SIZE(uop->src_reg_b_real);
     int cond       = (int) uop->imm_data;
 
-    if (REG_IS_L(src_size_a) && REG_IS_L(src_size_b)) {
+    if (REG_IS_L(dest_size) && REG_IS_L(src_size_a) && REG_IS_L(src_size_b)) {
         host_arm64_CMP_REG(block, src_reg_a, src_reg_b);
-    } else if (REG_IS_W(src_size_a) && REG_IS_W(src_size_b)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 16);
-        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 16);
-    } else if (REG_IS_B(src_size_a) && REG_IS_B(src_size_b)) {
-        host_arm64_MOV_REG(block, REG_TEMP, src_reg_a, 24);
-        host_arm64_CMP_REG_LSL(block, REG_TEMP, src_reg_b, 24);
-    }
+    } else
+        fatal("SETCC %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
 
     /* Convert x86 condition to ARM64 condition and emit CSET: CSINC Rd, WZR, WZR, ~cond */
     static const uint8_t x86_to_arm64_inv_cond[16] = {
@@ -3391,23 +2848,11 @@ codegen_CMOV(codeblock_t *block, uop_t *uop)
     int cond_size = IREG_GET_SIZE(uop->src_reg_c_real);
     int dest_size = IREG_GET_SIZE(uop->dest_reg_a_real);
 
-    if (REG_IS_L(cond_size)) {
-        host_arm64_CMP_IMM(block, cond_reg, 0);
-    } else if (REG_IS_W(cond_size)) {
-        host_arm64_MOV_REG(block, REG_TEMP, cond_reg, 16);
-        host_arm64_CMP_IMM(block, REG_TEMP, 0);
-    } else {
-        host_arm64_MOV_REG(block, REG_TEMP, cond_reg, 24);
-        host_arm64_CMP_IMM(block, REG_TEMP, 0);
-    }
+    if (!REG_IS_L(dest_size) || !REG_IS_L(cond_size))
+        fatal("CMOV %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_c_real);
 
-    if (REG_IS_W(dest_size)) {
-        host_arm64_MOV_REG(block, REG_TEMP2, src_old, 0);
-        host_arm64_BFI(block, REG_TEMP2, src_new, 0, 16);
-        host_arm64_CSEL_NE(block, dest_reg, REG_TEMP2, src_old);
-    } else {
-        host_arm64_CSEL_NE(block, dest_reg, src_new, src_old);
-    }
+    host_arm64_CMP_IMM(block, cond_reg, 0);
+    host_arm64_CSEL_NE(block, dest_reg, src_new, src_old);
     return 0;
 }
 
