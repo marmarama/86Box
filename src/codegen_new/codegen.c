@@ -44,7 +44,7 @@ codegen_set_loop_start(ir_data_t *ir, int first_instruction)
 {
     uop_MOV_IMM(ir, IREG_op32, codegen_instructions[first_instruction].op_32);
     uop_MOV_PTR(ir, IREG_ea_seg, (void *) codegen_instructions[first_instruction].op_ea_seg);
-    uop_MOV_IMM(ir, IREG_ssegs, codegen_instructions[first_instruction].op_ssegs);
+    uop_MOV_IMM(ir, IREG_ssegsx, codegen_instructions[first_instruction].op_ssegs);
 }
 
 int has_ea;
@@ -837,7 +837,7 @@ codegen_skip:
     if (op_ea_seg != last_op_ea_seg)
         uop_MOV_PTR(ir, IREG_ea_seg, (void *) op_ea_seg);
     if (op_ssegs != last_op_ssegs)
-        uop_MOV_IMM(ir, IREG_ssegs, op_ssegs);
+        uop_MOV_IMM(ir, IREG_ssegsx, op_ssegs);
     uop_CALL_INSTRUCTION_FUNC(ir, op, fetchdat);
     if (cpu_dyn_accurate_fpu_env && is_fpu) {
         if (fpu_softfloat)

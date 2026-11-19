@@ -1055,7 +1055,7 @@ codegen_EXIT_BLOCK(codeblock_t *block, uop_t *uop)
 
     block->links[exit_idx].target_pc = target_pc;
 
-    codegen_alloc_bytes(block, 192);
+    codegen_alloc_bytes(block, 224);
 
     /* Write target_pc to cpu_state.pc up front so direct linked jumps,
        unlinked stubs, and cycle/interrupt exits all have accurate architectural PC: */
@@ -1133,7 +1133,7 @@ codegen_EXIT_BLOCK_RET(codeblock_t *block, uop_t *uop)
 
     block->links[exit_idx].target_pc = BLOCK_PC_INVALID;
 
-    codegen_alloc_bytes(block, 192);
+    codegen_alloc_bytes(block, 224);
 
     /* 1. Compare popped return address in cpu_state.pc with predicted target_pc in block->links[exit_idx].target_pc: */
     int pc_disp = (int) offsetof(cpu_state_t, pc) - 128;
