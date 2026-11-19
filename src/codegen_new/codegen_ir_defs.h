@@ -436,6 +436,33 @@ typedef struct ir_data_t {
     uint16_t            cur_guest_pc_off;
 } ir_data_t;
 
+#define UOP_MEM_SIZE_SHIFT 16
+#define UOP_MEM_SIZE_MASK  (3u << UOP_MEM_SIZE_SHIFT)
+#define UOP_MEM_SIZE_32    (0u << UOP_MEM_SIZE_SHIFT)
+#define UOP_MEM_SIZE_8     (1u << UOP_MEM_SIZE_SHIFT)
+#define UOP_MEM_SIZE_16    (2u << UOP_MEM_SIZE_SHIFT)
+
+static inline uint32_t
+uop_mem_width_flag(int width)
+{
+    if (width == 8)
+        return UOP_MEM_SIZE_8;
+    if (width == 16)
+        return UOP_MEM_SIZE_16;
+    return UOP_MEM_SIZE_32;
+}
+
+static inline int
+uop_mem_size_from_type(uint32_t uop_type, ir_host_reg_t fallback_reg)
+{
+    uint32_t mem_sz = uop_type & UOP_MEM_SIZE_MASK;
+    if (mem_sz == UOP_MEM_SIZE_8)
+        return IREG_SIZE_B;
+    if (mem_sz == UOP_MEM_SIZE_16)
+        return IREG_SIZE_W;
+    return IREG_GET_SIZE(fallback_reg);
+}
+
 static inline int
 uop_is_mem_access(uint32_t uop_type)
 {

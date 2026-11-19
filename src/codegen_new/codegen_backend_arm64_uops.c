@@ -327,9 +327,6 @@ codegen_CMP_IMM_JNLE_DEST(codeblock_t *block, uop_t *uop)
     return 0;
 }
 
-    return 0;
-}
-
 static int
 codegen_LOOP_LABEL(UNUSED(codeblock_t *block), UNUSED(uop_t *uop))
 {
@@ -930,7 +927,7 @@ codegen_LOAD_FUNC_ARG0(codeblock_t *block, uop_t *uop)
     } else if (REG_IS_B(src_size)) {
         host_arm64_AND_IMM(block, REG_ARG0, src_reg, 0xff);
     } else {
-        host_arm64_MOV_REG(block, REG_ARG0, src_reg);
+        host_arm64_MOV_REG(block, REG_ARG0, src_reg, 0);
     }
 
     return 0;
@@ -946,7 +943,7 @@ codegen_LOAD_FUNC_ARG1(codeblock_t *block, uop_t *uop)
     } else if (REG_IS_B(src_size)) {
         host_arm64_AND_IMM(block, REG_ARG1, src_reg, 0xff);
     } else {
-        host_arm64_MOV_REG(block, REG_ARG1, src_reg);
+        host_arm64_MOV_REG(block, REG_ARG1, src_reg, 0);
     }
 
     return 0;
@@ -1015,7 +1012,8 @@ codegen_MEM_LOAD_ABS(codeblock_t *block, uop_t *uop)
 {
     int dest_reg  = HOST_REG_GET(uop->dest_reg_a_real);
     int seg_reg   = HOST_REG_GET(uop->src_reg_a_real);
-    int dest_size = IREG_GET_SIZE(uop->dest_reg_a_real);
+    int dest_size = uop_mem_size_from_type(uop->type, uop->dest_reg_a_real);
+    int zext_32   = ((uop->type & UOP_MEM_SIZE_MASK) != 0);
 
     host_arm64_ADD_IMM(block, REG_X0, seg_reg, uop->imm_data);
     if (REG_IS_B(dest_size) || REG_IS_BH(dest_size)) {
@@ -1028,11 +1026,17 @@ codegen_MEM_LOAD_ABS(codeblock_t *block, uop_t *uop)
         fatal("MEM_LOAD_ABS - %02x\n", uop->dest_reg_a_real);
     host_arm64_CBNZ(block, REG_X1, (uintptr_t) codegen_exit_rout);
     if (REG_IS_B(dest_size)) {
-        host_arm64_BFI(block, dest_reg, REG_X0, 0, 8);
+        if (zext_32)
+            host_arm64_UBFX(block, dest_reg, REG_X0, 0, 8);
+        else
+            host_arm64_BFI(block, dest_reg, REG_X0, 0, 8);
     } else if (REG_IS_BH(dest_size)) {
         host_arm64_BFI(block, dest_reg, REG_X0, 8, 8);
     } else if (REG_IS_W(dest_size)) {
-        host_arm64_BFI(block, dest_reg, REG_X0, 0, 16);
+        if (zext_32)
+            host_arm64_UBFX(block, dest_reg, REG_X0, 0, 16);
+        else
+            host_arm64_BFI(block, dest_reg, REG_X0, 0, 16);
     } else if (REG_IS_L(dest_size)) {
         host_arm64_MOV_REG(block, dest_reg, REG_X0, 0);
     }
@@ -1045,7 +1049,8 @@ codegen_MEM_LOAD_REG(codeblock_t *block, uop_t *uop)
     int dest_reg  = HOST_REG_GET(uop->dest_reg_a_real);
     int seg_reg   = HOST_REG_GET(uop->src_reg_a_real);
     int addr_reg  = HOST_REG_GET(uop->src_reg_b_real);
-    int dest_size = IREG_GET_SIZE(uop->dest_reg_a_real);
+    int dest_size = uop_mem_size_from_type(uop->type, uop->dest_reg_a_real);
+    int zext_32   = ((uop->type & UOP_MEM_SIZE_MASK) != 0);
 
     if (uop->imm_data) {
         if (uop->is_a16) {
@@ -1071,11 +1076,17 @@ codegen_MEM_LOAD_REG(codeblock_t *block, uop_t *uop)
         fatal("MEM_LOAD_REG - %02x\n", uop->dest_reg_a_real);
     host_arm64_CBNZ(block, REG_X1, (uintptr_t) codegen_exit_rout);
     if (REG_IS_B(dest_size)) {
-        host_arm64_BFI(block, dest_reg, REG_X0, 0, 8);
+        if (zext_32)
+            host_arm64_UBFX(block, dest_reg, REG_X0, 0, 8);
+        else
+            host_arm64_BFI(block, dest_reg, REG_X0, 0, 8);
     } else if (REG_IS_BH(dest_size)) {
         host_arm64_BFI(block, dest_reg, REG_X0, 8, 8);
     } else if (REG_IS_W(dest_size)) {
-        host_arm64_BFI(block, dest_reg, REG_X0, 0, 16);
+        if (zext_32)
+            host_arm64_UBFX(block, dest_reg, REG_X0, 0, 16);
+        else
+            host_arm64_BFI(block, dest_reg, REG_X0, 0, 16);
     } else if (REG_IS_L(dest_size)) {
         host_arm64_MOV_REG(block, dest_reg, REG_X0, 0);
     } else if (REG_IS_Q(dest_size)) {
@@ -1130,7 +1141,7 @@ codegen_MEM_STORE_ABS(codeblock_t *block, uop_t *uop)
 {
     int seg_reg  = HOST_REG_GET(uop->src_reg_a_real);
     int src_reg  = HOST_REG_GET(uop->src_reg_b_real);
-    int src_size = IREG_GET_SIZE(uop->src_reg_b_real);
+    int src_size = uop_mem_size_from_type(uop->type, uop->src_reg_b_real);
 
     host_arm64_ADD_IMM(block, REG_W0, seg_reg, uop->imm_data);
     if (REG_IS_B(src_size)) {
@@ -1157,7 +1168,7 @@ codegen_MEM_STORE_REG(codeblock_t *block, uop_t *uop)
     int seg_reg  = HOST_REG_GET(uop->src_reg_a_real);
     int addr_reg = HOST_REG_GET(uop->src_reg_b_real);
     int src_reg  = HOST_REG_GET(uop->src_reg_c_real);
-    int src_size = IREG_GET_SIZE(uop->src_reg_c_real);
+    int src_size = uop_mem_size_from_type(uop->type, uop->src_reg_c_real);
 
     host_arm64_ADD_REG(block, REG_W0, seg_reg, addr_reg, 0);
     if (uop->imm_data)

@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <86box/86box.h>
 #include "cpu.h"
@@ -708,38 +709,46 @@ codegen_ir_lower_subregs(ir_data_t *ir)
             continue;
         }
 
-        /* 2. Memory accesses: preserve native memory width tags only on load dest / store data */
+        /* 2. Memory accesses: encode width in UOP_MEM_SIZE_* so all register operands are 32-bit canonical */
         if (uop_is_mem_access(u->type)) {
-            int src_a_reg    = u->src_reg_a.reg;
-            int src_b_reg    = u->src_reg_b.reg;
-            int src_c_reg    = u->src_reg_c.reg;
-            int is_store_abs = (uop_masked == (UOP_MEM_STORE_ABS & UOP_MASK));
-            int is_store_reg = (uop_masked == (UOP_MEM_STORE_REG & UOP_MASK));
+            uint32_t new_type     = u->type & ~UOP_MEM_SIZE_MASK;
+            int      src_a_reg    = u->src_reg_a.reg;
+            int      src_b_reg    = u->src_reg_b.reg;
+            int      src_c_reg    = u->src_reg_c.reg;
+            int      is_store_abs = (uop_masked == (UOP_MEM_STORE_ABS & UOP_MASK));
+            int      is_store_reg = (uop_masked == (UOP_MEM_STORE_REG & UOP_MASK));
 
             if (is_subreg_int(u->src_reg_a))
                 src_a_reg = lower_read_subreg(ir, u->src_reg_a, 0, IREG_temp3, zext_width);
             if (!ir_reg_is_invalid(u->src_reg_b)) {
-                if (is_store_abs) {
-                    if (IREG_GET_SIZE(u->src_reg_b.reg) == IREG_SIZE_BH) {
-                        int val_32 = lower_read_subreg(ir, u->src_reg_b, 0, IREG_temp5, zext_width);
-                        src_b_reg  = IREG_GET_REG(val_32) | IREG_SIZE_B;
-                    }
+                if (is_store_abs && is_subreg_int(u->src_reg_b)) {
+                    int w = subreg_width(u->src_reg_b.reg);
+                    new_type |= uop_mem_width_flag(w);
+                    if (IREG_GET_SIZE(u->src_reg_b.reg) == IREG_SIZE_BH)
+                        src_b_reg = lower_read_subreg(ir, u->src_reg_b, 0, IREG_temp5, zext_width);
+                    else
+                        src_b_reg = IREG_GET_REG(u->src_reg_b.reg) | IREG_SIZE_L;
                 } else if (is_subreg_int(u->src_reg_b)) {
                     src_b_reg = lower_read_subreg(ir, u->src_reg_b, 0, IREG_temp6, zext_width);
                 }
             }
             if (!ir_reg_is_invalid(u->src_reg_c)) {
-                if (is_store_reg) {
-                    if (IREG_GET_SIZE(u->src_reg_c.reg) == IREG_SIZE_BH) {
-                        int val_32 = lower_read_subreg(ir, u->src_reg_c, 0, IREG_temp5, zext_width);
-                        src_c_reg  = IREG_GET_REG(val_32) | IREG_SIZE_B;
-                    }
+                if (is_store_reg && is_subreg_int(u->src_reg_c)) {
+                    int w = subreg_width(u->src_reg_c.reg);
+                    new_type |= uop_mem_width_flag(w);
+                    if (IREG_GET_SIZE(u->src_reg_c.reg) == IREG_SIZE_BH)
+                        src_c_reg = lower_read_subreg(ir, u->src_reg_c, 0, IREG_temp5, zext_width);
+                    else
+                        src_c_reg = IREG_GET_REG(u->src_reg_c.reg) | IREG_SIZE_L;
                 } else if (is_subreg_int(u->src_reg_c)) {
                     src_c_reg = lower_read_subreg(ir, u->src_reg_c, 0, IREG_temp5, zext_width);
                 }
             }
+            if (!ir_reg_is_invalid(u->dest_reg_a) && is_subreg_int(u->dest_reg_a)) {
+                new_type |= uop_mem_width_flag(subreg_width(u->dest_reg_a.reg));
+            }
 
-            uop_t *new_uop = lower_copy_uop(ir, u, u->type);
+            uop_t *new_uop = lower_copy_uop(ir, u, new_type);
             if (!ir_reg_is_invalid(u->src_reg_a))
                 new_uop->src_reg_a = codegen_reg_read(src_a_reg);
             if (!ir_reg_is_invalid(u->src_reg_b))
@@ -749,23 +758,19 @@ codegen_ir_lower_subregs(ir_data_t *ir)
             if (!ir_reg_is_invalid(u->dest_reg_a)) {
                 int dreg = IREG_GET_REG(u->dest_reg_a.reg);
                 if (is_subreg_int(u->dest_reg_a) && reg_needs_bfi(dreg)) {
-                    int d_lsb      = subreg_lsb(u->dest_reg_a.reg);
-                    int d_width    = subreg_width(u->dest_reg_a.reg);
-                    int temp_sized = IREG_temp4 | (d_width == 16 ? IREG_SIZE_W : IREG_SIZE_B);
-                    new_uop->dest_reg_a = codegen_reg_write(temp_sized, ir->wr_pos - 1);
+                    int d_lsb           = subreg_lsb(u->dest_reg_a.reg);
+                    int d_width         = subreg_width(u->dest_reg_a.reg);
+                    new_uop->dest_reg_a = codegen_reg_write(IREG_temp4, ir->wr_pos - 1);
                     uop_BFI(ir, dreg | IREG_SIZE_L, dreg | IREG_SIZE_L, IREG_temp4, d_lsb, d_width);
                     zext_width[dreg]       = 0;
-                    zext_width[IREG_temp4] = 0;
+                    zext_width[IREG_temp4] = (uint8_t) d_width;
                 } else if (is_subreg_int(u->dest_reg_a)) {
-                    int d_width    = subreg_width(u->dest_reg_a.reg);
-                    int temp_sized = IREG_temp4 | (d_width == 16 ? IREG_SIZE_W : IREG_SIZE_B);
-                    new_uop->dest_reg_a = codegen_reg_write(temp_sized, ir->wr_pos - 1);
-                    uop_BFX(ir, dreg | IREG_SIZE_L, IREG_temp4, 0, d_width, 0);
+                    int d_width         = subreg_width(u->dest_reg_a.reg);
+                    new_uop->dest_reg_a = codegen_reg_write(dreg | IREG_SIZE_L, ir->wr_pos - 1);
                     if (reg_is_dword_native(dreg))
                         zext_width[dreg] = (uint8_t) d_width;
                     else if (dreg < IREG_COUNT)
                         zext_width[dreg] = 0;
-                    zext_width[IREG_temp4] = 0;
                 } else {
                     new_uop->dest_reg_a = codegen_reg_write(u->dest_reg_a.reg, ir->wr_pos - 1);
                     if (dreg < IREG_COUNT)
@@ -1104,29 +1109,10 @@ codegen_ir_verify_canonical(const ir_data_t *ir)
         if (uop_masked == UOP_INVALID)
             continue;
 
-        if (uop_is_mem_access(u->type)) {
-            int is_store_abs = (uop_masked == (UOP_MEM_STORE_ABS & UOP_MASK));
-            int is_store_reg = (uop_masked == (UOP_MEM_STORE_REG & UOP_MASK));
-
-            if (is_subreg_int(u->src_reg_a))
-                fatal("codegen_ir_verify_canonical: mem src_a subreg uop=%08x reg=%04x\n", u->type, u->src_reg_a.reg);
-            if (!is_store_abs && is_subreg_int(u->src_reg_b))
-                fatal("codegen_ir_verify_canonical: mem addr subreg uop=%08x reg=%04x\n", u->type, u->src_reg_b.reg);
-            if (is_store_abs && !ir_reg_is_invalid(u->src_reg_b) && IREG_GET_SIZE(u->src_reg_b.reg) == IREG_SIZE_BH)
-                fatal("codegen_ir_verify_canonical: mem_store_abs BH reg=%04x\n", u->src_reg_b.reg);
-            if (is_store_reg && !ir_reg_is_invalid(u->src_reg_c) && IREG_GET_SIZE(u->src_reg_c.reg) == IREG_SIZE_BH)
-                fatal("codegen_ir_verify_canonical: mem_store_reg BH reg=%04x\n", u->src_reg_c.reg);
-            if (!is_store_reg && is_subreg_int(u->src_reg_c))
-                fatal("codegen_ir_verify_canonical: mem src_c subreg uop=%08x reg=%04x\n", u->type, u->src_reg_c.reg);
-            if (is_subreg_int(u->dest_reg_a) &&
-                (IREG_GET_REG(u->dest_reg_a.reg) != IREG_temp4 || IREG_GET_SIZE(u->dest_reg_a.reg) == IREG_SIZE_BH))
-                fatal("codegen_ir_verify_canonical: mem dest subreg uop=%08x reg=%04x\n", u->type, u->dest_reg_a.reg);
-        } else {
-            if (is_subreg_int(u->src_reg_a) || is_subreg_int(u->src_reg_b) ||
-                is_subreg_int(u->src_reg_c) || is_subreg_int(u->dest_reg_a))
-                fatal("codegen_ir_verify_canonical: non-mem subreg uop=%08x a=%04x b=%04x c=%04x d=%04x\n",
-                      u->type, u->src_reg_a.reg, u->src_reg_b.reg, u->src_reg_c.reg, u->dest_reg_a.reg);
-        }
+        if (is_subreg_int(u->src_reg_a) || is_subreg_int(u->src_reg_b) ||
+            is_subreg_int(u->src_reg_c) || is_subreg_int(u->dest_reg_a))
+            fatal("codegen_ir_verify_canonical: subreg operand uop=%08x a=%04x b=%04x c=%04x d=%04x\n",
+                  u->type, u->src_reg_a.reg, u->src_reg_b.reg, u->src_reg_c.reg, u->dest_reg_a.reg);
     }
 }
 #endif
