@@ -397,6 +397,7 @@ codegen_reg_read(int reg)
 
 int reg_is_native_size(ir_reg_t ir_reg);
 int reg_is_integer(ir_reg_t ir_reg);
+int reg_is_volatile(int reg);
 
 static inline int
 reg_is_dword_native(int reg)
@@ -424,7 +425,7 @@ codegen_reg_write(int reg, int uop_nr)
     ireg.reg     = reg;
     ireg.version = last_version + 1;
 
-    if (reg_is_native_size(ireg)) {
+    if (reg_is_native_size(ireg) || reg_is_volatile(reg)) {
         if (last_version && !reg_version[IREG_GET_REG(reg)][last_version].refcount && !(reg_version[IREG_GET_REG(reg)][last_version].flags & REG_FLAGS_REQUIRED))
             add_to_dead_list(&reg_version[IREG_GET_REG(reg)][last_version], IREG_GET_REG(reg), last_version);
     } else if (last_version > 0) {

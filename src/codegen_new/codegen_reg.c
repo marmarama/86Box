@@ -201,8 +201,11 @@ struct
 static const uint8_t native_requested_sizes[9][8] = 
 {
     [REG_BYTE][IREG_SIZE_B >> IREG_SIZE_SHIFT]          = 1,
+    [REG_BYTE][IREG_SIZE_L >> IREG_SIZE_SHIFT]          = 1,
     [REG_FPU_ST_BYTE][IREG_SIZE_B >> IREG_SIZE_SHIFT]   = 1,
+    [REG_FPU_ST_BYTE][IREG_SIZE_L >> IREG_SIZE_SHIFT]   = 1,
     [REG_WORD][IREG_SIZE_W >> IREG_SIZE_SHIFT]          = 1,
+    [REG_WORD][IREG_SIZE_L >> IREG_SIZE_SHIFT]          = 1,
     [REG_DWORD][IREG_SIZE_L >> IREG_SIZE_SHIFT]         = 1,
     [REG_QWORD][IREG_SIZE_D >> IREG_SIZE_SHIFT]         = 1,
     [REG_FPU_ST_QWORD][IREG_SIZE_D >> IREG_SIZE_SHIFT]  = 1,
@@ -250,6 +253,12 @@ reg_is_integer(ir_reg_t ir_reg)
 {
     int reg = IREG_GET_REG(ir_reg.reg);
     return (ireg_data[reg].type == REG_INTEGER && ireg_data[reg].native_size <= REG_DWORD);
+}
+
+int
+reg_is_volatile(int reg)
+{
+    return ireg_data[IREG_GET_REG(reg)].is_volatile == REG_VOLATILE;
 }
 
 void
@@ -754,7 +763,7 @@ codegen_reg_alloc_write_reg(codeblock_t *block, ir_reg_t ir_reg)
     host_reg_set_t *reg_set = get_reg_set(ir_reg);
     int             c;
 
-    if (!reg_is_native_size(ir_reg)) {
+    if (!reg_is_native_size(ir_reg) && !ireg_data[IREG_GET_REG(ir_reg.reg)].is_volatile) {
         /*Read in parent register so we can do partial accesses to it*/
         ir_reg_t parent_reg;
 

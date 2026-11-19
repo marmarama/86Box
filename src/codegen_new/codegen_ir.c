@@ -315,7 +315,7 @@ codegen_ir_peephole(ir_data_t *ir)
             }
         }
 
-        /* 2. Check if src_reg_a has a known constant (native size integer) */
+        /* 2. Check if src_reg_a / src_reg_b have known constants (native size integer) */
         int      src_a_is_const = 0;
         uint32_t c_val_a        = 0;
         if (uop->src_reg_a.reg != IREG_INVALID && reg_is_integer(uop->src_reg_a) && reg_is_native_size(uop->src_reg_a)) {
@@ -325,49 +325,120 @@ codegen_ir_peephole(ir_data_t *ir)
                 c_val_a        = const_val[sreg];
             }
         }
+        int      src_b_is_const = 0;
+        uint32_t c_val_b        = 0;
+        if (uop->src_reg_b.reg != IREG_INVALID && reg_is_integer(uop->src_reg_b) && reg_is_native_size(uop->src_reg_b)) {
+            int sreg = IREG_GET_REG(uop->src_reg_b.reg);
+            if (const_valid[sreg] && const_version[sreg] == uop->src_reg_b.version) {
+                src_b_is_const = 1;
+                c_val_b        = const_val[sreg];
+            }
+        }
 
-        /* 3. Constant propagation into immediate ALU operations (native size integer) */
-        if (src_a_is_const && (uop->dest_reg_a.reg != IREG_INVALID) &&
+        /* 3. Constant propagation into ALU, BFX/BFI, and MOV operations (native size integer) */
+        if ((uop->dest_reg_a.reg != IREG_INVALID) &&
             reg_is_integer(uop->dest_reg_a) &&
             reg_is_native_size(uop->dest_reg_a)) {
             int      folded = 0;
             uint32_t res    = 0;
 
-            if (uop_masked == (UOP_ADD_IMM & UOP_MASK)) {
-                res    = c_val_a + uop->imm_data;
+            if (src_a_is_const && src_b_is_const) {
+                if (uop_masked == (UOP_ADD & UOP_MASK)) {
+                    res    = c_val_a + c_val_b;
+                    folded = 1;
+                } else if (uop_masked == (UOP_SUB & UOP_MASK)) {
+                    res    = c_val_a - c_val_b;
+                    folded = 1;
+                } else if (uop_masked == (UOP_AND & UOP_MASK)) {
+                    res    = c_val_a & c_val_b;
+                    folded = 1;
+                } else if (uop_masked == (UOP_OR & UOP_MASK)) {
+                    res    = c_val_a | c_val_b;
+                    folded = 1;
+                } else if (uop_masked == (UOP_XOR & UOP_MASK)) {
+                    res    = c_val_a ^ c_val_b;
+                    folded = 1;
+                } else if (uop_masked == (UOP_SHL & UOP_MASK)) {
+                    res    = c_val_a << (c_val_b & 31);
+                    folded = 1;
+                } else if (uop_masked == (UOP_SHR & UOP_MASK)) {
+                    res    = c_val_a >> (c_val_b & 31);
+                    folded = 1;
+                } else if (uop_masked == (UOP_SAR & UOP_MASK)) {
+                    res    = (uint32_t) (((int32_t) c_val_a) >> (c_val_b & 31));
+                    folded = 1;
+                } else if (uop_masked == (UOP_BFI & UOP_MASK)) {
+                    int      lsb   = uop->imm_data & 0xff;
+                    int      width = (uop->imm_data >> 8) & 0xff;
+                    uint32_t mask  = ((width >= 32) ? 0xffffffffu : ((1u << width) - 1u)) << lsb;
+                    res            = (c_val_a & ~mask) | ((c_val_b << lsb) & mask);
+                    folded         = 1;
+                }
+            } else if (src_a_is_const) {
+                if (uop_masked == (UOP_MOV & UOP_MASK)) {
+                    res    = c_val_a;
+                    folded = 1;
+                } else if (uop_masked == (UOP_BFX & UOP_MASK)) {
+                    int      lsb       = uop->imm_data & 0xff;
+                    int      width     = (uop->imm_data >> 8) & 0xff;
+                    int      is_signed = (uop->imm_data >> 16) & 1;
+                    uint32_t mask      = (width >= 32) ? 0xffffffffu : ((1u << width) - 1u);
+                    res                = (c_val_a >> lsb) & mask;
+                    if (is_signed && width > 0 && width < 32 && (res & (1u << (width - 1))))
+                        res |= ~mask;
+                    folded = 1;
+                } else if (uop_masked == (UOP_ADD_IMM & UOP_MASK)) {
+                    res    = c_val_a + uop->imm_data;
+                    folded = 1;
+                } else if (uop_masked == (UOP_SUB_IMM & UOP_MASK)) {
+                    res    = c_val_a - uop->imm_data;
+                    folded = 1;
+                } else if (uop_masked == (UOP_AND_IMM & UOP_MASK)) {
+                    res    = c_val_a & uop->imm_data;
+                    folded = 1;
+                } else if (uop_masked == (UOP_OR_IMM & UOP_MASK)) {
+                    res    = c_val_a | uop->imm_data;
+                    folded = 1;
+                } else if (uop_masked == (UOP_XOR_IMM & UOP_MASK)) {
+                    res    = c_val_a ^ uop->imm_data;
+                    folded = 1;
+                } else if (uop_masked == (UOP_SHL_IMM & UOP_MASK)) {
+                    res    = c_val_a << (uop->imm_data & 31);
+                    folded = 1;
+                } else if (uop_masked == (UOP_SHR_IMM & UOP_MASK)) {
+                    res    = c_val_a >> (uop->imm_data & 31);
+                    folded = 1;
+                } else if (uop_masked == (UOP_SAR_IMM & UOP_MASK)) {
+                    res    = (uint32_t) (((int32_t) c_val_a) >> (uop->imm_data & 31));
+                    folded = 1;
+                } else if (uop_masked == (UOP_IMUL_IMM & UOP_MASK)) {
+                    res    = (uint32_t) (((int32_t) c_val_a) * ((int32_t) uop->imm_data));
+                    folded = 1;
+                }
+            } else if (uop_masked == (UOP_AND_IMM & UOP_MASK) && uop->imm_data == 0) {
+                res    = 0;
                 folded = 1;
-            } else if (uop_masked == (UOP_SUB_IMM & UOP_MASK)) {
-                res    = c_val_a - uop->imm_data;
-                folded = 1;
-            } else if (uop_masked == (UOP_AND_IMM & UOP_MASK)) {
-                res    = c_val_a & uop->imm_data;
-                folded = 1;
-            } else if (uop_masked == (UOP_OR_IMM & UOP_MASK)) {
-                res    = c_val_a | uop->imm_data;
-                folded = 1;
-            } else if (uop_masked == (UOP_XOR_IMM & UOP_MASK)) {
-                res    = c_val_a ^ uop->imm_data;
-                folded = 1;
-            } else if (uop_masked == (UOP_SHL_IMM & UOP_MASK)) {
-                res    = c_val_a << (uop->imm_data & 31);
-                folded = 1;
-            } else if (uop_masked == (UOP_SHR_IMM & UOP_MASK)) {
-                res    = c_val_a >> (uop->imm_data & 31);
-                folded = 1;
-            } else if (uop_masked == (UOP_SAR_IMM & UOP_MASK)) {
-                res    = (uint32_t) (((int32_t) c_val_a) >> (uop->imm_data & 31));
-                folded = 1;
-            } else if (uop_masked == (UOP_IMUL_IMM & UOP_MASK)) {
-                res    = (uint32_t) (((int32_t) c_val_a) * ((int32_t) uop->imm_data));
-                folded = 1;
+            } else if (uop->src_reg_a.reg != IREG_INVALID && reg_is_native_size(uop->src_reg_a) &&
+                       ((uop->imm_data == 0 &&
+                         (uop_masked == (UOP_ADD_IMM & UOP_MASK) || uop_masked == (UOP_SUB_IMM & UOP_MASK) ||
+                          uop_masked == (UOP_OR_IMM & UOP_MASK) || uop_masked == (UOP_XOR_IMM & UOP_MASK) ||
+                          uop_masked == (UOP_SHL_IMM & UOP_MASK) || uop_masked == (UOP_SHR_IMM & UOP_MASK) ||
+                          uop_masked == (UOP_SAR_IMM & UOP_MASK))) ||
+                        (uop_masked == (UOP_AND_IMM & UOP_MASK) && uop->imm_data == 0xffffffffu))) {
+                /* Identity immediate -> UOP_MOV (eligible for zero-cost register rename) */
+                uop->type     = (uop->type & ~(UOP_MASK | UOP_TYPE_PARAMS_IMM)) | (UOP_MOV & UOP_MASK);
+                uop->imm_data = 0;
             }
 
             if (folded) {
                 peephole_release_src_reg(uop->src_reg_a);
+                if (uop->src_reg_b.reg != IREG_INVALID)
+                    peephole_release_src_reg(uop->src_reg_b);
                 uop->type = (uop->type & ~UOP_MASK) | (UOP_MOV_IMM & UOP_MASK);
                 uop->type |= UOP_TYPE_PARAMS_IMM;
                 uop->imm_data  = res;
                 uop->src_reg_a = invalid_ir_reg;
+                uop->src_reg_b = invalid_ir_reg;
 
                 int dreg            = IREG_GET_REG(uop->dest_reg_a.reg);
                 const_val[dreg]     = res;
@@ -609,7 +680,17 @@ codegen_ir_lower_subregs(ir_data_t *ir)
                     new_uop->dest_reg_a = codegen_reg_write(temp_sized, ir->wr_pos - 1);
                     uop_BFI(ir, dreg | IREG_SIZE_L, dreg | IREG_SIZE_L, IREG_temp4, d_lsb, d_width);
                     zext_width[dreg]       = 0;
-                    zext_width[IREG_temp4] = (uint8_t) d_width;
+                    zext_width[IREG_temp4] = 0;
+                } else if (is_subreg_int(u->dest_reg_a)) {
+                    int d_width    = subreg_width(u->dest_reg_a.reg);
+                    int temp_sized = IREG_temp4 | (d_width == 16 ? IREG_SIZE_W : IREG_SIZE_B);
+                    new_uop->dest_reg_a = codegen_reg_write(temp_sized, ir->wr_pos - 1);
+                    uop_BFX(ir, dreg | IREG_SIZE_L, IREG_temp4, 0, d_width, 0);
+                    if (reg_is_dword_native(dreg))
+                        zext_width[dreg] = (uint8_t) d_width;
+                    else if (dreg < IREG_COUNT)
+                        zext_width[dreg] = 0;
+                    zext_width[IREG_temp4] = 0;
                 } else {
                     new_uop->dest_reg_a = codegen_reg_write(u->dest_reg_a.reg, ir->wr_pos - 1);
                     if (dreg < IREG_COUNT)
