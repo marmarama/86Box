@@ -163,6 +163,9 @@ ropFILDq(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fet
     uop_MOV_DOUBLE_INT(ir, IREG_ST(-1), IREG_ST_i64(-1));
     uop_MOV_IMM(ir, IREG_tag(-1), TAG_VALID | TAG_UINT64);
     fpu_PUSH(block, ir);
+    codegen_fpu_has_uint64 = 1;
+    if (!(block->status & CPU_STATUS_FPU_UINT64))
+        CPU_BLOCK_END();
 
     return op_pc + 1;
 }

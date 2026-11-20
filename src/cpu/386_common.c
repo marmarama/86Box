@@ -1506,6 +1506,9 @@ enter_smm(int in_hlt)
     oldcpl = 0;
 
     cpu_cur_status &= ~(CPU_STATUS_PMODE | CPU_STATUS_V86);
+#ifdef USE_NEW_DYNAREC
+    cpu_update_fpu_disabled_status();
+#endif
     CPU_BLOCK_END();
 }
 
@@ -1623,6 +1626,9 @@ leave_smm(void)
         if (cpu_state.eflags & VM_FLAG)
             cpu_cur_status |= CPU_STATUS_V86;
     }
+#ifdef USE_NEW_DYNAREC
+    cpu_update_fpu_disabled_status();
+#endif
 
     nmi_mask = 1;
 

@@ -373,6 +373,7 @@ x87_ld_frstor(int reg)
     if (cpu_state.MM_w4[reg] == 0x5555) {
 #ifdef USE_NEW_DYNAREC
         cpu_state.tag[reg] = TAG_VALID | TAG_UINT64;
+        cpu_cur_status |= CPU_STATUS_FPU_UINT64;
 #else
         cpu_state.tag[reg] = TAG_UINT64;
 #endif
@@ -530,7 +531,11 @@ typedef union {
 #ifdef USE_NEW_DYNAREC
 #    define FP_TAG_VALID   cpu_state.tag[cpu_state.TOP & 7] = TAG_VALID
 #    define FP_TAG_VALID_F cpu_state.tag[(cpu_state.TOP + fetchdat) & 7] = TAG_VALID
-#    define FP_TAG_DEFAULT cpu_state.tag[cpu_state.TOP & 7] = TAG_VALID | TAG_UINT64
+#    define FP_TAG_DEFAULT                         \
+        do {                                       \
+            cpu_state.tag[cpu_state.TOP & 7] = TAG_VALID | TAG_UINT64; \
+            cpu_cur_status |= CPU_STATUS_FPU_UINT64; \
+        } while (0)
 #    define FP_TAG_VALID_N cpu_state.tag[(cpu_state.TOP + 1) & 7] = TAG_VALID
 #else
 #    define FP_TAG_VALID   cpu_state.tag[cpu_state.TOP] &= ~TAG_UINT64

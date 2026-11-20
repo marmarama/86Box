@@ -2757,6 +2757,9 @@ taskswitch286(uint16_t seg, uint16_t *segdat, int is32)
         t_bit   = readmemb(base, 0x64) & 1;
 
         cr0 |= 8;
+#ifdef USE_NEW_DYNAREC
+        cpu_cur_status |= CPU_STATUS_FPU_DISABLED;
+#endif
 
         cr3 = new_cr3;
         flushmmucache();
@@ -2953,6 +2956,9 @@ taskswitch286(uint16_t seg, uint16_t *segdat, int is32)
         new_ldt = readmemw(base, 0x2a);
 
         msw |= 8;
+#ifdef USE_NEW_DYNAREC
+        cpu_cur_status |= CPU_STATUS_FPU_DISABLED;
+#endif
 
         cpu_state.pc    = new_pc;
         cpu_state.flags = new_flags;

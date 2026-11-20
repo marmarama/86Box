@@ -1029,11 +1029,15 @@ exec386_dynarec_dyn(void)
     /* Refresh before the lookup AND before a fresh compile: the old
        dynarec skips the lookup on an empty hash slot, and the new block
        still takes its key from cpu_cur_status. */
+#ifdef USE_NEW_DYNAREC
+    cpu_refresh_fpu_status();
+#else
     if (cpu_state.npxc & 0x300)
         cpu_cur_status &= ~CPU_STATUS_FPU_PC24;
     else
         cpu_cur_status |= CPU_STATUS_FPU_PC24;
     cpu_cur_status = (cpu_cur_status & ~CPU_STATUS_FPU_RC_MASK) | (((cpu_state.npxc >> 10) & 3) << CPU_STATUS_FPU_RC_SHIFT);
+#endif
 
 #    ifdef USE_NEW_DYNAREC
     if (!cpu_state.abrt)

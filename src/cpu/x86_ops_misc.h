@@ -895,6 +895,9 @@ opCLTS(UNUSED(uint32_t fetchdat))
         return 1;
     }
     cr0 &= ~8;
+#ifdef USE_NEW_DYNAREC
+    cpu_update_fpu_disabled_status();
+#endif
     CLOCK_CYCLES(5);
     PREFETCH_RUN(5, 1, -1, 0, 0, 0, 0, 0);
     return 0;
@@ -973,6 +976,9 @@ opLOADALL(UNUSED(uint32_t fetchdat))
         return 1;
     }
     msw             = (msw & 1) | readmemw(0, 0x806);
+#ifdef USE_NEW_DYNAREC
+    cpu_update_fpu_disabled_status();
+#endif
     cpu_state.flags = (readmemw(0, 0x818) & 0x7fd5) | 2;
     flags_extract();
     tr.seg                  = readmemw(0, 0x816);
@@ -1046,6 +1052,9 @@ opLOADALL386(UNUSED(uint32_t fetchdat))
     uint32_t la_addr = es + EDI;
 
     cr0              = readmeml(0, la_addr);
+#ifdef USE_NEW_DYNAREC
+    cpu_update_fpu_disabled_status();
+#endif
     cpu_state.flags  = readmemw(0, la_addr + 4);
     cpu_state.eflags = readmemw(0, la_addr + 6);
     flags_extract();

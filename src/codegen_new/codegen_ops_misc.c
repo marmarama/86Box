@@ -745,7 +745,7 @@ ropFEMMS(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNUS
     uop_CMP_IMM_JZ(ir, IREG_temp0, 1, codegen_exit_rout);
 
     codegen_mmx_entered = 0;
-    codegen_fpu_entered = 0;
+    codegen_fpu_entered = !(cpu_cur_status & CPU_STATUS_FPU_DISABLED);
     return op_pc;
 }
 
@@ -757,7 +757,7 @@ ropEMMS(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNUSE
     uop_CMP_IMM_JZ(ir, IREG_temp0, 1, codegen_exit_rout);
 
     codegen_mmx_entered = 0;
-    codegen_fpu_entered = 0;
+    codegen_fpu_entered = !(cpu_cur_status & CPU_STATUS_FPU_DISABLED);
     return op_pc;
 }
 

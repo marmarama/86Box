@@ -483,9 +483,11 @@ typedef struct {
 /*If the cpu_state.flags below are set in cpu_cur_status, they must be set in block->status.
   Otherwise they are ignored*/
 #ifdef USE_NEW_DYNAREC
-#    define CPU_STATUS_NOTFLATDS (1 << 8)
-#    define CPU_STATUS_NOTFLATSS (1 << 9)
-#    define CPU_STATUS_MASK      0xff00
+#    define CPU_STATUS_NOTFLATDS    (1 << 8)
+#    define CPU_STATUS_NOTFLATSS    (1 << 9)
+#    define CPU_STATUS_FPU_DISABLED (1 << 10)
+#    define CPU_STATUS_FPU_UINT64   (1 << 11)
+#    define CPU_STATUS_MASK         0xff00
 #else
 #    define CPU_STATUS_NOTFLATDS (1 << 16)
 #    define CPU_STATUS_NOTFLATSS (1 << 17)
@@ -643,6 +645,33 @@ extern uint64_t star;
 
 #define cr0                  cpu_state.CR0.l
 #define msw                  cpu_state.CR0.w
+
+#ifdef USE_NEW_DYNAREC
+static __inline void
+cpu_update_fpu_disabled_status(void)
+{
+    if (cr0 & 0xc)
+        cpu_cur_status |= CPU_STATUS_FPU_DISABLED;
+    else
+        cpu_cur_status &= ~CPU_STATUS_FPU_DISABLED;
+}
+
+static __inline void
+cpu_refresh_fpu_status(void)
+{
+    if (cpu_state.npxc & 0x300)
+        cpu_cur_status &= ~CPU_STATUS_FPU_PC24;
+    else
+        cpu_cur_status |= CPU_STATUS_FPU_PC24;
+    cpu_cur_status = (cpu_cur_status & ~CPU_STATUS_FPU_RC_MASK) | (((cpu_state.npxc >> 10) & 3) << CPU_STATUS_FPU_RC_SHIFT);
+    cpu_update_fpu_disabled_status();
+    if ((cpu_state.tag[0] | cpu_state.tag[1] | cpu_state.tag[2] | cpu_state.tag[3] |
+         cpu_state.tag[4] | cpu_state.tag[5] | cpu_state.tag[6] | cpu_state.tag[7]) & 0x80)
+        cpu_cur_status |= CPU_STATUS_FPU_UINT64;
+    else
+        cpu_cur_status &= ~CPU_STATUS_FPU_UINT64;
+}
+#endif
 extern uint32_t cr2;
 extern uint32_t cr3;
 extern uint32_t cr4;

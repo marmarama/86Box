@@ -475,6 +475,9 @@ op0F01_common(UNUSED(uint32_t fetchdat), int is32, int is286, UNUSED(int ea32))
                     cpu_cur_status |= CPU_STATUS_PMODE;
                 else
                     cpu_cur_status &= ~CPU_STATUS_PMODE;
+#ifdef USE_NEW_DYNAREC
+                cpu_update_fpu_disabled_status();
+#endif
                 if ((old_msw ^ msw) & 1)
                     seg_desc_cache_update_pages();
             }

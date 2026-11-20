@@ -43,8 +43,9 @@ int      codegen_flat_ss;
 int      mmx_ebx_ecx_loaded;
 int      codegen_flags_changed = 0;
 int      codegen_last_flags_op = FLAGS_INVALID;
-int      codegen_fpu_entered   = 0;
-int      codegen_mmx_entered   = 0;
+int      codegen_fpu_entered    = 0;
+int      codegen_mmx_entered    = 0;
+int      codegen_fpu_has_uint64 = 0;
 int      codegen_fpu_loaded_iq[8];
 x86seg  *op_ea_seg;
 int      op_ssegs;
@@ -533,6 +534,11 @@ codegen_link_allowed(const codeblock_t *src_block, const codeblock_t *dst_block)
         return 0;
     if ((mask & LINK_NO_FPU) && ((src_block->flags | dst_block->flags) & CODEBLOCK_HAS_FPU))
         return 0;
+    /* A monotonic CPU_STATUS_MASK bit set in src_block permits src_block to run even when that
+       condition is active at runtime; linking to a dst_block compiled without it would bypass
+       dispatcher revalidation and drop UOP_FP_ENTER or IREG_ST_i64 maintenance. */
+    if ((src_block->status & ~dst_block->status) & (CPU_STATUS_FPU_DISABLED | CPU_STATUS_FPU_UINT64))
+        return 0;
 
     /* A block spanning two pages requires physical address translation and dirty
        checks on its second page in exec386_dynarec_dyn. Disallow direct links. */
@@ -994,10 +1000,11 @@ codegen_block_start_recompile(codeblock_t *block)
 
     recomp_page = block->phys & ~0xfff;
 
-    codegen_flags_changed = 0;
-    codegen_last_flags_op = FLAGS_INVALID;
-    codegen_fpu_entered   = 0;
-    codegen_mmx_entered   = 0;
+    codegen_flags_changed  = 0;
+    codegen_last_flags_op  = FLAGS_INVALID;
+    codegen_fpu_entered    = !(cpu_cur_status & CPU_STATUS_FPU_DISABLED);
+    codegen_mmx_entered    = 0;
+    codegen_fpu_has_uint64 = (cpu_cur_status & CPU_STATUS_FPU_UINT64) != 0;
 
     codegen_fpu_loaded_iq[0] = codegen_fpu_loaded_iq[1] = codegen_fpu_loaded_iq[2] = codegen_fpu_loaded_iq[3] = codegen_fpu_loaded_iq[4] = codegen_fpu_loaded_iq[5] = codegen_fpu_loaded_iq[6] = codegen_fpu_loaded_iq[7] = 0;
 
@@ -1388,11 +1395,8 @@ codegen_handle_dispatch(void)
     }
 
     /* 3. Refresh FPU status bits */
-    if (cpu_state.npxc & 0x300)
-        cpu_cur_status &= ~CPU_STATUS_FPU_PC24;
-    else
-        cpu_cur_status |= CPU_STATUS_FPU_PC24;
-    cpu_cur_status = (cpu_cur_status & ~CPU_STATUS_FPU_RC_MASK) | (((cpu_state.npxc >> 10) & 3) << CPU_STATUS_FPU_RC_SHIFT);
+    _Static_assert(TAG_UINT64 == 0x80, "cpu_refresh_fpu_status assumes TAG_UINT64 == 0x80");
+    cpu_refresh_fpu_status();
 
     /* 4. Probe codeblock hash table */
     int hash = HASH(phys_addr);

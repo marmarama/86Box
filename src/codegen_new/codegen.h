@@ -496,6 +496,7 @@ is_zf_flags_res_op(int flags_op)
 
 extern int codegen_fpu_entered;
 extern int codegen_mmx_entered;
+extern int codegen_fpu_has_uint64;
 
 extern int codegen_fpu_loaded_iq[8];
 extern int codegen_reg_loaded[8];
