@@ -537,10 +537,13 @@ codegen_FABS(codeblock_t *block, uop_t *uop)
     int dest_size  = IREG_GET_SIZE(uop->dest_reg_a_real);
     int src_size_a = IREG_GET_SIZE(uop->src_reg_a_real);
 
-    if (REG_IS_D(dest_size) && REG_IS_D(src_size_a) && dest_reg == src_reg_a) {
-        host_x86_PXOR_XREG_XREG(block, REG_XMM_TEMP, REG_XMM_TEMP);
-        host_x86_SUBSD_XREG_XREG(block, REG_XMM_TEMP, dest_reg);
-        host_x86_MAXSD_XREG_XREG(block, dest_reg, REG_XMM_TEMP);
+    if (REG_IS_D(dest_size) && REG_IS_D(src_size_a)) {
+        if (dest_reg != src_reg_a)
+            host_x86_MOVQ_XREG_XREG(block, dest_reg, src_reg_a);
+        /* Build 0x7fffffffffffffff mask entirely in SSE domain to clear sign bit. */
+        host_x86_PCMPEQD_XREG_XREG(block, REG_XMM_TEMP, REG_XMM_TEMP);
+        host_x86_PSRLQ_XREG_IMM(block, REG_XMM_TEMP, 1);
+        host_x86_PAND_XREG_XREG(block, dest_reg, REG_XMM_TEMP);
     }
 #    ifdef RECOMPILER_DEBUG
     else
@@ -557,9 +560,11 @@ codegen_FCHS(codeblock_t *block, uop_t *uop)
     int src_size_a = IREG_GET_SIZE(uop->src_reg_a_real);
 
     if (REG_IS_D(dest_size) && REG_IS_D(src_size_a)) {
-        host_x86_MOVQ_XREG_XREG(block, dest_reg, src_reg_a);
-        host_x86_MOV64_REG_IMM(block, REG_RCX, 0x8000000000000000);
-        host_x86_MOVQ_XREG_REG(block, REG_XMM_TEMP, REG_RCX);
+        if (dest_reg != src_reg_a)
+            host_x86_MOVQ_XREG_XREG(block, dest_reg, src_reg_a);
+        /* Build 0x8000000000000000 mask in SSE domain, avoiding GPR->XMM transfer stalls. */
+        host_x86_PCMPEQD_XREG_XREG(block, REG_XMM_TEMP, REG_XMM_TEMP);
+        host_x86_PSLLQ_XREG_IMM(block, REG_XMM_TEMP, 63);
         host_x86_PXOR_XREG_XREG(block, dest_reg, REG_XMM_TEMP);
     }
 #    ifdef RECOMPILER_DEBUG
@@ -594,6 +599,8 @@ codegen_FROUND_S(codeblock_t *block, uop_t *uop)
     int src_size_a = IREG_GET_SIZE(uop->src_reg_a_real);
 
     if (REG_IS_D(dest_size) && REG_IS_D(src_size_a)) {
+        /* Break false upper-lane dependency on REG_XMM_TEMP before scalar CVTSD2SS. */
+        host_x86_PXOR_XREG_XREG(block, REG_XMM_TEMP, REG_XMM_TEMP);
         host_x86_CVTSD2SS_XREG_XREG(block, REG_XMM_TEMP, src_reg_a);
         host_x86_CVTSS2SD_XREG_XREG(block, dest_reg, REG_XMM_TEMP);
     }
@@ -602,6 +609,23 @@ codegen_FROUND_S(codeblock_t *block, uop_t *uop)
         fatal("codegen_FROUND_S %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
 #    endif
     return 0;
+}
+static void
+emit_fcom_flags(codeblock_t *block, int dest_reg, int src_reg_a, int src_reg_b)
+{
+    /* Translate COMISD EFLAGS (ZF=C3@14, PF=C2@10, CF=C0@8) into FPU SW bits
+       without LAHF partial-register stalls or EAX save/restore dependencies. */
+    host_x86_XOR32_REG_REG(block, dest_reg, dest_reg);
+    host_x86_XOR32_REG_REG(block, REG_ECX, REG_ECX);
+    host_x86_XOR32_REG_REG(block, REG_R8, REG_R8);
+    host_x86_COMISD_XREG_XREG(block, src_reg_a, src_reg_b);
+    host_x86_SETcc_REG(block, COND_B, dest_reg);
+    host_x86_SETcc_REG(block, COND_P, REG_ECX);
+    host_x86_SETcc_REG(block, COND_E, REG_R8);
+    host_x86_LEA_REG_REG_SHIFT(block, dest_reg, dest_reg, REG_ECX, 2);
+    host_x86_SHL32_IMM(block, REG_R8, 6);
+    host_x86_OR32_REG_REG(block, dest_reg, REG_R8);
+    host_x86_SHL32_IMM(block, dest_reg, 8);
 }
 static int
 codegen_FTST(codeblock_t *block, uop_t *uop)
@@ -613,16 +637,7 @@ codegen_FTST(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(dest_size) && REG_IS_D(src_size_a)) {
         host_x86_PXOR_XREG_XREG(block, REG_XMM_TEMP, REG_XMM_TEMP);
-        if (dest_reg != REG_EAX)
-            host_x86_MOV32_REG_REG(block, REG_ECX, REG_EAX);
-        host_x86_XOR32_REG_REG(block, REG_EAX, REG_EAX);
-        host_x86_COMISD_XREG_XREG(block, src_reg_a, REG_XMM_TEMP);
-        host_x86_LAHF(block);
-        host_x86_AND32_REG_IMM(block, REG_EAX, FPU_SW_C0 | FPU_SW_C2 | FPU_SW_C3);
-        if (dest_reg != REG_EAX) {
-            host_x86_MOV32_REG_REG(block, dest_reg, REG_EAX);
-            host_x86_MOV32_REG_REG(block, REG_EAX, REG_ECX);
-        }
+        emit_fcom_flags(block, dest_reg, src_reg_a, REG_XMM_TEMP);
     }
 #    ifdef RECOMPILER_DEBUG
     else
@@ -661,16 +676,7 @@ codegen_FCOM(codeblock_t *block, uop_t *uop)
     int src_size_b = IREG_GET_SIZE(uop->src_reg_b_real);
 
     if (REG_IS_L(dest_size) && REG_IS_D(src_size_a) && REG_IS_D(src_size_b)) {
-        if (dest_reg != REG_EAX)
-            host_x86_MOV32_REG_REG(block, REG_ECX, REG_EAX);
-        host_x86_XOR32_REG_REG(block, REG_EAX, REG_EAX);
-        host_x86_COMISD_XREG_XREG(block, src_reg_a, src_reg_b);
-        host_x86_LAHF(block);
-        host_x86_AND32_REG_IMM(block, REG_EAX, FPU_SW_C0 | FPU_SW_C2 | FPU_SW_C3);
-        if (dest_reg != REG_EAX) {
-            host_x86_MOV32_REG_REG(block, dest_reg, REG_EAX);
-            host_x86_MOV32_REG_REG(block, REG_EAX, REG_ECX);
-        }
+        emit_fcom_flags(block, dest_reg, src_reg_a, src_reg_b);
     }
 #    ifdef RECOMPILER_DEBUG
     else
@@ -1741,6 +1747,31 @@ codegen_MOV_DOUBLE_INT(codeblock_t *block, uop_t *uop)
 #    ifdef RECOMPILER_DEBUG
     else
         fatal("MOV_DOUBLE_INT %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
+#    endif
+    return 0;
+}
+static int
+codegen_MOV_DOUBLE_IMM(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg  = HOST_REG_GET(uop->dest_reg_a_real);
+    int dest_size = IREG_GET_SIZE(uop->dest_reg_a_real);
+
+    if (REG_IS_D(dest_size)) {
+        if (uop->imm_data == 0) {
+            host_x86_PXOR_XREG_XREG(block, dest_reg, dest_reg);
+        } else if (uop->imm_data == 1) {
+            /* Materialize 1.0 (0x3ff0000000000000) directly in SSE domain without CVTSI2SD. */
+            host_x86_PCMPEQD_XREG_XREG(block, dest_reg, dest_reg);
+            host_x86_PSLLQ_XREG_IMM(block, dest_reg, 54);
+            host_x86_PSRLQ_XREG_IMM(block, dest_reg, 2);
+        } else {
+            host_x86_MOV32_REG_IMM(block, REG_ECX, uop->imm_data);
+            host_x86_CVTSI2SD_XREG_REG(block, dest_reg, REG_ECX);
+        }
+    }
+#    ifdef RECOMPILER_DEBUG
+    else
+        fatal("MOV_DOUBLE_IMM %02x\n", uop->dest_reg_a_real);
 #    endif
     return 0;
 }
@@ -3440,6 +3471,9 @@ const uOpFn uop_handlers[UOP_MAX] = {
     [UOP_MOV_DOUBLE_INT &
         UOP_MASK]
     = codegen_MOV_DOUBLE_INT,
+    [UOP_MOV_DOUBLE_IMM &
+        UOP_MASK]
+    = codegen_MOV_DOUBLE_IMM,
     [UOP_MOV_INT_DOUBLE &
         UOP_MASK]
     = codegen_MOV_INT_DOUBLE,

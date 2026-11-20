@@ -90,6 +90,8 @@ extern int codegen_last_flags_op;
 #define UOP_MOVZX_REG_PTR_8 (UOP_TYPE_PARAMS_REGS | UOP_TYPE_PARAMS_POINTER | 0x29)
 /*UOP_MOVZX_REG_PTR_16 - dest_reg = *(uint16_t *)p*/
 #define UOP_MOVZX_REG_PTR_16 (UOP_TYPE_PARAMS_REGS | UOP_TYPE_PARAMS_POINTER | 0x2a)
+/*UOP_MOV_DOUBLE_IMM - dest_reg = (double)(int32_t)imm_data*/
+#define UOP_MOV_DOUBLE_IMM   (UOP_TYPE_PARAMS_REGS | UOP_TYPE_PARAMS_IMM | 0x2b)
 /*UOP_ADD - dest_reg = src_reg_a + src_reg_b*/
 #define UOP_ADD (UOP_TYPE_PARAMS_REGS | 0x30)
 /*UOP_ADD_IMM - dest_reg = src_reg_a + immediate*/
@@ -1023,6 +1025,7 @@ uop_EXIT_BLOCK_RET(ir_data_t *ir, int exit_idx)
 #define uop_BFX(ir, dst_reg, src_reg, lsb, width, is_signed)              uop_gen_reg_dst_src1_imm(UOP_BFX, ir, dst_reg, src_reg, (lsb & 0xff) | ((width & 0xff) << 8) | ((is_signed & 1) << 16))
 #define uop_BFI(ir, dst_reg, prev_reg, val_reg, lsb, width)               uop_gen_reg_dst_src2_imm(UOP_BFI, ir, dst_reg, prev_reg, val_reg, (lsb & 0xff) | ((width & 0xff) << 8))
 #define uop_MOV_DOUBLE_INT(ir, dst_reg, src_reg)                         uop_gen_reg_dst_src1(UOP_MOV_DOUBLE_INT, ir, dst_reg, src_reg)
+#define uop_MOV_DOUBLE_IMM(ir, dst_reg, imm)                             uop_gen_reg_dst_imm(UOP_MOV_DOUBLE_IMM, ir, dst_reg, imm)
 #define uop_MOV_INT_DOUBLE(ir, dst_reg, src_reg /*, nrc, orc*/)          uop_gen_reg_dst_src1(UOP_MOV_INT_DOUBLE, ir, dst_reg, src_reg /*, nrc, orc*/)
 #define uop_MOV_INT_DOUBLE_64(ir, dst_reg, src_reg_d, src_reg_q, tag)    uop_gen_reg_dst_src3(UOP_MOV_INT_DOUBLE_64, ir, dst_reg, src_reg_d, src_reg_q, tag)
 

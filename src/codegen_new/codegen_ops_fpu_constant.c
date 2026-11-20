@@ -22,8 +22,7 @@ uint32_t
 ropFLD1(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), uint32_t op_pc)
 {
     uop_FP_ENTER(ir);
-    uop_MOV_IMM(ir, IREG_temp0, 1);
-    uop_MOV_DOUBLE_INT(ir, IREG_ST(-1), IREG_temp0);
+    uop_MOV_DOUBLE_IMM(ir, IREG_ST(-1), 1);
     uop_MOV_IMM(ir, IREG_tag(-1), TAG_VALID);
     fpu_PUSH(block, ir);
 
@@ -33,8 +32,7 @@ uint32_t
 ropFLDZ(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), uint32_t op_pc)
 {
     uop_FP_ENTER(ir);
-    uop_MOV_IMM(ir, IREG_temp0, 0);
-    uop_MOV_DOUBLE_INT(ir, IREG_ST(-1), IREG_temp0);
+    uop_MOV_DOUBLE_IMM(ir, IREG_ST(-1), 0);
     uop_MOV_IMM(ir, IREG_tag(-1), TAG_VALID);
     fpu_PUSH(block, ir);
 

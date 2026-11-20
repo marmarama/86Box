@@ -1644,6 +1644,21 @@ codegen_MOV_DOUBLE_INT(codeblock_t *block, uop_t *uop)
     return 0;
 }
 static int
+codegen_MOV_DOUBLE_IMM(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg  = HOST_REG_GET(uop->dest_reg_a_real);
+    int dest_size = IREG_GET_SIZE(uop->dest_reg_a_real);
+
+    if (REG_IS_D(dest_size)) {
+        host_loong64_mov_imm(block, REG_TEMP, uop->imm_data);
+        host_loong64_MOVGR2FR_W(block, REG_V_TEMP, REG_TEMP);
+        host_loong64_FFINT_D_W(block, dest_reg, REG_V_TEMP);
+    } else
+        fatal("codegen_MOV_DOUBLE_IMM %02x\n", uop->dest_reg_a_real);
+
+    return 0;
+}
+static int
 codegen_MOV_INT_DOUBLE(codeblock_t *block, uop_t *uop)
 {
     int dest_reg  = HOST_REG_GET(uop->dest_reg_a_real);
@@ -2104,6 +2119,7 @@ const uOpFn uop_handlers[UOP_MAX] = {
     [UOP_MEM_STORE_DOUBLE & UOP_MASK] = codegen_MEM_STORE_DOUBLE,
 
     [UOP_MOV_DOUBLE_INT & UOP_MASK]    = codegen_MOV_DOUBLE_INT,
+    [UOP_MOV_DOUBLE_IMM & UOP_MASK]    = codegen_MOV_DOUBLE_IMM,
     [UOP_MOV_INT_DOUBLE & UOP_MASK]    = codegen_MOV_INT_DOUBLE,
     [UOP_MOV_INT_DOUBLE_64 & UOP_MASK] = codegen_MOV_INT_DOUBLE_64,
 

@@ -65,27 +65,33 @@ ropFADDP(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fet
     return op_pc;
 }
 
+static void
+fpu_update_sw_cc_from_temp0(ir_data_t *ir)
+{
+    uop_AND_IMM(ir, IREG_NPXS, IREG_NPXS, ~(FPU_SW_C0 | FPU_SW_C2 | FPU_SW_C3));
+    uop_OR(ir, IREG_NPXS, IREG_NPXS, IREG_temp0_W);
+}
+
+static void
+fpu_emit_fcom(ir_data_t *ir, int src_reg)
+{
+    uop_FCOM(ir, IREG_temp0_W, IREG_ST(0), IREG_ST(src_reg));
+    fpu_update_sw_cc_from_temp0(ir);
+}
+
 uint32_t
 ropFCOM(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchdat, UNUSED(uint32_t op_32), uint32_t op_pc)
 {
-    int src_reg = fetchdat & 7;
-
     uop_FP_ENTER(ir);
-    uop_FCOM(ir, IREG_temp0_W, IREG_ST(0), IREG_ST(src_reg));
-    uop_AND_IMM(ir, IREG_NPXS, IREG_NPXS, ~(FPU_SW_C0 | FPU_SW_C2 | FPU_SW_C3));
-    uop_OR(ir, IREG_NPXS, IREG_NPXS, IREG_temp0_W);
+    fpu_emit_fcom(ir, fetchdat & 7);
 
     return op_pc;
 }
 uint32_t
 ropFCOMP(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchdat, UNUSED(uint32_t op_32), uint32_t op_pc)
 {
-    int src_reg = fetchdat & 7;
-
     uop_FP_ENTER(ir);
-    uop_FCOM(ir, IREG_temp0_W, IREG_ST(0), IREG_ST(src_reg));
-    uop_AND_IMM(ir, IREG_NPXS, IREG_NPXS, ~(FPU_SW_C0 | FPU_SW_C2 | FPU_SW_C3));
-    uop_OR(ir, IREG_NPXS, IREG_NPXS, IREG_temp0_W);
+    fpu_emit_fcom(ir, fetchdat & 7);
     fpu_POP(block, ir);
 
     return op_pc;
@@ -94,9 +100,7 @@ uint32_t
 ropFCOMPP(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), uint32_t op_pc)
 {
     uop_FP_ENTER(ir);
-    uop_FCOM(ir, IREG_temp0_W, IREG_ST(0), IREG_ST(1));
-    uop_AND_IMM(ir, IREG_NPXS, IREG_NPXS, ~(FPU_SW_C0 | FPU_SW_C2 | FPU_SW_C3));
-    uop_OR(ir, IREG_NPXS, IREG_NPXS, IREG_temp0_W);
+    fpu_emit_fcom(ir, 1);
     fpu_POP2(block, ir);
 
     return op_pc;
@@ -293,24 +297,16 @@ ropFSUBRP(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fe
 uint32_t
 ropFUCOM(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchdat, UNUSED(uint32_t op_32), uint32_t op_pc)
 {
-    int src_reg = fetchdat & 7;
-
     uop_FP_ENTER(ir);
-    uop_FCOM(ir, IREG_temp0_W, IREG_ST(0), IREG_ST(src_reg));
-    uop_AND_IMM(ir, IREG_NPXS, IREG_NPXS, ~(FPU_SW_C0 | FPU_SW_C2 | FPU_SW_C3));
-    uop_OR(ir, IREG_NPXS, IREG_NPXS, IREG_temp0_W);
+    fpu_emit_fcom(ir, fetchdat & 7);
 
     return op_pc;
 }
 uint32_t
 ropFUCOMP(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchdat, UNUSED(uint32_t op_32), uint32_t op_pc)
 {
-    int src_reg = fetchdat & 7;
-
     uop_FP_ENTER(ir);
-    uop_FCOM(ir, IREG_temp0_W, IREG_ST(0), IREG_ST(src_reg));
-    uop_AND_IMM(ir, IREG_NPXS, IREG_NPXS, ~(FPU_SW_C0 | FPU_SW_C2 | FPU_SW_C3));
-    uop_OR(ir, IREG_NPXS, IREG_NPXS, IREG_temp0_W);
+    fpu_emit_fcom(ir, fetchdat & 7);
     fpu_POP(block, ir);
 
     return op_pc;
@@ -319,9 +315,7 @@ uint32_t
 ropFUCOMPP(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), UNUSED(uint32_t fetchdat), UNUSED(uint32_t op_32), uint32_t op_pc)
 {
     uop_FP_ENTER(ir);
-    uop_FCOM(ir, IREG_temp0_W, IREG_ST(0), IREG_ST(1));
-    uop_AND_IMM(ir, IREG_NPXS, IREG_NPXS, ~(FPU_SW_C0 | FPU_SW_C2 | FPU_SW_C3));
-    uop_OR(ir, IREG_NPXS, IREG_NPXS, IREG_temp0_W);
+    fpu_emit_fcom(ir, 1);
     fpu_POP2(block, ir);
 
     return op_pc;
@@ -661,8 +655,7 @@ ropFTST(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), UNUSE
 {
     uop_FP_ENTER(ir);
     uop_FTST(ir, IREG_temp0_W, IREG_ST(0));
-    uop_AND_IMM(ir, IREG_NPXS, IREG_NPXS, ~(FPU_SW_C0 | FPU_SW_C2 | FPU_SW_C3));
-    uop_OR(ir, IREG_NPXS, IREG_NPXS, IREG_temp0_W);
+    fpu_update_sw_cc_from_temp0(ir);
 
     return op_pc;
 }
