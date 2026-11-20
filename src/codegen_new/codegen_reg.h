@@ -458,6 +458,9 @@ struct ir_data_t;
 void codegen_reg_reset(void);
 /*Write back all dirty registers*/
 void codegen_reg_flush(struct ir_data_t *ir, codeblock_t *block);
+#if defined __amd64__ || defined _M_X64
+void codegen_reg_flush_mem_cold(struct ir_data_t *ir, codeblock_t *block, ir_reg_t dest_reg_a);
+#endif
 /*Write back and evict all registers*/
 void codegen_reg_flush_invalidate(struct ir_data_t *ir, codeblock_t *block);
 

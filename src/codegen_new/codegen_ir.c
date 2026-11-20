@@ -12,6 +12,7 @@
 #include "codegen_dump.h"
 #include "codegen_ir.h"
 #include "codegen_reg.h"
+#include "x86_flags.h"
 
 static uint32_t dump_orig_types[UOP_NR_MAX];
 static uint32_t dump_orig_imms[UOP_NR_MAX];
@@ -110,12 +111,58 @@ invalidate_dead_uop(uop_t *uop)
     uop->type = UOP_INVALID;
 }
 
+static int
+flags_op_live_reads(uint32_t fop)
+{
+    switch (fop) {
+        case FLAGS_UNKNOWN:
+            return 0;
+        case FLAGS_ZN8:
+        case FLAGS_ZN16:
+        case FLAGS_ZN32:
+        case FLAGS_ROL8:
+        case FLAGS_ROL16:
+        case FLAGS_ROL32:
+        case FLAGS_ROR8:
+        case FLAGS_ROR16:
+        case FLAGS_ROR32:
+            return FLAG_LIVE_RES;
+        case FLAGS_IMUL16:
+        case FLAGS_IMUL32:
+            return FLAG_LIVE_OP1 | FLAG_LIVE_OP2;
+        default:
+            return FLAG_LIVE_RES | FLAG_LIVE_OP1 | FLAG_LIVE_OP2;
+    }
+}
+
+static inline void
+liveness_mark_src_reg(ir_reg_t reg, int *flags_ir_live, int *oldpc_live, int *pc_live)
+{
+    if (reg.reg == IREG_INVALID)
+        return;
+
+    int sreg = IREG_GET_REG(reg.reg);
+    if (sreg == IREG_flags_op)
+        *flags_ir_live |= FLAG_LIVE_OP;
+    else if (sreg == IREG_flags_res)
+        *flags_ir_live |= FLAG_LIVE_RES;
+    else if (sreg == IREG_flags_op1)
+        *flags_ir_live |= FLAG_LIVE_OP1;
+    else if (sreg == IREG_flags_op2)
+        *flags_ir_live |= FLAG_LIVE_OP2;
+    else if (sreg == IREG_oldpc)
+        *oldpc_live = 1;
+    else if (sreg == IREG_pc)
+        *pc_live = 1;
+}
+
 void
 codegen_ir_optimize_liveness(ir_data_t *ir)
 {
-    int flags_live = FLAGS_ALL_LIVE;
-    int pc_live = 1;
-    int oldpc_live = 0;
+    int flags_barrier_live = FLAGS_ALL_LIVE;
+    int flags_ir_live      = 0;
+    int pc_live            = 1;
+    int oldpc_live         = 0;
 
     for (int c = ir->wr_pos - 1; c >= 0; c--) {
         uop_t *uop = &ir->uops[c];
@@ -128,7 +175,7 @@ codegen_ir_optimize_liveness(ir_data_t *ir)
            barrier is a fast-path memory access that materializes oldpc in its cold stub
            or a non-faulting control barrier. */
         if (uop->type & (UOP_TYPE_BARRIER | UOP_TYPE_ORDER_BARRIER | UOP_TYPE_JUMP_DEST | UOP_TYPE_JUMP)) {
-            flags_live = FLAGS_ALL_LIVE;
+            flags_barrier_live = FLAGS_ALL_LIVE;
 #if defined __amd64__ || defined _M_X64
             if (!uop_is_mem_access(uop->type) || (uop->type & UOP_TYPE_JUMP_DEST))
                 pc_live = 1;
@@ -144,43 +191,51 @@ codegen_ir_optimize_liveness(ir_data_t *ir)
 #endif
             continue;
         }
-        if ((uop->type & UOP_MASK) == (UOP_LOOP_LABEL & UOP_MASK)) {
-            flags_live = FLAGS_ALL_LIVE;
-            pc_live = 1;
+        if ((uop->type & UOP_MASK) == (UOP_LOOP_LABEL & UOP_MASK) ||
+            (uop->type & UOP_MASK) == (UOP_LOOP_JMP & UOP_MASK)) {
+            flags_barrier_live = FLAGS_ALL_LIVE;
+            pc_live            = 1;
             continue;
         }
 
         /* Check destination register write for dead store elimination */
         if (uop->dest_reg_a.reg != IREG_INVALID) {
-            int dreg = IREG_GET_REG(uop->dest_reg_a.reg);
-            int version = uop->dest_reg_a.version;
-            int refcount = reg_version[dreg][version].refcount;
-            int required = (reg_version[dreg][version].flags & REG_FLAGS_REQUIRED) != 0;
+            int dreg       = IREG_GET_REG(uop->dest_reg_a.reg);
+            int version    = uop->dest_reg_a.version;
+            int refcount   = reg_version[dreg][version].refcount;
+            int required   = (reg_version[dreg][version].flags & REG_FLAGS_REQUIRED) != 0;
+            int flags_live = flags_barrier_live | flags_ir_live;
 
             if (dreg == IREG_flags_op) {
-                if (!(flags_live & FLAG_LIVE_OP) && refcount == 0 && !required) {
+                if (!(flags_live & FLAG_LIVE_OP) && refcount == 0) {
                     invalidate_dead_uop(uop);
                     continue;
                 }
-                flags_live &= ~FLAG_LIVE_OP;
+                flags_ir_live      &= ~FLAG_LIVE_OP;
+                flags_barrier_live &= ~FLAG_LIVE_OP;
+                if ((uop->type & UOP_MASK) == (UOP_MOV_IMM & UOP_MASK))
+                    flags_barrier_live &= flags_op_live_reads(uop->imm_data);
             } else if (dreg == IREG_flags_res) {
-                if (!(flags_live & FLAG_LIVE_RES) && refcount == 0 && !required) {
+                if (!(flags_live & FLAG_LIVE_RES) && refcount == 0) {
                     invalidate_dead_uop(uop);
                     continue;
                 }
-                flags_live &= ~FLAG_LIVE_RES;
+                flags_ir_live      &= ~FLAG_LIVE_RES;
+                flags_barrier_live &= ~FLAG_LIVE_RES;
             } else if (dreg == IREG_flags_op1) {
-                if (!(flags_live & FLAG_LIVE_OP1) && refcount == 0 && !required) {
+                if (!(flags_live & FLAG_LIVE_OP1) && refcount == 0) {
                     invalidate_dead_uop(uop);
                     continue;
                 }
-                flags_live &= ~FLAG_LIVE_OP1;
+                flags_ir_live      &= ~FLAG_LIVE_OP1;
+                flags_barrier_live &= ~FLAG_LIVE_OP1;
             } else if (dreg == IREG_flags_op2) {
-                if (!(flags_live & FLAG_LIVE_OP2) && refcount == 0 && !required) {
+                if (!(flags_live & FLAG_LIVE_OP2) && refcount == 0) {
                     invalidate_dead_uop(uop);
                     continue;
                 }
-                flags_live &= ~FLAG_LIVE_OP2;
+                flags_ir_live      &= ~FLAG_LIVE_OP2;
+                flags_barrier_live &= ~FLAG_LIVE_OP2;
             } else if (dreg == IREG_oldpc) {
                 if (!oldpc_live && refcount == 0 && !required) {
                     invalidate_dead_uop(uop);
@@ -197,53 +252,9 @@ codegen_ir_optimize_liveness(ir_data_t *ir)
         }
 
         /* Check source registers to mark inputs as live */
-        if (uop->src_reg_a.reg != IREG_INVALID) {
-            int sreg = IREG_GET_REG(uop->src_reg_a.reg);
-            if (sreg == IREG_flags_op)
-                flags_live |= FLAG_LIVE_OP;
-            else if (sreg == IREG_flags_res)
-                flags_live |= FLAG_LIVE_RES;
-            else if (sreg == IREG_flags_op1)
-                flags_live |= FLAG_LIVE_OP1;
-            else if (sreg == IREG_flags_op2)
-                flags_live |= FLAG_LIVE_OP2;
-            else if (sreg == IREG_oldpc)
-                oldpc_live = 1;
-            else if (sreg == IREG_pc)
-                pc_live = 1;
-        }
-
-        if (uop->src_reg_b.reg != IREG_INVALID) {
-            int sreg = IREG_GET_REG(uop->src_reg_b.reg);
-            if (sreg == IREG_flags_op)
-                flags_live |= FLAG_LIVE_OP;
-            else if (sreg == IREG_flags_res)
-                flags_live |= FLAG_LIVE_RES;
-            else if (sreg == IREG_flags_op1)
-                flags_live |= FLAG_LIVE_OP1;
-            else if (sreg == IREG_flags_op2)
-                flags_live |= FLAG_LIVE_OP2;
-            else if (sreg == IREG_oldpc)
-                oldpc_live = 1;
-            else if (sreg == IREG_pc)
-                pc_live = 1;
-        }
-
-        if (uop->src_reg_c.reg != IREG_INVALID) {
-            int sreg = IREG_GET_REG(uop->src_reg_c.reg);
-            if (sreg == IREG_flags_op)
-                flags_live |= FLAG_LIVE_OP;
-            else if (sreg == IREG_flags_res)
-                flags_live |= FLAG_LIVE_RES;
-            else if (sreg == IREG_flags_op1)
-                flags_live |= FLAG_LIVE_OP1;
-            else if (sreg == IREG_flags_op2)
-                flags_live |= FLAG_LIVE_OP2;
-            else if (sreg == IREG_oldpc)
-                oldpc_live = 1;
-            else if (sreg == IREG_pc)
-                pc_live = 1;
-        }
+        liveness_mark_src_reg(uop->src_reg_a, &flags_ir_live, &oldpc_live, &pc_live);
+        liveness_mark_src_reg(uop->src_reg_b, &flags_ir_live, &oldpc_live, &pc_live);
+        liveness_mark_src_reg(uop->src_reg_c, &flags_ir_live, &oldpc_live, &pc_live);
     }
 }
 
@@ -1092,6 +1103,29 @@ codegen_ir_verify_canonical(const ir_data_t *ir)
 }
 #endif
 
+#if defined __amd64__ || defined _M_X64
+static inline int
+codegen_uop_uses_mem_slowpath(const uop_t *uop)
+{
+    uint32_t m = uop->type & UOP_MASK;
+
+    switch (m) {
+        case UOP_MEM_LOAD_ABS & UOP_MASK:
+        case UOP_MEM_STORE_ABS & UOP_MASK:
+        case UOP_MEM_STORE_IMM_8 & UOP_MASK:
+        case UOP_MEM_STORE_IMM_16 & UOP_MASK:
+        case UOP_MEM_STORE_IMM_32 & UOP_MASK:
+            return 1;
+        case UOP_MEM_LOAD_REG & UOP_MASK:
+            return uop_mem_size_from_type(uop->type, uop->dest_reg_a.reg) != IREG_SIZE_Q;
+        case UOP_MEM_STORE_REG & UOP_MASK:
+            return uop_mem_size_from_type(uop->type, uop->src_reg_c.reg) != IREG_SIZE_Q;
+        default:
+            return 0;
+    }
+}
+#endif
+
 void
 codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
 {
@@ -1219,6 +1253,11 @@ codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
                 }
             }
 
+#if defined __amd64__ || defined _M_X64
+            if ((uop->type & UOP_TYPE_ORDER_BARRIER) && codegen_uop_uses_mem_slowpath(uop))
+                codegen_reg_flush_mem_cold(ir, block, uop->dest_reg_a);
+            else
+#endif
             if (uop->type & UOP_TYPE_ORDER_BARRIER)
                 codegen_reg_flush(ir, block);
 

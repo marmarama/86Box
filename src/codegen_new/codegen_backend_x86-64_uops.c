@@ -1066,25 +1066,56 @@ codegen_LOAD_SEG(codeblock_t *block, uop_t *uop)
     return 0;
 }
 
-#define MAX_MEM_SLOWPATHS 1024
+#define MAX_MEM_SLOWPATHS    1024
+#define MAX_MEM_COLD_FLUSHES CODEGEN_HOST_REGS
+
+typedef struct mem_cold_flush_t {
+    void *p;
+    int   native_size;
+    int   host_reg;
+} mem_cold_flush_t;
 
 typedef struct mem_slowpath_stub_t {
-    uint8_t   is_load;     /* 1 for load, 0 for store */
-    int       dest_size;   /* IREG_SIZE_B, W, L */
-    int       dest_reg;    /* destination host register (for load) */
-    uint32_t  oldpc;       /* guest instruction PC for fault materialization */
-    uint32_t *misaligned_offset;
-    uint32_t *branch_offset;
-    uint8_t  *resume_target;
+    uint8_t          is_load;     /* 1 for load, 0 for store */
+    uint8_t          flush_count; /* deferred cpu_state flushes for this barrier */
+    int              dest_size;   /* IREG_SIZE_B, W, L */
+    int              dest_reg;    /* destination host register (for load) */
+    uint32_t         oldpc;       /* guest instruction PC for fault materialization */
+    uint32_t        *misaligned_offset;
+    uint32_t        *branch_offset;
+    uint8_t         *resume_target;
+    mem_cold_flush_t flushes[MAX_MEM_COLD_FLUSHES];
 } mem_slowpath_stub_t;
 
 static mem_slowpath_stub_t mem_slowpath_stubs[MAX_MEM_SLOWPATHS];
-static int mem_slowpath_count = 0;
+static int                 mem_slowpath_count = 0;
+
+static mem_cold_flush_t pending_cold_flushes[MAX_MEM_COLD_FLUSHES];
+static int              pending_cold_flush_count = 0;
+
+void
+codegen_mem_cold_flush_reset(void)
+{
+    pending_cold_flush_count = 0;
+}
+
+void
+codegen_mem_cold_flush_add(void *p, int native_size, int host_reg)
+{
+    if (pending_cold_flush_count >= MAX_MEM_COLD_FLUSHES)
+        fatal("codegen_mem_cold_flush_add: exceeded MAX_MEM_COLD_FLUSHES (%d)\n", MAX_MEM_COLD_FLUSHES);
+
+    mem_cold_flush_t *f = &pending_cold_flushes[pending_cold_flush_count++];
+    f->p           = p;
+    f->native_size = native_size;
+    f->host_reg    = host_reg;
+}
 
 void
 codegen_mem_slowpath_reset(void)
 {
-    mem_slowpath_count = 0;
+    mem_slowpath_count       = 0;
+    pending_cold_flush_count = 0;
 }
 
 static void
@@ -1104,6 +1135,10 @@ codegen_mem_record_slowpath(uint8_t is_load, int dest_reg, int dest_size,
     stub->misaligned_offset = misaligned_offset;
     stub->branch_offset     = branch_offset;
     stub->resume_target     = resume_target;
+    stub->flush_count       = (uint8_t) pending_cold_flush_count;
+    for (int i = 0; i < pending_cold_flush_count; i++)
+        stub->flushes[i] = pending_cold_flushes[i];
+    pending_cold_flush_count = 0;
 }
 
 void
@@ -1112,12 +1147,31 @@ codegen_mem_emit_slowpaths(codeblock_t *block)
     for (int i = 0; i < mem_slowpath_count; i++) {
         mem_slowpath_stub_t *stub = &mem_slowpath_stubs[i];
 
-        codegen_alloc_bytes(block, 80);
+        codegen_alloc_bytes(block, 96 + (int) stub->flush_count * 12);
 
         uint8_t *stub_target = &block_write_data[block_pos];
         patch_disp32(stub->branch_offset, stub_target);
         if (stub->misaligned_offset) {
             patch_disp32(stub->misaligned_offset, stub_target);
+        }
+
+        for (int f = 0; f < stub->flush_count; f++) {
+            switch (stub->flushes[f].native_size) {
+                case 1:
+                    host_x86_MOV8_ABS_REG(block, stub->flushes[f].p, stub->flushes[f].host_reg);
+                    break;
+                case 2:
+                    host_x86_MOV16_ABS_REG(block, stub->flushes[f].p, stub->flushes[f].host_reg);
+                    break;
+                case 4:
+                    host_x86_MOV32_ABS_REG(block, stub->flushes[f].p, stub->flushes[f].host_reg);
+                    break;
+                case 8:
+                    host_x86_MOV64_ABS_REG(block, stub->flushes[f].p, stub->flushes[f].host_reg);
+                    break;
+                default:
+                    fatal("codegen_mem_emit_slowpaths: invalid flush size %d\n", stub->flushes[f].native_size);
+            }
         }
 
         int oldpc_disp = (int) offsetof(cpu_state_t, oldpc) - 128;

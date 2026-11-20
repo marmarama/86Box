@@ -1209,7 +1209,6 @@ codegen_block_end_recompile(codeblock_t *block)
         } else if (block->exit_cond == COND_LOOP_32 || block->exit_cond == COND_LOOPE_32 || block->exit_cond == COND_LOOPNE_32) {
             uop_SUB_IMM(ir_data, IREG_ECX, IREG_ECX, 1);
         }
-        uop_NOP_BARRIER(ir_data);
 
         if (block->exit_cond < 16) {
             jump_false = codegen_cond_jump_false(ir_data, block->exit_cond);

@@ -209,7 +209,10 @@ codegen_reg_mark_as_required(void)
     for (uint8_t reg = IREG_EAX; reg < IREG_temp0; reg++) {
         int last_version = reg_last_version[reg];
 
-        if (reg == IREG_oldpc && !(dirty_ir_regs[0] & (1ull << IREG_oldpc)))
+        if ((reg == IREG_oldpc || reg == IREG_eaaddr || reg == IREG_eaa16 ||
+             reg == IREG_ea_seg || reg == IREG_op32 || reg == IREG_ssegsx ||
+             reg == IREG_rm_mod_reg) &&
+            !(dirty_ir_regs[reg >> 6] & (1ull << (reg & 63))))
             continue;
 
         if (last_version > 0)
@@ -411,7 +414,9 @@ codegen_reg_writeback(host_reg_set_t *reg_set, codeblock_t *block, int c, int in
     int   ir_reg = IREG_GET_REG(reg_set->regs[c].reg);
     void *p      = ireg_data[ir_reg].p;
 
-    if (!reg_version[ir_reg][reg_set->regs[c].version].refcount && ireg_data[ir_reg].is_volatile) {
+    if (!reg_version[ir_reg][reg_set->regs[c].version].refcount &&
+        (ireg_data[ir_reg].is_volatile ||
+         !(reg_version[ir_reg][reg_set->regs[c].version].flags & REG_FLAGS_REQUIRED))) {
         if (invalidate) {
             reg_set->regs[c]      = invalid_ir_reg;
             reg_set->last_used[c] = 0;
@@ -681,7 +686,7 @@ codegen_reg_alloc_victim(host_reg_set_t *reg_set, codeblock_t *block, ir_reg_t i
         int refcnt  = ir_get_refcount(reg_set->regs[i]);
 
         if (!refcnt) {
-            if (is_vol)
+            if (is_vol || !(reg_version[reg_idx][reg_set->regs[i].version].flags & REG_FLAGS_REQUIRED))
                 tier = 1;
             else if (!dirty)
                 tier = 2;
@@ -876,29 +881,10 @@ codegen_reg_rename(codeblock_t *block, ir_reg_t src, ir_reg_t dst)
     }
 }
 
-void
-codegen_reg_flush(UNUSED(ir_data_t *ir), codeblock_t *block)
+static void
+codegen_reg_flush_set(host_reg_set_t *reg_set, codeblock_t *block)
 {
-    host_reg_set_t *reg_set;
-    int             c;
-
-    reg_set = &host_reg_set;
-    for (c = 0; c < reg_set->nr_regs; c++) {
-        if (!ir_reg_is_invalid(reg_set->regs[c]) && reg_set->dirty[c]) {
-            codegen_reg_writeback(reg_set, block, c, 0);
-        }
-        if ((reg_set->reg_list[c].flags & HOST_REG_FLAG_VOLATILE) ||
-            (!ir_reg_is_invalid(reg_set->regs[c]) &&
-             (IREG_GET_REG(reg_set->regs[c].reg) == IREG_cycles ||
-              IREG_GET_REG(reg_set->regs[c].reg) == IREG_exit_request))) {
-            reg_set->regs[c]      = invalid_ir_reg;
-            reg_set->dirty[c]     = 0;
-            reg_set->last_used[c] = 0;
-        }
-    }
-
-    reg_set = &host_fp_reg_set;
-    for (c = 0; c < reg_set->nr_regs; c++) {
+    for (int c = 0; c < reg_set->nr_regs; c++) {
         if (!ir_reg_is_invalid(reg_set->regs[c]) && reg_set->dirty[c]) {
             codegen_reg_writeback(reg_set, block, c, 0);
         }
@@ -912,6 +898,76 @@ codegen_reg_flush(UNUSED(ir_data_t *ir), codeblock_t *block)
         }
     }
 }
+
+void
+codegen_reg_flush(UNUSED(ir_data_t *ir), codeblock_t *block)
+{
+    codegen_reg_flush_set(&host_reg_set, block);
+    codegen_reg_flush_set(&host_fp_reg_set, block);
+}
+
+#if defined __amd64__ || defined _M_X64
+static int
+ireg_cold_flush_byte_size(int native_size)
+{
+    switch (native_size) {
+        case REG_BYTE:
+            return 1;
+        case REG_WORD:
+            return 2;
+        case REG_DWORD:
+            return 4;
+        case REG_POINTER:
+            return 8;
+        default:
+            return 0;
+    }
+}
+
+void
+codegen_reg_flush_mem_cold(UNUSED(ir_data_t *ir), codeblock_t *block, ir_reg_t dest_reg_a)
+{
+    host_reg_set_t *reg_set     = &host_reg_set;
+    int             dest_ir_reg = !ir_reg_is_invalid(dest_reg_a) ? IREG_GET_REG(dest_reg_a.reg) : -1;
+
+    codegen_mem_cold_flush_reset();
+
+    for (int c = 0; c < reg_set->nr_regs; c++) {
+        if (!ir_reg_is_invalid(reg_set->regs[c]) && reg_set->dirty[c]) {
+            int ir_reg   = IREG_GET_REG(reg_set->regs[c].reg);
+            int ver      = reg_set->regs[c].version;
+            int required = (reg_version[ir_reg][ver].flags & REG_FLAGS_REQUIRED) != 0;
+            int refcnt   = reg_version[ir_reg][ver].refcount;
+            int byte_sz  = ireg_cold_flush_byte_size(ireg_data[ir_reg].native_size);
+
+            if (!refcnt && (ireg_data[ir_reg].is_volatile || !required)) {
+                reg_set->dirty[c] = 0;
+            } else if (ireg_data[ir_reg].is_volatile || (uintptr_t) ireg_data[ir_reg].p < 256) {
+                /* Stack temporaries stay live in non-volatile GPRs across the slowpath. */
+                if (reg_set->reg_list[c].flags & HOST_REG_FLAG_VOLATILE)
+                    codegen_reg_writeback(reg_set, block, c, 0);
+            } else if ((reg_set->reg_list[c].flags & HOST_REG_FLAG_VOLATILE) ||
+                       ir_reg == dest_ir_reg ||
+                       ir_reg == IREG_exit_request ||
+                       byte_sz == 0) {
+                codegen_reg_writeback(reg_set, block, c, 0);
+            } else {
+                codegen_mem_cold_flush_add(ireg_data[ir_reg].p, byte_sz, reg_set->reg_list[c].reg);
+            }
+        }
+        if ((reg_set->reg_list[c].flags & HOST_REG_FLAG_VOLATILE) ||
+            (!ir_reg_is_invalid(reg_set->regs[c]) &&
+             (IREG_GET_REG(reg_set->regs[c].reg) == IREG_cycles ||
+              IREG_GET_REG(reg_set->regs[c].reg) == IREG_exit_request))) {
+            reg_set->regs[c]      = invalid_ir_reg;
+            reg_set->dirty[c]     = 0;
+            reg_set->last_used[c] = 0;
+        }
+    }
+
+    codegen_reg_flush_set(&host_fp_reg_set, block);
+}
+#endif
 
 void
 codegen_reg_flush_invalidate(UNUSED(ir_data_t *ir), codeblock_t *block)

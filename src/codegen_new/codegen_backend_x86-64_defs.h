@@ -79,6 +79,8 @@ extern void *codegen_dispatch_stub;
 
 void codegen_mem_slowpath_reset(void);
 void codegen_mem_emit_slowpaths(codeblock_t *block);
+void codegen_mem_cold_flush_reset(void);
+void codegen_mem_cold_flush_add(void *p, int native_size, int host_reg);
 
 static inline void
 patch_disp32(uint32_t *disp_ptr, const void *target)

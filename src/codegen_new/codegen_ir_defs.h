@@ -484,22 +484,44 @@ uop_is_non_faulting_barrier(uint32_t uop_type)
 }
 
 static inline void
+uop_clear_ir_reg_bit(uint64_t mask[2], int reg)
+{
+    mask[reg >> 6] &= ~(1ULL << (reg & 63));
+}
+
+static inline void
 uop_mark_barrier_dirty_regs(uint32_t uop_type)
 {
     if (uop_type & (UOP_TYPE_BARRIER | UOP_TYPE_ORDER_BARRIER | UOP_TYPE_JUMP_DEST)) {
+        uint32_t m    = uop_type & UOP_MASK;
+        uint64_t mask[2] = { ~0ULL, ~0ULL };
+
 #if defined __amd64__ || defined _M_X64
         if (uop_is_mem_access(uop_type)) {
-            dirty_ir_regs[0] |= ~((1ull << IREG_oldpc) | (1ull << IREG_pc));
-            dirty_ir_regs[1] |= ~0ULL;
+            mask[0] &= ~((1ULL << IREG_oldpc) | (1ULL << IREG_pc));
         } else
 #endif
         if (uop_is_non_faulting_barrier(uop_type)) {
-            dirty_ir_regs[0] |= ~(1ull << IREG_oldpc);
-            dirty_ir_regs[1] |= ~0ULL;
-        } else {
-            dirty_ir_regs[0] |= ~0ULL;
-            dirty_ir_regs[1] |= ~0ULL;
+            mask[0] &= ~(1ULL << IREG_oldpc);
         }
+
+        /* EA/decode temporaries are never inspected by memory fault handlers,
+           block exits, or subsequent blocks; only UOP_CALL_INSTRUCTION_FUNC
+           reads all of them, and UOP_CALL_FUNC* may read IREG_ea_seg
+           (do_rep_movs_bulk). */
+        if (m != (UOP_CALL_INSTRUCTION_FUNC & UOP_MASK)) {
+            uop_clear_ir_reg_bit(mask, IREG_eaaddr);
+            uop_clear_ir_reg_bit(mask, IREG_eaa16);
+            uop_clear_ir_reg_bit(mask, IREG_op32);
+            uop_clear_ir_reg_bit(mask, IREG_ssegsx);
+            uop_clear_ir_reg_bit(mask, IREG_rm_mod_reg);
+            if (m != (UOP_CALL_FUNC & UOP_MASK) &&
+                m != (UOP_CALL_FUNC_RESULT & UOP_MASK))
+                uop_clear_ir_reg_bit(mask, IREG_ea_seg);
+        }
+
+        dirty_ir_regs[0] |= mask[0];
+        dirty_ir_regs[1] |= mask[1];
     }
 }
 
