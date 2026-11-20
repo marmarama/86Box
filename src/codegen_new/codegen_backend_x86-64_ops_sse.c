@@ -241,17 +241,24 @@ host_x86_MOVQ_ABS_XREG(codeblock_t *block, void *p, int src_reg)
 void
 host_x86_MOVQ_ABS_REG_REG_SHIFT_XREG(codeblock_t *block, uint32_t addr, int src_reg_a, int src_reg_b, int shift, int src_reg)
 {
-    if ((src_reg & 8) || (src_reg_a & 8) || (src_reg_b & 8))
-        fatal("host_x86_MOVQ_ABS_REG_REG_SHIFT_REG - bad reg\n");
+    int has_rex = (src_reg & 8) || (src_reg_a & 8) || (src_reg_b & 8);
 
     if (addr < 0x80 || addr >= 0xffffff80) {
-        codegen_alloc_bytes(block, 6);
-        codegen_addbyte3(block, 0x66, 0x0f, 0xd6); /*MOVQ addr[src_reg_a + src_reg_b << shift], XMMx*/
-        codegen_addbyte3(block, 0x44 | (src_reg << 3), src_reg_a | (src_reg_b << 3) | (shift << 6), addr & 0xff);
+        codegen_alloc_bytes(block, 7);
+        codegen_addbyte(block, 0x66);
+        if (has_rex)
+            codegen_addbyte(block, rex_byte(0, src_reg, src_reg_b, src_reg_a));
+        codegen_addbyte2(block, 0x0f, 0xd6); /*MOVQ addr[src_reg_a + src_reg_b << shift], XMMx*/
+        codegen_addbyte3(block, 0x44 | ((src_reg & 7) << 3),
+                         (src_reg_a & 7) | ((src_reg_b & 7) << 3) | (shift << 6), addr & 0xff);
     } else {
-        codegen_alloc_bytes(block, 9);
-        codegen_addbyte3(block, 0x66, 0x0f, 0xd6); /*MOVQ addr[src_reg_a + src_reg_b << shift], XMMx*/
-        codegen_addbyte2(block, 0x84 | (src_reg << 3), src_reg_a | (src_reg_b << 3) | (shift << 6));
+        codegen_alloc_bytes(block, 10);
+        codegen_addbyte(block, 0x66);
+        if (has_rex)
+            codegen_addbyte(block, rex_byte(0, src_reg, src_reg_b, src_reg_a));
+        codegen_addbyte2(block, 0x0f, 0xd6); /*MOVQ addr[src_reg_a + src_reg_b << shift], XMMx*/
+        codegen_addbyte2(block, 0x84 | ((src_reg & 7) << 3),
+                         (src_reg_a & 7) | ((src_reg_b & 7) << 3) | (shift << 6));
         codegen_addlong(block, addr);
     }
 }
@@ -319,17 +326,24 @@ host_x86_MOVQ_XREG_ABS(codeblock_t *block, int dst_reg, void *p)
 void
 host_x86_MOVQ_XREG_ABS_REG_REG_SHIFT(codeblock_t *block, int dst_reg, uint32_t addr, int src_reg_a, int src_reg_b, int shift)
 {
-    if ((dst_reg & 8) || (src_reg_a & 8) || (src_reg_b & 8))
-        fatal("host_x86_MOVQ_REG_ABS_REG_REG_SHIFT - bad reg\n");
+    int has_rex = (dst_reg & 8) || (src_reg_a & 8) || (src_reg_b & 8);
 
     if (addr < 0x80 || addr >= 0xffffff80) {
-        codegen_alloc_bytes(block, 6);
-        codegen_addbyte3(block, 0xf3, 0x0f, 0x7e); /*MOVQ XMMx, addr[src_reg_a + src_reg_b << shift]*/
-        codegen_addbyte3(block, 0x44 | (dst_reg << 3), src_reg_a | (src_reg_b << 3) | (shift << 6), addr & 0xff);
+        codegen_alloc_bytes(block, 7);
+        codegen_addbyte(block, 0xf3);
+        if (has_rex)
+            codegen_addbyte(block, rex_byte(0, dst_reg, src_reg_b, src_reg_a));
+        codegen_addbyte2(block, 0x0f, 0x7e); /*MOVQ XMMx, addr[src_reg_a + src_reg_b << shift]*/
+        codegen_addbyte3(block, 0x44 | ((dst_reg & 7) << 3),
+                         (src_reg_a & 7) | ((src_reg_b & 7) << 3) | (shift << 6), addr & 0xff);
     } else {
-        codegen_alloc_bytes(block, 9);
-        codegen_addbyte3(block, 0xf3, 0x0f, 0x7e); /*MOVQ XMMx, addr[src_reg_a + src_reg_b << shift]*/
-        codegen_addbyte2(block, 0x84 | (dst_reg << 3), src_reg_a | (src_reg_b << 3) | (shift << 6));
+        codegen_alloc_bytes(block, 10);
+        codegen_addbyte(block, 0xf3);
+        if (has_rex)
+            codegen_addbyte(block, rex_byte(0, dst_reg, src_reg_b, src_reg_a));
+        codegen_addbyte2(block, 0x0f, 0x7e); /*MOVQ XMMx, addr[src_reg_a + src_reg_b << shift]*/
+        codegen_addbyte2(block, 0x84 | ((dst_reg & 7) << 3),
+                         (src_reg_a & 7) | ((src_reg_b & 7) << 3) | (shift << 6));
         codegen_addlong(block, addr);
     }
 }

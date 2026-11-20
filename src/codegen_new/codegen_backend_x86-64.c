@@ -71,21 +71,61 @@ host_reg_def_t codegen_host_reg_list[CODEGEN_HOST_REGS] = {
 #define CODEGEN_XMM7_SAVE   0x68
 
 host_reg_def_t codegen_host_fp_reg_list[CODEGEN_HOST_FP_REGS] = {
-#    if _WIN64
-  /*Windows x86-64 calling convention preserves XMM6-XMM15*/
-    {REG_XMM6,  0                     },
-    { REG_XMM7, 0                     },
-#    else
-    /*System V AMD64 calling convention does not preserve any XMM registers*/
-    { REG_XMM6, HOST_REG_FLAG_VOLATILE },
-    { REG_XMM7, HOST_REG_FLAG_VOLATILE },
-#    endif
-    { REG_XMM1, HOST_REG_FLAG_VOLATILE},
-    { REG_XMM2, HOST_REG_FLAG_VOLATILE},
-    { REG_XMM3, HOST_REG_FLAG_VOLATILE},
-    { REG_XMM4, HOST_REG_FLAG_VOLATILE},
-    { REG_XMM5, HOST_REG_FLAG_VOLATILE}
+    /* XMM1-XMM7 are explicitly saved/restored by slow-path memory helpers around
+       C calls (and Win64 already preserves XMM6-XMM7 by ABI), so none are
+       volatile across UOP_TYPE_ORDER_BARRIERs; UOP_TYPE_BARRIER calls
+       codegen_reg_flush_invalidate() before invoking C helpers. */
+    { REG_XMM6, 0 },
+    { REG_XMM7, 0 },
+    { REG_XMM1, 0 },
+    { REG_XMM2, 0 },
+    { REG_XMM3, 0 },
+    { REG_XMM4, 0 },
+    { REG_XMM5, 0 }
 };
+
+/* Slowpath C-call frame inside build_load_routine/build_store_routine:
+   4 PUSHes (32 B) leave RSP%16 == 8; SUB RSP, 0x78 gives RSP%16 == 0.
+   SysV: 7 caller-saved XMM1..XMM7 at [RSP + 0x00..0x60].
+   Win64: 0x20 shadow space + 5 caller-saved XMM1..XMM5 at [RSP + 0x20..0x60]. */
+#define SLOWPATH_CALL_FRAME 0x78
+#if _WIN64
+#    define SLOWPATH_XMM_COUNT 5
+#    define SLOWPATH_XMM_BASE  0x20
+#else
+#    define SLOWPATH_XMM_COUNT 7
+#    define SLOWPATH_XMM_BASE  0x00
+#endif
+
+static void
+emit_slowpath_call_enter(codeblock_t *block)
+{
+    int cycles_disp = (int) offsetof(cpu_state_t, _cycles) - 128;
+
+    host_x86_PUSH(block, REG_RAX);
+    host_x86_PUSH(block, REG_RDX);
+    host_x86_PUSH(block, REG_R10);
+    host_x86_PUSH(block, REG_R11);
+    host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, cycles_disp, REG_R14);
+    host_x86_SUB64_REG_IMM(block, REG_RSP, SLOWPATH_CALL_FRAME);
+    for (int i = 0; i < SLOWPATH_XMM_COUNT; i++)
+        host_x86_MOVDQU_BASE_OFFSET_XREG(block, REG_RSP, SLOWPATH_XMM_BASE + i * 16, REG_XMM1 + i);
+}
+
+static void
+emit_slowpath_call_leave(codeblock_t *block)
+{
+    int cycles_disp = (int) offsetof(cpu_state_t, _cycles) - 128;
+
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_R14, REG_RBP, cycles_disp);
+    for (int i = 0; i < SLOWPATH_XMM_COUNT; i++)
+        host_x86_MOVDQU_XREG_BASE_OFFSET(block, REG_XMM1 + i, REG_RSP, SLOWPATH_XMM_BASE + i * 16);
+    host_x86_ADD64_REG_IMM(block, REG_RSP, SLOWPATH_CALL_FRAME);
+    host_x86_POP(block, REG_R11);
+    host_x86_POP(block, REG_R10);
+    host_x86_POP(block, REG_RDX);
+    host_x86_POP(block, REG_RAX);
+}
 
 static void
 build_load_routine(codeblock_t *block, int size, int is_float)
@@ -142,19 +182,8 @@ build_load_routine(codeblock_t *block, int size, int is_float)
     *branch_offset = (uint8_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) branch_offset) - 1;
     if (size != 1)
         *misaligned_offset = (uint8_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) misaligned_offset) - 1;
-    host_x86_PUSH(block, REG_RAX);
-    host_x86_PUSH(block, REG_RDX);
-    host_x86_PUSH(block, REG_R10);
-    host_x86_PUSH(block, REG_R11);
-    int cycles_disp = (int) offsetof(cpu_state_t, _cycles) - 128;
-    host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, cycles_disp, REG_R14);
-#    if _WIN64
-    host_x86_SUB64_REG_IMM(block, REG_RSP, 0x28);
-#    else
-    /* Align RSP to 16: entry RSP%16=8 (after CALL from JIT block), four PUSHes
-       (RAX, RDX, R10, R11) subtract 32 (multiple of 16), so RSP%16 is still 8;
-       subtract 8 more to satisfy the SysV ABI before calling C. */
-    host_x86_SUB64_REG_IMM(block, REG_RSP, 0x8);
+    emit_slowpath_call_enter(block);
+#    if !_WIN64
     host_x86_MOV32_REG_REG(block, REG_EDI, REG_ECX);
 #    endif
     if (size == 1 && !is_float) {
@@ -174,16 +203,7 @@ build_load_routine(codeblock_t *block, int size, int is_float)
         host_x86_CALL(block, codegen_profile_active ? (void *) codegen_profile_readmemql : (void *) readmemql);
         host_x86_MOVQ_XREG_REG(block, REG_XMM_TEMP, REG_RAX);
     }
-    host_x86_MOV32_REG_BASE_OFFSET(block, REG_R14, REG_RBP, cycles_disp);
-#    if _WIN64
-    host_x86_ADD64_REG_IMM(block, REG_RSP, 0x28);
-#    else
-    host_x86_ADD64_REG_IMM(block, REG_RSP, 0x8);
-#    endif
-    host_x86_POP(block, REG_R11);
-    host_x86_POP(block, REG_R10);
-    host_x86_POP(block, REG_RDX);
-    host_x86_POP(block, REG_RAX);
+    emit_slowpath_call_leave(block);
     host_x86_MOVZX_REG_ABS_32_8(block, REG_ESI, &cpu_state.abrt);
     host_x86_RET(block);
 }
@@ -250,14 +270,8 @@ build_store_routine(codeblock_t *block, int size, int is_float)
     *branch_offset = (uint8_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) branch_offset) - 1;
     if (size != 1)
         *misaligned_offset = (uint8_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) misaligned_offset) - 1;
-    host_x86_PUSH(block, REG_RAX);
-    host_x86_PUSH(block, REG_RDX);
-    host_x86_PUSH(block, REG_R10);
-    host_x86_PUSH(block, REG_R11);
-    int cycles_disp = (int) offsetof(cpu_state_t, _cycles) - 128;
-    host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, cycles_disp, REG_R14);
+    emit_slowpath_call_enter(block);
 #    if _WIN64
-    host_x86_SUB64_REG_IMM(block, REG_RSP, 0x28);
     if (size == 4 && is_float)
         host_x86_MOVD_REG_XREG(block, REG_EDX, REG_XMM_TEMP); // data
     else if (size == 8)
@@ -266,10 +280,6 @@ build_store_routine(codeblock_t *block, int size, int is_float)
         host_x86_MOV32_REG_REG(block, REG_EDX, REG_ECX); // data
     host_x86_MOV32_REG_REG(block, REG_ECX, REG_EDI);     // address
 #    else
-    /* Align RSP to 16: entry RSP%16=8 (after CALL from JIT block), four PUSHes
-       (RAX, RDX, R10, R11) subtract 32 (multiple of 16), so RSP%16 is still 8;
-       subtract 8 more to satisfy the SysV ABI before calling C. */
-    host_x86_SUB64_REG_IMM(block, REG_RSP, 0x8);
     if (size == 4 && is_float)
         host_x86_MOVD_REG_XREG(block, REG_ESI, REG_XMM_TEMP); // data
     else if (size == 8)
@@ -285,16 +295,7 @@ build_store_routine(codeblock_t *block, int size, int is_float)
         host_x86_CALL(block, codegen_profile_active ? (void *) codegen_profile_writememll : (void *) writememll);
     else if (size == 8)
         host_x86_CALL(block, codegen_profile_active ? (void *) codegen_profile_writememql : (void *) writememql);
-    host_x86_MOV32_REG_BASE_OFFSET(block, REG_R14, REG_RBP, cycles_disp);
-#    if _WIN64
-    host_x86_ADD64_REG_IMM(block, REG_RSP, 0x28);
-#    else
-    host_x86_ADD64_REG_IMM(block, REG_RSP, 0x8);
-#    endif
-    host_x86_POP(block, REG_R11);
-    host_x86_POP(block, REG_R10);
-    host_x86_POP(block, REG_RDX);
-    host_x86_POP(block, REG_RAX);
+    emit_slowpath_call_leave(block);
     host_x86_MOVZX_REG_ABS_32_8(block, REG_ESI, &cpu_state.abrt);
     host_x86_RET(block);
 }

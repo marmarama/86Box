@@ -77,10 +77,19 @@ extern void *codegen_exit_rout;
 extern void *codegen_event_stub;
 extern void *codegen_dispatch_stub;
 
+enum {
+    COLD_FLUSH_GPR8 = 0,
+    COLD_FLUSH_GPR16,
+    COLD_FLUSH_GPR32,
+    COLD_FLUSH_GPR64,
+    COLD_FLUSH_XMM64,
+    COLD_FLUSH_XMM64_ST
+};
+
 void codegen_mem_slowpath_reset(void);
 void codegen_mem_emit_slowpaths(codeblock_t *block);
 void codegen_mem_cold_flush_reset(void);
-void codegen_mem_cold_flush_add(void *p, int native_size, int host_reg);
+void codegen_mem_cold_flush_add(void *p, int kind, int host_reg, int st_idx);
 
 static inline void
 patch_disp32(uint32_t *disp_ptr, const void *target)

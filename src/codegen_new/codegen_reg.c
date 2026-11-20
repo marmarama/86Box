@@ -907,52 +907,71 @@ codegen_reg_flush(UNUSED(ir_data_t *ir), codeblock_t *block)
 }
 
 #if defined __amd64__ || defined _M_X64
-static int
-ireg_cold_flush_byte_size(int native_size)
+static void
+codegen_reg_flush_set_mem_cold(host_reg_set_t *reg_set, codeblock_t *block, int dest_ir_reg)
 {
-    switch (native_size) {
-        case REG_BYTE:
-            return 1;
-        case REG_WORD:
-            return 2;
-        case REG_DWORD:
-            return 4;
-        case REG_POINTER:
-            return 8;
-        default:
-            return 0;
-    }
-}
-
-void
-codegen_reg_flush_mem_cold(UNUSED(ir_data_t *ir), codeblock_t *block, ir_reg_t dest_reg_a)
-{
-    host_reg_set_t *reg_set     = &host_reg_set;
-    int             dest_ir_reg = !ir_reg_is_invalid(dest_reg_a) ? IREG_GET_REG(dest_reg_a.reg) : -1;
-
-    codegen_mem_cold_flush_reset();
-
     for (int c = 0; c < reg_set->nr_regs; c++) {
         if (!ir_reg_is_invalid(reg_set->regs[c]) && reg_set->dirty[c]) {
             int ir_reg   = IREG_GET_REG(reg_set->regs[c].reg);
             int ver      = reg_set->regs[c].version;
             int required = (reg_version[ir_reg][ver].flags & REG_FLAGS_REQUIRED) != 0;
             int refcnt   = reg_version[ir_reg][ver].refcount;
-            int byte_sz  = ireg_cold_flush_byte_size(ireg_data[ir_reg].native_size);
+            int host_reg = reg_set->reg_list[c].reg;
 
             if (!refcnt && (ireg_data[ir_reg].is_volatile || !required)) {
                 reg_set->dirty[c] = 0;
             } else if (ireg_data[ir_reg].is_volatile || (uintptr_t) ireg_data[ir_reg].p < 256) {
-                /* Stack temporaries stay live in non-volatile GPRs across the slowpath. */
+                /* Stack temporaries stay live in non-volatile GPR/XMMs across the slowpath. */
                 if (reg_set->reg_list[c].flags & HOST_REG_FLAG_VOLATILE)
                     codegen_reg_writeback(reg_set, block, c, 0);
             } else if ((reg_set->reg_list[c].flags & HOST_REG_FLAG_VOLATILE) ||
                        ir_reg == dest_ir_reg ||
-                       ir_reg == IREG_exit_request ||
-                       byte_sz == 0) {
+                       ir_reg == IREG_exit_request) {
                 codegen_reg_writeback(reg_set, block, c, 0);
             } else {
-                codegen_mem_cold_flush_add(ireg_data[ir_reg].p, byte_sz, reg_set->reg_list[c].reg);
+                switch (ireg_data[ir_reg].native_size) {
+                    case REG_BYTE:
+                        codegen_mem_cold_flush_add(ireg_data[ir_reg].p, COLD_FLUSH_GPR8, host_reg, 0);
+                        break;
+                    case REG_WORD:
+                        codegen_mem_cold_flush_add(ireg_data[ir_reg].p, COLD_FLUSH_GPR16, host_reg, 0);
+                        break;
+                    case REG_DWORD:
+                        codegen_mem_cold_flush_add(ireg_data[ir_reg].p, COLD_FLUSH_GPR32, host_reg, 0);
+                        break;
+                    case REG_POINTER:
+                        codegen_mem_cold_flush_add(ireg_data[ir_reg].p, COLD_FLUSH_GPR64, host_reg, 0);
+                        break;
+                    case REG_QWORD:
+                    case REG_DOUBLE:
+                        codegen_mem_cold_flush_add(ireg_data[ir_reg].p, COLD_FLUSH_XMM64, host_reg, 0);
+                        break;
+                    case REG_FPU_ST_QWORD: {
+                        int idx = ir_reg - IREG_ST0_i64;
+                        if (block->flags & CODEBLOCK_STATIC_TOP)
+                            codegen_mem_cold_flush_add(&cpu_state.MM[idx], COLD_FLUSH_XMM64, host_reg, 0);
+                        else
+                            codegen_mem_cold_flush_add(&cpu_state.MM[0], COLD_FLUSH_XMM64_ST, host_reg, idx);
+                        break;
+                    }
+                    case REG_FPU_ST_DOUBLE: {
+                        int idx = ir_reg - IREG_ST0;
+                        if (block->flags & CODEBLOCK_STATIC_TOP)
+                            codegen_mem_cold_flush_add(&cpu_state.ST[idx], COLD_FLUSH_XMM64, host_reg, 0);
+                        else
+                            codegen_mem_cold_flush_add(&cpu_state.ST[0], COLD_FLUSH_XMM64_ST, host_reg, idx);
+                        break;
+                    }
+                    case REG_FPU_ST_BYTE:
+                        if (block->flags & CODEBLOCK_STATIC_TOP)
+                            codegen_mem_cold_flush_add(&cpu_state.tag[ir_reg - IREG_tag0], COLD_FLUSH_GPR8, host_reg, 0);
+                        else
+                            codegen_reg_writeback(reg_set, block, c, 0);
+                        break;
+                    default:
+                        codegen_reg_writeback(reg_set, block, c, 0);
+                        break;
+                }
             }
         }
         if ((reg_set->reg_list[c].flags & HOST_REG_FLAG_VOLATILE) ||
@@ -964,8 +983,16 @@ codegen_reg_flush_mem_cold(UNUSED(ir_data_t *ir), codeblock_t *block, ir_reg_t d
             reg_set->last_used[c] = 0;
         }
     }
+}
 
-    codegen_reg_flush_set(&host_fp_reg_set, block);
+void
+codegen_reg_flush_mem_cold(UNUSED(ir_data_t *ir), codeblock_t *block, ir_reg_t dest_reg_a)
+{
+    int dest_ir_reg = !ir_reg_is_invalid(dest_reg_a) ? IREG_GET_REG(dest_reg_a.reg) : -1;
+
+    codegen_mem_cold_flush_reset();
+    codegen_reg_flush_set_mem_cold(&host_reg_set, block, dest_ir_reg);
+    codegen_reg_flush_set_mem_cold(&host_fp_reg_set, block, dest_ir_reg);
 }
 #endif
 

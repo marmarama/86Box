@@ -1103,29 +1103,6 @@ codegen_ir_verify_canonical(const ir_data_t *ir)
 }
 #endif
 
-#if defined __amd64__ || defined _M_X64
-static inline int
-codegen_uop_uses_mem_slowpath(const uop_t *uop)
-{
-    uint32_t m = uop->type & UOP_MASK;
-
-    switch (m) {
-        case UOP_MEM_LOAD_ABS & UOP_MASK:
-        case UOP_MEM_STORE_ABS & UOP_MASK:
-        case UOP_MEM_STORE_IMM_8 & UOP_MASK:
-        case UOP_MEM_STORE_IMM_16 & UOP_MASK:
-        case UOP_MEM_STORE_IMM_32 & UOP_MASK:
-            return 1;
-        case UOP_MEM_LOAD_REG & UOP_MASK:
-            return uop_mem_size_from_type(uop->type, uop->dest_reg_a.reg) != IREG_SIZE_Q;
-        case UOP_MEM_STORE_REG & UOP_MASK:
-            return uop_mem_size_from_type(uop->type, uop->src_reg_c.reg) != IREG_SIZE_Q;
-        default:
-            return 0;
-    }
-}
-#endif
-
 void
 codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
 {
@@ -1254,7 +1231,7 @@ codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
             }
 
 #if defined __amd64__ || defined _M_X64
-            if ((uop->type & UOP_TYPE_ORDER_BARRIER) && codegen_uop_uses_mem_slowpath(uop))
+            if ((uop->type & UOP_TYPE_ORDER_BARRIER) && uop_is_mem_access(uop->type))
                 codegen_reg_flush_mem_cold(ir, block, uop->dest_reg_a);
             else
 #endif

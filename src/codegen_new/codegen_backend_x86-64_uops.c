@@ -1067,19 +1067,41 @@ codegen_LOAD_SEG(codeblock_t *block, uop_t *uop)
 }
 
 #define MAX_MEM_SLOWPATHS    1024
-#define MAX_MEM_COLD_FLUSHES CODEGEN_HOST_REGS
+#define MAX_MEM_COLD_FLUSHES (CODEGEN_HOST_REGS + CODEGEN_HOST_FP_REGS)
+
+enum {
+    MEM_OP_B = 0,
+    MEM_OP_W,
+    MEM_OP_L,
+    MEM_OP_Q,
+    MEM_OP_SINGLE,
+    MEM_OP_DOUBLE
+};
+
+static inline int
+mem_op_kind_from_int_size(int size)
+{
+    if (REG_IS_B(size))
+        return MEM_OP_B;
+    if (REG_IS_W(size))
+        return MEM_OP_W;
+    if (REG_IS_Q(size))
+        return MEM_OP_Q;
+    return MEM_OP_L;
+}
 
 typedef struct mem_cold_flush_t {
-    void *p;
-    int   native_size;
-    int   host_reg;
+    void   *p;
+    uint8_t kind;
+    uint8_t host_reg;
+    uint8_t st_idx;
 } mem_cold_flush_t;
 
 typedef struct mem_slowpath_stub_t {
     uint8_t          is_load;     /* 1 for load, 0 for store */
     uint8_t          flush_count; /* deferred cpu_state flushes for this barrier */
-    int              dest_size;   /* IREG_SIZE_B, W, L */
-    int              dest_reg;    /* destination host register (for load) */
+    int              mem_kind;    /* MEM_OP_* */
+    int              dest_reg;    /* destination host reg (load) or src XMM reg (double/qword store) */
     uint32_t         oldpc;       /* guest instruction PC for fault materialization */
     uint32_t        *misaligned_offset;
     uint32_t        *branch_offset;
@@ -1100,15 +1122,16 @@ codegen_mem_cold_flush_reset(void)
 }
 
 void
-codegen_mem_cold_flush_add(void *p, int native_size, int host_reg)
+codegen_mem_cold_flush_add(void *p, int kind, int host_reg, int st_idx)
 {
     if (pending_cold_flush_count >= MAX_MEM_COLD_FLUSHES)
         fatal("codegen_mem_cold_flush_add: exceeded MAX_MEM_COLD_FLUSHES (%d)\n", MAX_MEM_COLD_FLUSHES);
 
     mem_cold_flush_t *f = &pending_cold_flushes[pending_cold_flush_count++];
-    f->p           = p;
-    f->native_size = native_size;
-    f->host_reg    = host_reg;
+    f->p        = p;
+    f->kind     = (uint8_t) kind;
+    f->host_reg = (uint8_t) host_reg;
+    f->st_idx   = (uint8_t) st_idx;
 }
 
 void
@@ -1119,7 +1142,7 @@ codegen_mem_slowpath_reset(void)
 }
 
 static void
-codegen_mem_record_slowpath(uint8_t is_load, int dest_reg, int dest_size,
+codegen_mem_record_slowpath(uint8_t is_load, int dest_reg, int mem_kind,
                             uint32_t oldpc, uint32_t *misaligned_offset,
                             uint32_t *branch_offset, uint8_t *resume_target)
 {
@@ -1130,7 +1153,7 @@ codegen_mem_record_slowpath(uint8_t is_load, int dest_reg, int dest_size,
     mem_slowpath_stub_t *stub = &mem_slowpath_stubs[mem_slowpath_count++];
     stub->is_load           = is_load;
     stub->dest_reg          = dest_reg;
-    stub->dest_size         = dest_size;
+    stub->mem_kind          = mem_kind;
     stub->oldpc             = oldpc;
     stub->misaligned_offset = misaligned_offset;
     stub->branch_offset     = branch_offset;
@@ -1141,13 +1164,15 @@ codegen_mem_record_slowpath(uint8_t is_load, int dest_reg, int dest_size,
     pending_cold_flush_count = 0;
 }
 
+static void codegen_mem_emit_cold_flushes(codeblock_t *block, const mem_slowpath_stub_t *stub);
+
 void
 codegen_mem_emit_slowpaths(codeblock_t *block)
 {
     for (int i = 0; i < mem_slowpath_count; i++) {
         mem_slowpath_stub_t *stub = &mem_slowpath_stubs[i];
 
-        codegen_alloc_bytes(block, 96 + (int) stub->flush_count * 12);
+        codegen_alloc_bytes(block, 104 + (int) stub->flush_count * 24);
 
         uint8_t *stub_target = &block_write_data[block_pos];
         patch_disp32(stub->branch_offset, stub_target);
@@ -1155,49 +1180,67 @@ codegen_mem_emit_slowpaths(codeblock_t *block)
             patch_disp32(stub->misaligned_offset, stub_target);
         }
 
-        for (int f = 0; f < stub->flush_count; f++) {
-            switch (stub->flushes[f].native_size) {
-                case 1:
-                    host_x86_MOV8_ABS_REG(block, stub->flushes[f].p, stub->flushes[f].host_reg);
-                    break;
-                case 2:
-                    host_x86_MOV16_ABS_REG(block, stub->flushes[f].p, stub->flushes[f].host_reg);
-                    break;
-                case 4:
-                    host_x86_MOV32_ABS_REG(block, stub->flushes[f].p, stub->flushes[f].host_reg);
-                    break;
-                case 8:
-                    host_x86_MOV64_ABS_REG(block, stub->flushes[f].p, stub->flushes[f].host_reg);
-                    break;
-                default:
-                    fatal("codegen_mem_emit_slowpaths: invalid flush size %d\n", stub->flushes[f].native_size);
-            }
-        }
+        codegen_mem_emit_cold_flushes(block, stub);
 
         int oldpc_disp = (int) offsetof(cpu_state_t, oldpc) - 128;
         host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, oldpc_disp, stub->oldpc);
 
         if (stub->is_load) {
-            if (REG_IS_B(stub->dest_size)) {
-                host_x86_CALL(block, codegen_mem_load_byte);
-            } else if (REG_IS_W(stub->dest_size)) {
-                host_x86_CALL(block, codegen_mem_load_word);
-            } else {
-                host_x86_CALL(block, codegen_mem_load_long);
+            switch (stub->mem_kind) {
+                case MEM_OP_B:
+                    host_x86_CALL(block, codegen_mem_load_byte);
+                    break;
+                case MEM_OP_W:
+                    host_x86_CALL(block, codegen_mem_load_word);
+                    break;
+                case MEM_OP_L:
+                    host_x86_CALL(block, codegen_mem_load_long);
+                    break;
+                case MEM_OP_Q:
+                    host_x86_CALL(block, codegen_mem_load_quad);
+                    break;
+                case MEM_OP_SINGLE:
+                    host_x86_CALL(block, codegen_mem_load_single);
+                    break;
+                case MEM_OP_DOUBLE:
+                    host_x86_CALL(block, codegen_mem_load_double);
+                    break;
             }
 
             host_x86_TEST32_REG(block, REG_ESI, REG_ESI);
             host_x86_JNZ(block, codegen_exit_rout);
 
-            if (stub->dest_reg != REG_ECX)
+            if (stub->mem_kind >= MEM_OP_Q) {
+                if (stub->dest_reg != REG_XMM_TEMP)
+                    host_x86_MOVQ_XREG_XREG(block, stub->dest_reg, REG_XMM_TEMP);
+            } else if (stub->dest_reg != REG_ECX) {
                 host_x86_MOV32_REG_REG(block, stub->dest_reg, REG_ECX);
+            }
         } else {
-            if (REG_IS_B(stub->dest_size)) {
-                host_x86_CALL(block, codegen_mem_store_byte);
-            } else if (REG_IS_W(stub->dest_size)) {
-                host_x86_CALL(block, codegen_mem_store_word);
-            } else {
-                host_x86_CALL(block, codegen_mem_store_long);
+            if (stub->mem_kind == MEM_OP_DOUBLE || stub->mem_kind == MEM_OP_Q) {
+                if (stub->dest_reg != REG_XMM_TEMP)
+                    host_x86_MOVQ_XREG_XREG(block, REG_XMM_TEMP, stub->dest_reg);
+            }
+
+            switch (stub->mem_kind) {
+                case MEM_OP_B:
+                    host_x86_CALL(block, codegen_mem_store_byte);
+                    break;
+                case MEM_OP_W:
+                    host_x86_CALL(block, codegen_mem_store_word);
+                    break;
+                case MEM_OP_L:
+                    host_x86_CALL(block, codegen_mem_store_long);
+                    break;
+                case MEM_OP_Q:
+                    host_x86_CALL(block, codegen_mem_store_quad);
+                    break;
+                case MEM_OP_SINGLE:
+                    host_x86_CALL(block, codegen_mem_store_single);
+                    break;
+                case MEM_OP_DOUBLE:
+                    host_x86_CALL(block, codegen_mem_store_double);
+                    break;
             }
 
             host_x86_TEST32_REG(block, REG_ESI, REG_ESI);
@@ -1211,22 +1254,27 @@ codegen_mem_emit_slowpaths(codeblock_t *block)
 }
 
 static void
-codegen_mem_emit_abrt_check(codeblock_t *block, uint32_t oldpc)
+codegen_mem_emit_cross_page_check(codeblock_t *block, int mem_kind, uint32_t **misaligned_offset)
 {
-    int oldpc_disp = (int) offsetof(cpu_state_t, oldpc) - 128;
+    int span = 0;
 
-    /* Keep the short forward branch and abort stub inside the same mem_block chunk */
-    codegen_alloc_bytes(block, 32);
+    if (mem_kind == MEM_OP_W)
+        span = 1;
+    else if (mem_kind == MEM_OP_L || mem_kind == MEM_OP_SINGLE)
+        span = 3;
+    else if (mem_kind == MEM_OP_Q || mem_kind == MEM_OP_DOUBLE)
+        span = 7;
 
-    host_x86_TEST32_REG(block, REG_ESI, REG_ESI);
-    uint8_t *no_abrt = host_x86_JZ_short(block);
-    host_x86_MOV32_BASE_OFFSET_IMM(block, REG_RBP, oldpc_disp, oldpc);
-    host_x86_JMP(block, codegen_exit_rout);
-    *no_abrt = (uint8_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) (no_abrt + 1));
+    if (span) {
+        host_x86_LEA_REG_IMM(block, REG_EDI, REG_ESI, span);
+        host_x86_XOR32_REG_REG(block, REG_EDI, REG_ESI);
+        host_x86_TEST32_REG_IMM(block, REG_EDI, 0xfffff000);
+        *misaligned_offset = host_x86_JNZ_long(block);
+    }
 }
 
 static void
-codegen_mem_load_fastpath(codeblock_t *block, uop_t *uop, int dest_reg, int dest_size)
+codegen_mem_load_fastpath(codeblock_t *block, uop_t *uop, int dest_reg, int mem_kind)
 {
     uint32_t *misaligned_offset = NULL;
     uint32_t *branch_offset;
@@ -1234,19 +1282,7 @@ codegen_mem_load_fastpath(codeblock_t *block, uop_t *uop, int dest_reg, int dest
     /* Ensure entire inlined load sequence fits contiguously in the current block */
     codegen_alloc_bytes(block, 80);
 
-    if (REG_IS_W(dest_size)) {
-        /* Word (16-bit): crosses 4KB page boundary iff (addr & 0xFFF) == 0xFFF */
-        host_x86_LEA_REG_IMM(block, REG_EDI, REG_ESI, 1);
-        host_x86_XOR32_REG_REG(block, REG_EDI, REG_ESI);
-        host_x86_TEST32_REG_IMM(block, REG_EDI, 0xfffff000);
-        misaligned_offset = host_x86_JNZ_long(block);
-    } else if (REG_IS_L(dest_size)) {
-        /* Dword (32-bit): crosses 4KB page boundary iff (addr & 0xFFF) > 0xFFC */
-        host_x86_LEA_REG_IMM(block, REG_EDI, REG_ESI, 3);
-        host_x86_XOR32_REG_REG(block, REG_EDI, REG_ESI);
-        host_x86_TEST32_REG_IMM(block, REG_EDI, 0xfffff000);
-        misaligned_offset = host_x86_JNZ_long(block);
-    }
+    codegen_mem_emit_cross_page_check(block, mem_kind, &misaligned_offset);
 
     host_x86_MOV32_REG_REG(block, REG_EDI, REG_ESI);
     host_x86_SHR32_IMM(block, REG_EDI, 12);
@@ -1255,16 +1291,27 @@ codegen_mem_load_fastpath(codeblock_t *block, uop_t *uop, int dest_reg, int dest
     host_x86_CMP64_REG_IMM(block, REG_RDI, (uint32_t) -1);
     branch_offset = host_x86_JZ_long(block);
 
-    if (REG_IS_L(dest_size)) {
-        host_x86_MOV32_REG_BASE_INDEX(block, dest_reg, REG_RDI, REG_RSI);
-    } else if (REG_IS_W(dest_size)) {
-        host_x86_MOVZX_BASE_INDEX_32_16(block, dest_reg, REG_RDI, REG_RSI);
-    } else { /* REG_IS_B */
-        host_x86_MOVZX_BASE_INDEX_32_8(block, dest_reg, REG_RDI, REG_RSI);
+    switch (mem_kind) {
+        case MEM_OP_B:
+            host_x86_MOVZX_BASE_INDEX_32_8(block, dest_reg, REG_RDI, REG_RSI);
+            break;
+        case MEM_OP_W:
+            host_x86_MOVZX_BASE_INDEX_32_16(block, dest_reg, REG_RDI, REG_RSI);
+            break;
+        case MEM_OP_L:
+            host_x86_MOV32_REG_BASE_INDEX(block, dest_reg, REG_RDI, REG_RSI);
+            break;
+        case MEM_OP_SINGLE:
+            host_x86_CVTSS2SD_XREG_BASE_INDEX(block, dest_reg, REG_RDI, REG_RSI);
+            break;
+        case MEM_OP_Q:
+        case MEM_OP_DOUBLE:
+            host_x86_MOVQ_XREG_BASE_INDEX(block, dest_reg, REG_RDI, REG_RSI);
+            break;
     }
 
     uint8_t *resume_target = &block_write_data[block_pos];
-    codegen_mem_record_slowpath(1, dest_reg, dest_size, uop->pc, misaligned_offset, branch_offset, resume_target);
+    codegen_mem_record_slowpath(1, dest_reg, mem_kind, uop->pc, misaligned_offset, branch_offset, resume_target);
 }
 
 static int
@@ -1275,7 +1322,7 @@ codegen_MEM_LOAD_ABS(codeblock_t *block, uop_t *uop)
     int dest_size = uop_mem_size_from_type(uop->type, uop->dest_reg_a_real);
 
     host_x86_LEA_REG_IMM(block, REG_ESI, seg_reg, uop->imm_data);
-    codegen_mem_load_fastpath(block, uop, dest_reg, dest_size);
+    codegen_mem_load_fastpath(block, uop, dest_reg, mem_op_kind_from_int_size(dest_size));
 
     return 0;
 }
@@ -1299,13 +1346,7 @@ codegen_MEM_LOAD_REG(codeblock_t *block, uop_t *uop)
     } else {
         host_x86_LEA_REG_REG(block, REG_ESI, seg_reg, addr_reg);
     }
-    if (REG_IS_Q(dest_size)) {
-        host_x86_CALL(block, codegen_mem_load_quad);
-        codegen_mem_emit_abrt_check(block, uop->pc);
-        host_x86_MOVQ_XREG_XREG(block, dest_reg, REG_XMM_TEMP);
-    } else {
-        codegen_mem_load_fastpath(block, uop, dest_reg, dest_size);
-    }
+    codegen_mem_load_fastpath(block, uop, dest_reg, mem_op_kind_from_int_size(dest_size));
 
     return 0;
 }
@@ -1324,9 +1365,7 @@ codegen_MEM_LOAD_SINGLE(codeblock_t *block, uop_t *uop)
     host_x86_LEA_REG_REG(block, REG_ESI, seg_reg, addr_reg);
     if (uop->imm_data)
         host_x86_ADD32_REG_IMM(block, REG_ESI, uop->imm_data);
-    host_x86_CALL(block, codegen_mem_load_single);
-    codegen_mem_emit_abrt_check(block, uop->pc);
-    host_x86_MOVQ_XREG_XREG(block, dest_reg, REG_XMM_TEMP);
+    codegen_mem_load_fastpath(block, uop, dest_reg, MEM_OP_SINGLE);
 
     return 0;
 }
@@ -1345,15 +1384,13 @@ codegen_MEM_LOAD_DOUBLE(codeblock_t *block, uop_t *uop)
     host_x86_LEA_REG_REG(block, REG_ESI, seg_reg, addr_reg);
     if (uop->imm_data)
         host_x86_ADD32_REG_IMM(block, REG_ESI, uop->imm_data);
-    host_x86_CALL(block, codegen_mem_load_double);
-    codegen_mem_emit_abrt_check(block, uop->pc);
-    host_x86_MOVQ_XREG_XREG(block, dest_reg, REG_XMM_TEMP);
+    codegen_mem_load_fastpath(block, uop, dest_reg, MEM_OP_DOUBLE);
 
     return 0;
 }
 
 static void
-codegen_mem_store_fastpath(codeblock_t *block, uop_t *uop, int src_size)
+codegen_mem_store_fastpath(codeblock_t *block, uop_t *uop, int mem_kind, int src_xmm_reg)
 {
     uint32_t *misaligned_offset = NULL;
     uint32_t *branch_offset;
@@ -1362,19 +1399,7 @@ codegen_mem_store_fastpath(codeblock_t *block, uop_t *uop, int src_size)
     /* Ensure entire inlined store sequence fits contiguously in the current block */
     codegen_alloc_bytes(block, 80);
 
-    if (REG_IS_W(src_size)) {
-        /* Word (16-bit): crosses 4KB page boundary iff (addr & 0xFFF) == 0xFFF */
-        host_x86_LEA_REG_IMM(block, REG_EDI, REG_ESI, 1);
-        host_x86_XOR32_REG_REG(block, REG_EDI, REG_ESI);
-        host_x86_TEST32_REG_IMM(block, REG_EDI, 0xfffff000);
-        misaligned_offset = host_x86_JNZ_long(block);
-    } else if (REG_IS_L(src_size)) {
-        /* Dword (32-bit): crosses 4KB page boundary iff (addr & 0xFFF) > 0xFFC */
-        host_x86_LEA_REG_IMM(block, REG_EDI, REG_ESI, 3);
-        host_x86_XOR32_REG_REG(block, REG_EDI, REG_ESI);
-        host_x86_TEST32_REG_IMM(block, REG_EDI, 0xfffff000);
-        misaligned_offset = host_x86_JNZ_long(block);
-    }
+    codegen_mem_emit_cross_page_check(block, mem_kind, &misaligned_offset);
 
     host_x86_MOV32_REG_REG(block, REG_EDI, REG_ESI);
     host_x86_SHR32_IMM(block, REG_EDI, 12);
@@ -1388,16 +1413,27 @@ codegen_mem_store_fastpath(codeblock_t *block, uop_t *uop, int src_size)
     host_x86_CMP64_REG_IMM(block, REG_RDI, (uint32_t) -1);
     branch_offset = host_x86_JZ_long(block);
 
-    if (REG_IS_B(src_size)) {
-        host_x86_MOV8_BASE_INDEX_REG(block, REG_RDI, REG_RSI, REG_ECX);
-    } else if (REG_IS_W(src_size)) {
-        host_x86_MOV16_BASE_INDEX_REG(block, REG_RDI, REG_RSI, REG_ECX);
-    } else {
-        host_x86_MOV32_BASE_INDEX_REG(block, REG_RDI, REG_RSI, REG_ECX);
+    switch (mem_kind) {
+        case MEM_OP_B:
+            host_x86_MOV8_BASE_INDEX_REG(block, REG_RDI, REG_RSI, REG_ECX);
+            break;
+        case MEM_OP_W:
+            host_x86_MOV16_BASE_INDEX_REG(block, REG_RDI, REG_RSI, REG_ECX);
+            break;
+        case MEM_OP_L:
+            host_x86_MOV32_BASE_INDEX_REG(block, REG_RDI, REG_RSI, REG_ECX);
+            break;
+        case MEM_OP_SINGLE:
+            host_x86_MOVD_BASE_INDEX_XREG(block, REG_RDI, REG_RSI, REG_XMM_TEMP);
+            break;
+        case MEM_OP_Q:
+        case MEM_OP_DOUBLE:
+            host_x86_MOVQ_BASE_INDEX_XREG(block, REG_RDI, REG_RSI, src_xmm_reg);
+            break;
     }
 
     uint8_t *resume_target = &block_write_data[block_pos];
-    codegen_mem_record_slowpath(0, 0, src_size, uop->pc, misaligned_offset, branch_offset, resume_target);
+    codegen_mem_record_slowpath(0, src_xmm_reg, mem_kind, uop->pc, misaligned_offset, branch_offset, resume_target);
 }
 
 static int
@@ -1409,7 +1445,7 @@ codegen_MEM_STORE_ABS(codeblock_t *block, uop_t *uop)
 
     host_x86_LEA_REG_IMM(block, REG_ESI, seg_reg, uop->imm_data);
     host_x86_MOV32_REG_REG(block, REG_ECX, src_reg);
-    codegen_mem_store_fastpath(block, uop, src_size);
+    codegen_mem_store_fastpath(block, uop, mem_op_kind_from_int_size(src_size), 0);
 
     return 0;
 }
@@ -1422,7 +1458,7 @@ codegen_MEM_STORE_IMM_8(codeblock_t *block, uop_t *uop)
 
     host_x86_LEA_REG_REG(block, REG_ESI, seg_reg, addr_reg);
     host_x86_MOV8_REG_IMM(block, REG_ECX, uop->imm_data);
-    codegen_mem_store_fastpath(block, uop, IREG_SIZE_B);
+    codegen_mem_store_fastpath(block, uop, MEM_OP_B, 0);
 
     return 0;
 }
@@ -1434,7 +1470,7 @@ codegen_MEM_STORE_IMM_16(codeblock_t *block, uop_t *uop)
 
     host_x86_LEA_REG_REG(block, REG_ESI, seg_reg, addr_reg);
     host_x86_MOV16_REG_IMM(block, REG_ECX, uop->imm_data);
-    codegen_mem_store_fastpath(block, uop, IREG_SIZE_W);
+    codegen_mem_store_fastpath(block, uop, MEM_OP_W, 0);
 
     return 0;
 }
@@ -1446,7 +1482,7 @@ codegen_MEM_STORE_IMM_32(codeblock_t *block, uop_t *uop)
 
     host_x86_LEA_REG_REG(block, REG_ESI, seg_reg, addr_reg);
     host_x86_MOV32_REG_IMM(block, REG_ECX, uop->imm_data);
-    codegen_mem_store_fastpath(block, uop, IREG_SIZE_L);
+    codegen_mem_store_fastpath(block, uop, MEM_OP_L, 0);
 
     return 0;
 }
@@ -1463,12 +1499,10 @@ codegen_MEM_STORE_REG(codeblock_t *block, uop_t *uop)
     if (uop->imm_data)
         host_x86_ADD32_REG_IMM(block, REG_ESI, uop->imm_data);
     if (REG_IS_Q(src_size)) {
-        host_x86_MOVQ_XREG_XREG(block, REG_XMM_TEMP, src_reg);
-        host_x86_CALL(block, codegen_mem_store_quad);
-        codegen_mem_emit_abrt_check(block, uop->pc);
+        codegen_mem_store_fastpath(block, uop, MEM_OP_Q, src_reg);
     } else {
         host_x86_MOV32_REG_REG(block, REG_ECX, src_reg);
-        codegen_mem_store_fastpath(block, uop, src_size);
+        codegen_mem_store_fastpath(block, uop, mem_op_kind_from_int_size(src_size), 0);
     }
 
     return 0;
@@ -1490,8 +1524,7 @@ codegen_MEM_STORE_SINGLE(codeblock_t *block, uop_t *uop)
     if (uop->imm_data)
         host_x86_ADD32_REG_IMM(block, REG_ESI, uop->imm_data);
     host_x86_CVTSD2SS_XREG_XREG(block, REG_XMM_TEMP, src_reg);
-    host_x86_CALL(block, codegen_mem_store_single);
-    codegen_mem_emit_abrt_check(block, uop->pc);
+    codegen_mem_store_fastpath(block, uop, MEM_OP_SINGLE, REG_XMM_TEMP);
 
     return 0;
 }
@@ -1510,9 +1543,7 @@ codegen_MEM_STORE_DOUBLE(codeblock_t *block, uop_t *uop)
     host_x86_LEA_REG_REG(block, REG_ESI, seg_reg, addr_reg);
     if (uop->imm_data)
         host_x86_ADD32_REG_IMM(block, REG_ESI, uop->imm_data);
-    host_x86_MOVQ_XREG_XREG(block, REG_XMM_TEMP, src_reg);
-    host_x86_CALL(block, codegen_mem_store_double);
-    codegen_mem_emit_abrt_check(block, uop->pc);
+    codegen_mem_store_fastpath(block, uop, MEM_OP_DOUBLE, src_reg);
 
     return 0;
 }
@@ -3882,30 +3913,60 @@ codegen_direct_write_st_8(codeblock_t *block, void *base, int reg_idx, int host_
 {
     int offset = (uintptr_t) base - (((uintptr_t) &cpu_state) + 128);
 
-    host_x86_MOV32_REG_BASE_OFFSET(block, REG_ECX, REG_RSP, IREG_TOP_diff_stack_offset);
-    host_x86_ADD32_REG_IMM(block, REG_ECX, reg_idx);
-    host_x86_AND32_REG_IMM(block, REG_ECX, 7);
-    host_x86_MOV8_ABS_REG_REG_SHIFT_REG(block, offset, REG_RBP, REG_ECX, 0, host_reg);
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_R8, REG_RSP, IREG_TOP_diff_stack_offset);
+    host_x86_ADD32_REG_IMM(block, REG_R8, reg_idx);
+    host_x86_AND32_REG_IMM(block, REG_R8, 7);
+    host_x86_MOV8_ABS_REG_REG_SHIFT_REG(block, offset, REG_RBP, REG_R8, 0, host_reg);
 }
 void
 codegen_direct_write_st_64(codeblock_t *block, void *base, int reg_idx, int host_reg)
 {
     int offset = (uintptr_t) base - (((uintptr_t) &cpu_state) + 128);
 
-    host_x86_MOV32_REG_BASE_OFFSET(block, REG_ECX, REG_RSP, IREG_TOP_diff_stack_offset);
-    host_x86_ADD32_REG_IMM(block, REG_ECX, reg_idx);
-    host_x86_AND32_REG_IMM(block, REG_ECX, 7);
-    host_x86_MOVQ_ABS_REG_REG_SHIFT_XREG(block, offset, REG_RBP, REG_ECX, 3, host_reg);
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_R8, REG_RSP, IREG_TOP_diff_stack_offset);
+    host_x86_ADD32_REG_IMM(block, REG_R8, reg_idx);
+    host_x86_AND32_REG_IMM(block, REG_R8, 7);
+    host_x86_MOVQ_ABS_REG_REG_SHIFT_XREG(block, offset, REG_RBP, REG_R8, 3, host_reg);
 }
 void
 codegen_direct_write_st_double(codeblock_t *block, void *base, int reg_idx, int host_reg)
 {
     int offset = (uintptr_t) base - (((uintptr_t) &cpu_state) + 128);
 
-    host_x86_MOV32_REG_BASE_OFFSET(block, REG_ECX, REG_RSP, IREG_TOP_diff_stack_offset);
-    host_x86_ADD32_REG_IMM(block, REG_ECX, reg_idx);
-    host_x86_AND32_REG_IMM(block, REG_ECX, 7);
-    host_x86_MOVQ_ABS_REG_REG_SHIFT_XREG(block, offset, REG_RBP, REG_ECX, 3, host_reg);
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_R8, REG_RSP, IREG_TOP_diff_stack_offset);
+    host_x86_ADD32_REG_IMM(block, REG_R8, reg_idx);
+    host_x86_AND32_REG_IMM(block, REG_R8, 7);
+    host_x86_MOVQ_ABS_REG_REG_SHIFT_XREG(block, offset, REG_RBP, REG_R8, 3, host_reg);
+}
+
+static void
+codegen_mem_emit_cold_flushes(codeblock_t *block, const mem_slowpath_stub_t *stub)
+{
+    for (int f = 0; f < stub->flush_count; f++) {
+        const mem_cold_flush_t *cf = &stub->flushes[f];
+        switch (cf->kind) {
+            case COLD_FLUSH_GPR8:
+                host_x86_MOV8_ABS_REG(block, cf->p, cf->host_reg);
+                break;
+            case COLD_FLUSH_GPR16:
+                host_x86_MOV16_ABS_REG(block, cf->p, cf->host_reg);
+                break;
+            case COLD_FLUSH_GPR32:
+                host_x86_MOV32_ABS_REG(block, cf->p, cf->host_reg);
+                break;
+            case COLD_FLUSH_GPR64:
+                host_x86_MOV64_ABS_REG(block, cf->p, cf->host_reg);
+                break;
+            case COLD_FLUSH_XMM64:
+                host_x86_MOVQ_ABS_XREG(block, cf->p, cf->host_reg);
+                break;
+            case COLD_FLUSH_XMM64_ST:
+                codegen_direct_write_st_double(block, cf->p, cf->st_idx, cf->host_reg);
+                break;
+            default:
+                fatal("codegen_mem_emit_cold_flushes: invalid flush kind %d\n", cf->kind);
+        }
+    }
 }
 
 void
