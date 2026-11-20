@@ -269,6 +269,8 @@ IPCServer::handleMessage(QLocalSocket *client, const QByteArray &line)
         result = handleSendMouse(params, errorMsg);
     } else if (method == QStringLiteral("stop") || method == QStringLiteral("quit") || method == QStringLiteral("shutdown")) {
         result = handleStop(params, errorMsg);
+    } else if (method == QStringLiteral("set_fast_forward") || method == QStringLiteral("fast_forward")) {
+        result = handleSetFastForward(params, errorMsg);
     } else if (method == QStringLiteral("dynarec_get_stats")) {
         result = handleDynarecGetStats(params, errorMsg);
     } else if (method == QStringLiteral("dynarec_set_link_mask")) {
@@ -378,7 +380,8 @@ QJsonObject
 IPCServer::handleGetStatus(const QJsonObject &/*params*/, QString &/*errorMsg*/)
 {
     QJsonObject res;
-    res[QStringLiteral("state")]     = dopause ? QStringLiteral("paused") : QStringLiteral("running");
+    res[QStringLiteral("state")]        = dopause ? QStringLiteral("paused") : QStringLiteral("running");
+    res[QStringLiteral("fast_forward")] = static_cast<bool>(fast_forward);
 
     char cpu_str[256] = { 0 };
     plat_get_cpu_string(cpu_str, sizeof(cpu_str) - 1);
@@ -422,6 +425,19 @@ IPCServer::handleResume(const QJsonObject &/*params*/, QString &/*errorMsg*/)
     plat_pause(0);
     QJsonObject res;
     res[QStringLiteral("state")] = QStringLiteral("running");
+    return res;
+}
+
+QJsonObject
+IPCServer::handleSetFastForward(const QJsonObject &params, QString &/*errorMsg*/)
+{
+    if (params.contains(QStringLiteral("enabled")))
+        fast_forward = params.value(QStringLiteral("enabled")).toBool();
+    else
+        fast_forward = !fast_forward;
+
+    QJsonObject res;
+    res[QStringLiteral("fast_forward")] = static_cast<bool>(fast_forward);
     return res;
 }
 

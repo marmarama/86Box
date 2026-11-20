@@ -291,6 +291,7 @@ def run_instance(
     per_test_timeout: float = 60.0,
     interactive: bool = False,
     screenshot_dir: Optional[Path] = None,
+    fast_forward: bool = False,
 ) -> Dict[str, Any]:
     """Execute a single run of 86Box with real-time telemetry, breakpoints, and hang detection."""
     if results_file.exists():
@@ -312,6 +313,8 @@ def run_instance(
     cmd.extend(["-P", str(vm_dir)])
     if roms_dir:
         cmd.extend(["-R", str(roms_dir)])
+    if fast_forward:
+        cmd.append("--fast-forward")
 
     log_path = vm_dir / "86box_run.log"
     cmd.extend(["-L", str(log_path)])
@@ -580,6 +583,7 @@ def main():
     parser.add_argument("--per-test-timeout", type=float, default=120.0, help="Per-test timeout in seconds before triggering a hang breakpoint (default: 120s)")
     parser.add_argument("--interactive", action="store_true", help="Prompt interactive continue/screenshot/quit on breakpoint")
     parser.add_argument("--screenshot-dir", type=Path, default=Path("scratch"), help="Directory to save breakpoint screenshots")
+    parser.add_argument("--fast-forward", action="store_true", help="Disable real-time pacing (--fast-forward)")
 
     args = parser.parse_args()
     script_dir = Path(__file__).resolve().parent
@@ -638,6 +642,7 @@ def main():
                 per_test_timeout=args.per_test_timeout,
                 interactive=args.interactive,
                 screenshot_dir=args.screenshot_dir,
+                fast_forward=args.fast_forward,
             )
 
     if args.only in (None, "new"):
@@ -664,6 +669,7 @@ def main():
             per_test_timeout=args.per_test_timeout,
             interactive=args.interactive,
             screenshot_dir=args.screenshot_dir,
+            fast_forward=args.fast_forward,
         )
 
     # Output comparison if both runs completed

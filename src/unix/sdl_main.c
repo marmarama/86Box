@@ -216,6 +216,8 @@ main_thread(UNUSED(void *param))
 #endif
     framecountx = 0;
     // title_update = 1;
+    if (start_fast_forward)
+        fast_forward = true;
     pacer_old_time = SDL_GetTicks();
     pacer_drawits = frames = 0;
     while (!is_quit && cpu_thread_run)

@@ -141,6 +141,16 @@ def cmd_stop(client, args):
     print(f"Stop: {res.get('status')}")
 
 
+def cmd_fast_forward(client, args):
+    params = {}
+    if args.mode == "on":
+        params["enabled"] = True
+    elif args.mode == "off":
+        params["enabled"] = False
+    res = client.call("set_fast_forward", params)
+    print(f"Fast Forward: {res.get('fast_forward')}")
+
+
 def cmd_type(client, args):
     res = client.call("send_keys", {"string": args.text})
     print(f"Injected {res.get('keys_sent')} keystrokes.")
@@ -231,6 +241,11 @@ def main():
     # stop
     p_stop = subparsers.add_parser("stop", help="Request VM shutdown")
     p_stop.set_defaults(func=cmd_stop)
+
+    # fast-forward
+    p_ff = subparsers.add_parser("fast-forward", help="Toggle or set unthrottled execution")
+    p_ff.add_argument("mode", nargs="?", choices=["on", "off", "toggle"], default="toggle", help="Desired mode (default: toggle)")
+    p_ff.set_defaults(func=cmd_fast_forward)
 
     # type
     p_type = subparsers.add_parser("type", help="Inject keyboard text")

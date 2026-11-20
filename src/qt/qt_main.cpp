@@ -979,6 +979,9 @@ main(int argc, char *argv[])
 #endif
             plat_pause(0);
 
+        if (start_fast_forward)
+            fast_forward = true;
+
         cpu_thread_running = true;
         main_thread        = new std::thread(main_thread_fn);
     });

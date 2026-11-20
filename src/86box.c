@@ -357,6 +357,7 @@ char  usr_path[1024]; /* path (dir) of user data */
 char  cfg_path[1024]; /* full path of config file */
 char  global_cfg_path[1024]; /* full path of config file */
 char  ipc_socket_path[1024] = { 0 }; /* local socket IPC path */
+int   start_fast_forward    = 0;     /* start unthrottled via --fast-forward or BOX86_FAST_FORWARD */
 FILE *stdlog = NULL;  /* file to log output to */
 void (*pclog_hook)(const char *) = NULL; /* optional UI log hook */
 #if 0
@@ -805,6 +806,7 @@ pc_show_usage(void)
 #endif
             "-Z or --lastvmpath\t\t- the last param. is VM path rather than config\n"
             "      --ipc [socket]\t\t- start local socket IPC control server\n"
+            "      --fast-forward\t\t- run unthrottled (disable real-time pacing)\n"
             "\nA config file can be specified. If none is, the default file will be used.\n");
 
 #ifdef _WIN32
@@ -1061,11 +1063,19 @@ usage:
             } else {
                 strncpy(ipc_socket_path, "auto", sizeof(ipc_socket_path) - 1);
             }
+        } else if (!strcasecmp(argv[c], "--fast-forward")) {
+            start_fast_forward = 1;
         }
 
         /* Uhm... out of options here.. */
         else
             goto usage;
+    }
+
+    {
+        const char *ff_env = getenv("BOX86_FAST_FORWARD");
+        if (ff_env && ff_env[0] && strcmp(ff_env, "0") != 0)
+            start_fast_forward = 1;
     }
 
     /* One argument (config file) allowed. */

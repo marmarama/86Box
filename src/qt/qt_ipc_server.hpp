@@ -60,6 +60,7 @@ private:
     QJsonObject handleSendKeys(const QJsonObject &params, QString &errorMsg);
     QJsonObject handleSendMouse(const QJsonObject &params, QString &errorMsg);
     QJsonObject handleStop(const QJsonObject &params, QString &errorMsg);
+    QJsonObject handleSetFastForward(const QJsonObject &params, QString &errorMsg);
     QJsonObject handleDynarecGetStats(const QJsonObject &params, QString &errorMsg);
     QJsonObject handleDynarecSetLinkMask(const QJsonObject &params, QString &errorMsg);
     QJsonObject handleDynarecFlushCache(const QJsonObject &params, QString &errorMsg);
