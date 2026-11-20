@@ -49,11 +49,19 @@
 #define REG_XMM5             5
 #define REG_XMM6             6
 #define REG_XMM7             7
+#define REG_XMM8             8
+#define REG_XMM9             9
+#define REG_XMM10            10
+#define REG_XMM11            11
+#define REG_XMM12            12
+#define REG_XMM13            13
+#define REG_XMM14            14
+#define REG_XMM15            15
 
 #define REG_XMM_TEMP         REG_XMM0
 
 #define CODEGEN_HOST_REGS    7
-#define CODEGEN_HOST_FP_REGS 7
+#define CODEGEN_HOST_FP_REGS 15
 
 #define CODEGEN_BACKEND_PINS_CYCLES 1
 #define REG_CYCLES                  REG_R14

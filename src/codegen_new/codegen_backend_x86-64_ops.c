@@ -121,14 +121,26 @@ host_x86_ADD32_REG_IMM(codeblock_t *block, int dst_reg, uint32_t imm_data)
         codegen_addlong(block, imm_data);
     }
 }
+static inline void
+emit_alu64_reg_imm(codeblock_t *block, uint8_t rm_op, int dst_reg, uint64_t imm_data, const char *name)
+{
+    int64_t signed_imm = (int64_t) imm_data;
+
+    if (signed_imm >= -128 && signed_imm <= 127) {
+        codegen_alloc_bytes(block, 4);
+        codegen_addbyte4(block, rex_byte(1, 0, 0, dst_reg), 0x83, 0xc0 | rm_op | (dst_reg & 7), imm_data & 0xff);
+    } else if (signed_imm == (int32_t) imm_data) {
+        codegen_alloc_bytes(block, 7);
+        codegen_addbyte3(block, rex_byte(1, 0, 0, dst_reg), 0x81, 0xc0 | rm_op | (dst_reg & 7));
+        codegen_addlong(block, (uint32_t) imm_data);
+    } else {
+        fatal("%s !is_imm32 %016" PRIx64 "\n", name, imm_data);
+    }
+}
 void
 host_x86_ADD64_REG_IMM(codeblock_t *block, int dst_reg, uint64_t imm_data)
 {
-    if (is_imm8(imm_data)) {
-        codegen_alloc_bytes(block, 4);
-        codegen_addbyte4(block, rex_byte(1, 0, 0, dst_reg), 0x83, 0xc0 | RM_OP_ADD | (dst_reg & 7), imm_data & 0xff); /*ADD dst_reg, imm_data*/
-    } else
-        fatal("ADD64_REG_IMM !is_imm8 %016" PRIx64 "\n", imm_data);
+    emit_alu64_reg_imm(block, RM_OP_ADD, dst_reg, imm_data, "ADD64_REG_IMM"); /*ADD dst_reg, imm_data*/
 }
 void
 host_x86_ADD8_REG_REG(codeblock_t *block, int dst_reg, int src_reg)
@@ -1802,11 +1814,7 @@ host_x86_SUB32_REG_IMM(codeblock_t *block, int dst_reg, uint32_t imm_data)
 void
 host_x86_SUB64_REG_IMM(codeblock_t *block, int dst_reg, uint64_t imm_data)
 {
-    if (is_imm8(imm_data)) {
-        codegen_alloc_bytes(block, 4);
-        codegen_addbyte4(block, rex_byte(1, 0, 0, dst_reg), 0x83, 0xc0 | RM_OP_SUB | (dst_reg & 7), imm_data & 0xff); /*SUB dst_reg, imm_data*/
-    } else
-        fatal("SUB64_REG_IMM !is_imm8 %016" PRIx64 "\n", imm_data);
+    emit_alu64_reg_imm(block, RM_OP_SUB, dst_reg, imm_data, "SUB64_REG_IMM"); /*SUB dst_reg, imm_data*/
 }
 void
 host_x86_SUB8_REG_REG(codeblock_t *block, int dst_reg, int src_reg)

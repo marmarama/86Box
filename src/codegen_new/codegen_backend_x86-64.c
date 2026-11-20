@@ -64,37 +64,47 @@ host_reg_def_t codegen_host_reg_list[CODEGEN_HOST_REGS] = {
 };
 
 /* The Windows x64 frame: 0x58 bytes of block temporaries (including IREG_temp0..6
-   and IREG_temp0d..1d), then XMM6 and XMM7 as the caller left them. 0x78 keeps
-   RSP 16-byte aligned after the eight pushes and the return address. */
-#define CODEGEN_WIN64_FRAME 0x78
+   and IREG_temp0d..1d), then XMM6-XMM15 (10 * 16 = 0xa0) as the caller left
+   them. 0xf8 keeps RSP 16-byte aligned after the eight pushes and return addr. */
+#define CODEGEN_WIN64_FRAME 0xf8
 #define CODEGEN_XMM6_SAVE   0x58
-#define CODEGEN_XMM7_SAVE   0x68
 
 host_reg_def_t codegen_host_fp_reg_list[CODEGEN_HOST_FP_REGS] = {
-    /* XMM1-XMM7 are explicitly saved/restored by slow-path memory helpers around
-       C calls (and Win64 already preserves XMM6-XMM7 by ABI), so none are
-       volatile across UOP_TYPE_ORDER_BARRIERs; UOP_TYPE_BARRIER calls
+    /* XMM1-XMM15 (XMM1-XMM5 on Win64; XMM1-XMM15 on SysV) are explicitly
+       saved/restored by slow-path memory helpers around C calls, and Win64
+       preserves XMM6-XMM15 by ABI, so none are volatile across
+       UOP_TYPE_ORDER_BARRIERs; UOP_TYPE_BARRIER calls
        codegen_reg_flush_invalidate() before invoking C helpers. */
-    { REG_XMM6, 0 },
-    { REG_XMM7, 0 },
-    { REG_XMM1, 0 },
-    { REG_XMM2, 0 },
-    { REG_XMM3, 0 },
-    { REG_XMM4, 0 },
-    { REG_XMM5, 0 }
+    { REG_XMM6,  0 },
+    { REG_XMM7,  0 },
+    { REG_XMM8,  0 },
+    { REG_XMM9,  0 },
+    { REG_XMM10, 0 },
+    { REG_XMM11, 0 },
+    { REG_XMM12, 0 },
+    { REG_XMM13, 0 },
+    { REG_XMM14, 0 },
+    { REG_XMM15, 0 },
+    { REG_XMM1,  0 },
+    { REG_XMM2,  0 },
+    { REG_XMM3,  0 },
+    { REG_XMM4,  0 },
+    { REG_XMM5,  0 }
 };
 
 /* Slowpath C-call frame inside build_load_routine/build_store_routine:
-   4 PUSHes (32 B) leave RSP%16 == 8; SUB RSP, 0x78 gives RSP%16 == 0.
-   SysV: 7 caller-saved XMM1..XMM7 at [RSP + 0x00..0x60].
-   Win64: 0x20 shadow space + 5 caller-saved XMM1..XMM5 at [RSP + 0x20..0x60]. */
-#define SLOWPATH_CALL_FRAME 0x78
+   4 PUSHes (32 B) leave RSP%16 == 8; subtracting SLOWPATH_CALL_FRAME
+   (n*16 + 8) gives RSP%16 == 0.
+   SysV: 15 caller-saved XMM1..XMM15 at [RSP + 0x00..0xe0] (frame = 0xf8).
+   Win64: 0x20 shadow space + 5 caller-saved XMM1..XMM5 at [RSP + 0x20..0x60] (frame = 0x78). */
 #if _WIN64
-#    define SLOWPATH_XMM_COUNT 5
-#    define SLOWPATH_XMM_BASE  0x20
+#    define SLOWPATH_CALL_FRAME 0x78
+#    define SLOWPATH_XMM_COUNT  5
+#    define SLOWPATH_XMM_BASE   0x20
 #else
-#    define SLOWPATH_XMM_COUNT 7
-#    define SLOWPATH_XMM_BASE  0x00
+#    define SLOWPATH_CALL_FRAME 0xf8
+#    define SLOWPATH_XMM_COUNT  15
+#    define SLOWPATH_XMM_BASE   0x00
 #endif
 
 static void
@@ -371,10 +381,10 @@ codegen_backend_init(void)
     int cycles_disp = (int) offsetof(cpu_state_t, _cycles) - 128;
     host_x86_MOV32_BASE_OFFSET_REG(block, REG_RBP, cycles_disp, REG_R14);
 #ifdef _WIN64
-    /* XMM6 and XMM7 hold guest FPU/MMX values in blocks, and the Windows
-       x64 ABI makes them the caller's: put back what the caller had. */
-    host_x86_MOVDQU_XREG_BASE_OFFSET(block, REG_XMM6, REG_RSP, CODEGEN_XMM6_SAVE);
-    host_x86_MOVDQU_XREG_BASE_OFFSET(block, REG_XMM7, REG_RSP, CODEGEN_XMM7_SAVE);
+    /* XMM6-XMM15 hold guest FPU/MMX values in blocks, and the Windows
+       x64 ABI makes them callee-saved: put back what the caller had. */
+    for (int i = 0; i < 10; i++)
+        host_x86_MOVDQU_XREG_BASE_OFFSET(block, REG_XMM6 + i, REG_RSP, CODEGEN_XMM6_SAVE + i * 16);
     host_x86_ADD64_REG_IMM(block, REG_RSP, CODEGEN_WIN64_FRAME);
 #else
     host_x86_ADD64_REG_IMM(block, REG_RSP, 0x68);
@@ -630,8 +640,8 @@ codegen_backend_init(void)
     host_x86_PUSH(block, REG_R15);
 #ifdef _WIN64
     host_x86_SUB64_REG_IMM(block, REG_RSP, CODEGEN_WIN64_FRAME);
-    host_x86_MOVDQU_BASE_OFFSET_XREG(block, REG_RSP, CODEGEN_XMM6_SAVE, REG_XMM6);
-    host_x86_MOVDQU_BASE_OFFSET_XREG(block, REG_RSP, CODEGEN_XMM7_SAVE, REG_XMM7);
+    for (int i = 0; i < 10; i++)
+        host_x86_MOVDQU_BASE_OFFSET_XREG(block, REG_RSP, CODEGEN_XMM6_SAVE + i * 16, REG_XMM6 + i);
 #else
     host_x86_SUB64_REG_IMM(block, REG_RSP, 0x68);
 #endif
