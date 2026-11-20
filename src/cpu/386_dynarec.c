@@ -1033,10 +1033,7 @@ exec386_dynarec_dyn(void)
         cpu_cur_status &= ~CPU_STATUS_FPU_PC24;
     else
         cpu_cur_status |= CPU_STATUS_FPU_PC24;
-    if ((cpu_state.npxc >> 10) & 3)
-        cpu_cur_status |= CPU_STATUS_FPU_RC_NZ;
-    else
-        cpu_cur_status &= ~CPU_STATUS_FPU_RC_NZ;
+    cpu_cur_status = (cpu_cur_status & ~CPU_STATUS_FPU_RC_MASK) | (((cpu_state.npxc >> 10) & 3) << CPU_STATUS_FPU_RC_SHIFT);
 
 #    ifdef USE_NEW_DYNAREC
     if (!cpu_state.abrt)

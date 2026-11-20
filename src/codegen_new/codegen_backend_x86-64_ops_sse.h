@@ -13,6 +13,8 @@ void host_x86_CVTPS2DQ_XREG_XREG(codeblock_t *block, int dst_reg, int src_reg);
 
 void host_x86_CVTSD2SI_REG_XREG(codeblock_t *block, int dst_reg, int src_reg);
 void host_x86_CVTSD2SI_REG64_XREG(codeblock_t *block, int dst_reg, int src_reg);
+void host_x86_CVTTSD2SI_REG_XREG(codeblock_t *block, int dst_reg, int src_reg);
+void host_x86_CVTTSD2SI_REG64_XREG(codeblock_t *block, int dst_reg, int src_reg);
 void host_x86_CVTSD2SS_XREG_XREG(codeblock_t *block, int dst_reg, int src_reg);
 void host_x86_CVTSI2SD_XREG_REG(codeblock_t *block, int dst_reg, int src_reg);
 void host_x86_CVTSI2SD_XREG_REG64(codeblock_t *block, int dst_reg, int src_reg);
@@ -123,3 +125,5 @@ void host_x86_SUBPS_XREG_XREG(codeblock_t *block, int dst_reg, int src_reg);
 void host_x86_SUBSD_XREG_XREG(codeblock_t *block, int dst_reg, int src_reg);
 
 void host_x86_UNPCKLPS_XREG_XREG(codeblock_t *block, int dst_reg, int src_reg);
+
+void host_x86_ROUNDSD_XREG_XREG(codeblock_t *block, int dst_reg, int src_reg, int mode);

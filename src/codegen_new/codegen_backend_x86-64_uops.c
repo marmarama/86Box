@@ -1744,6 +1744,45 @@ codegen_MOV_DOUBLE_INT(codeblock_t *block, uop_t *uop)
 #    endif
     return 0;
 }
+static void
+emit_cvtsd_to_int(codeblock_t *block, int is_64, int dst_gpr, int src_xmm)
+{
+    int rc = (cpu_state.npxc >> 10) & 3;
+
+    switch (rc) {
+        case 0: /* Nearest (host MXCSR default) */
+            if (is_64)
+                host_x86_CVTSD2SI_REG64_XREG(block, dst_gpr, src_xmm);
+            else
+                host_x86_CVTSD2SI_REG_XREG(block, dst_gpr, src_xmm);
+            break;
+        case 3: /* Chop / toward zero */
+            if (is_64)
+                host_x86_CVTTSD2SI_REG64_XREG(block, dst_gpr, src_xmm);
+            else
+                host_x86_CVTTSD2SI_REG_XREG(block, dst_gpr, src_xmm);
+            break;
+        case 1: /* Down (-inf) */
+        case 2: /* Up (+inf) */
+            if (host_has_sse41) {
+                /* Bit 3 suppresses PE so host MXCSR stays completely unmutated. */
+                host_x86_ROUNDSD_XREG_XREG(block, REG_XMM_TEMP, src_xmm, rc | 0x08);
+                if (is_64)
+                    host_x86_CVTTSD2SI_REG64_XREG(block, dst_gpr, REG_XMM_TEMP);
+                else
+                    host_x86_CVTTSD2SI_REG_XREG(block, dst_gpr, REG_XMM_TEMP);
+            } else {
+                host_x86_LDMXCSR(block, &cpu_state.new_fp_control);
+                if (is_64)
+                    host_x86_CVTSD2SI_REG64_XREG(block, dst_gpr, src_xmm);
+                else
+                    host_x86_CVTSD2SI_REG_XREG(block, dst_gpr, src_xmm);
+                host_x86_LDMXCSR(block, &cpu_state.old_fp_control);
+            }
+            break;
+    }
+}
+
 static int
 codegen_MOV_INT_DOUBLE(codeblock_t *block, uop_t *uop)
 {
@@ -1753,9 +1792,7 @@ codegen_MOV_INT_DOUBLE(codeblock_t *block, uop_t *uop)
     int src_size  = IREG_GET_SIZE(uop->src_reg_a_real);
 
     if (REG_IS_L(dest_size) && REG_IS_D(src_size)) {
-        host_x86_LDMXCSR(block, &cpu_state.new_fp_control);
-        host_x86_CVTSD2SI_REG_XREG(block, dest_reg, src_reg);
-        host_x86_LDMXCSR(block, &cpu_state.old_fp_control);
+        emit_cvtsd_to_int(block, 0, dest_reg, src_reg);
     }
 #    ifdef RECOMPILER_DEBUG
     else
@@ -1782,9 +1819,7 @@ codegen_MOV_INT_DOUBLE_64(codeblock_t *block, uop_t *uop)
         host_x86_TEST8_REG(block, tag_reg, tag_reg);
         branch_offset = host_x86_JS_long(block);
 
-        host_x86_LDMXCSR(block, &cpu_state.new_fp_control);
-        host_x86_CVTSD2SI_REG64_XREG(block, REG_RCX, src_reg);
-        host_x86_LDMXCSR(block, &cpu_state.old_fp_control);
+        emit_cvtsd_to_int(block, 1, REG_RCX, src_reg);
         host_x86_MOVQ_XREG_REG(block, dest_reg, REG_RCX);
 
         *branch_offset = (uint32_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) branch_offset) - 4;

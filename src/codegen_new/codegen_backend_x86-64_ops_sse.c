@@ -33,6 +33,14 @@ emit_sse_pfx_2op(codeblock_t *block, uint8_t prefix, uint8_t opcode, int dst_reg
 }
 
 static inline void
+emit_sse_pfx_w_2op(codeblock_t *block, uint8_t prefix, uint8_t opcode, int dst_reg, int src_reg)
+{
+    codegen_alloc_bytes(block, 5);
+    codegen_addbyte2(block, prefix, rex_byte(1, dst_reg, 0, src_reg));
+    codegen_addbyte3(block, 0x0f, opcode, 0xc0 | (src_reg & 7) | ((dst_reg & 7) << 3));
+}
+
+static inline void
 emit_sse_pfx_2op_imm(codeblock_t *block, uint8_t prefix, uint8_t opcode, int dst_reg, int src_reg, uint8_t imm)
 {
     emit_sse_pfx_2op(block, prefix, opcode, dst_reg, src_reg);
@@ -188,9 +196,17 @@ host_x86_CVTSD2SI_REG_XREG(codeblock_t *block, int dst_reg, int src_reg)
 void
 host_x86_CVTSD2SI_REG64_XREG(codeblock_t *block, int dst_reg, int src_reg)
 {
-    codegen_alloc_bytes(block, 5);
-    codegen_addbyte2(block, 0xf2, rex_byte(1, dst_reg, 0, src_reg)); /*CVTSD2SI dst_reg, src_reg*/
-    codegen_addbyte3(block, 0x0f, 0x2d, 0xc0 | (src_reg & 7) | ((dst_reg & 7) << 3));
+    emit_sse_pfx_w_2op(block, 0xf2, 0x2d, dst_reg, src_reg); /*CVTSD2SI dst_reg, src_reg*/
+}
+void
+host_x86_CVTTSD2SI_REG_XREG(codeblock_t *block, int dst_reg, int src_reg)
+{
+    emit_sse_pfx_2op(block, 0xf2, 0x2c, dst_reg, src_reg); /*CVTTSD2SI dst_reg, src_reg*/
+}
+void
+host_x86_CVTTSD2SI_REG64_XREG(codeblock_t *block, int dst_reg, int src_reg)
+{
+    emit_sse_pfx_w_2op(block, 0xf2, 0x2c, dst_reg, src_reg); /*CVTTSD2SI dst_reg, src_reg*/
 }
 void
 host_x86_CVTSD2SS_XREG_XREG(codeblock_t *block, int dst_reg, int src_reg)
@@ -211,9 +227,7 @@ host_x86_CVTSI2SS_XREG_REG(codeblock_t *block, int dst_reg, int src_reg)
 void
 host_x86_CVTSI2SD_XREG_REG64(codeblock_t *block, int dst_reg, int src_reg)
 {
-    codegen_alloc_bytes(block, 5);
-    codegen_addbyte2(block, 0xf2, rex_byte(1, dst_reg, 0, src_reg)); /*CVTSI2SD dst_reg, src_reg*/
-    codegen_addbyte3(block, 0x0f, 0x2a, 0xc0 | (src_reg & 7) | ((dst_reg & 7) << 3));
+    emit_sse_pfx_w_2op(block, 0xf2, 0x2a, dst_reg, src_reg); /*CVTSI2SD dst_reg, src_reg*/
 }
 
 void
@@ -712,6 +726,17 @@ void
 host_x86_UNPCKLPS_XREG_XREG(codeblock_t *block, int dst_reg, int src_reg)
 {
     emit_sse_2op(block, 0x14, dst_reg, src_reg);
+}
+
+void
+host_x86_ROUNDSD_XREG_XREG(codeblock_t *block, int dst_reg, int src_reg, int mode)
+{
+    codegen_alloc_bytes(block, 7);
+    codegen_addbyte(block, 0x66);
+    if ((dst_reg & 8) || (src_reg & 8))
+        codegen_addbyte(block, rex_byte(0, dst_reg, 0, src_reg));
+    codegen_addbyte3(block, 0x0f, 0x3a, 0x0b);
+    codegen_addbyte2(block, 0xc0 | (src_reg & 7) | ((dst_reg & 7) << 3), mode & 0xff); /*ROUNDSD dst_reg, src_reg, mode*/
 }
 
 /* MOVDQU [base_reg + offset], src_reg: a whole XMM register to the stack

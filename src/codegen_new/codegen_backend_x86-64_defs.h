@@ -84,6 +84,7 @@ extern void *codegen_gpf_rout;
 extern void *codegen_exit_rout;
 extern void *codegen_event_stub;
 extern void *codegen_dispatch_stub;
+extern int   host_has_sse41;
 
 enum {
     COLD_FLUSH_GPR8 = 0,

@@ -469,10 +469,11 @@ typedef struct {
    ADD/SUB/MUL/DIV/SQRT results to single, so such blocks are compiled
    with a round-to-single uop after each of those ops. */
 #define CPU_STATUS_FPU_PC24 (1 << 5)
-/* x87 rounding control != nearest: only FADD's memory-operand form
-   bails to the interpreter for it (other FPU arith always rounds to
-   nearest); such blocks must not be reused once RC changes. */
-#define CPU_STATUS_FPU_RC_NZ (1 << 6)
+/* x87 rounding control ((npxc >> 10) & 3): encoded in bits 6-7 of cpu_cur_status
+   so FIST/FISTP (and FADD/FIADD memory-form fallbacks) reflect the active mode
+   without cross-mode block reuse. */
+#define CPU_STATUS_FPU_RC_SHIFT 6
+#define CPU_STATUS_FPU_RC_MASK  (3 << CPU_STATUS_FPU_RC_SHIFT)
 #ifdef USE_NEW_DYNAREC
 #    define CPU_STATUS_FLAGS 0xff
 #else

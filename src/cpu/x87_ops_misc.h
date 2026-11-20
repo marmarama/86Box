@@ -79,11 +79,10 @@ opFINIT(UNUSED(uint32_t fetchdat))
     FP_ENTER();
     cpu_state.pc++;
 #ifdef FPU_8087
-    cpu_state.npxc = 0x3FF;
+    x87_set_control_word(0x3FF);
 #else
-    cpu_state.npxc                                = 0x37F;
+    x87_set_control_word(0x37F);
 #endif
-    codegen_set_rounding_mode(X87_ROUNDING_NEAREST);
 #ifdef FPU_8087
     cpu_state.npxs &= 0x4700;
 #else

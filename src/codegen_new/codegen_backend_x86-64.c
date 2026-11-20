@@ -47,6 +47,7 @@ void *codegen_mem_store_double;
 void *codegen_gpf_rout;
 void *codegen_exit_rout;
 void *codegen_event_stub;
+int   host_has_sse41 = 0;
 
 host_reg_def_t codegen_host_reg_list[CODEGEN_HOST_REGS] = {
     /* Note: while EAX, EDX, R10, R11 are normally volatile registers under x86
@@ -668,6 +669,16 @@ codegen_backend_init(void)
         "stmxcsr %0\n"
         : "=m"(cpu_state.old_fp_control));
     cpu_state.trunc_fp_control = cpu_state.old_fp_control | 0x6000;
+
+#ifdef _MSC_VER
+    int info[4];
+    __cpuid(info, 1);
+    host_has_sse41 = (info[2] & (1 << 19)) != 0;
+#else
+    uint32_t eax, ebx, ecx, edx;
+    __asm__("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx) : "a"(1), "c"(0));
+    host_has_sse41 = (ecx & (1u << 19)) != 0;
+#endif
 }
 
 void
