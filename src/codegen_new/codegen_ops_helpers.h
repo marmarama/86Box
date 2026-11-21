@@ -99,7 +99,7 @@ rebuild_c(ir_data_t *ir)
         }
     }
 
-    uop_CALL_FUNC(ir, jit_flags_rebuild_c);
+    uop_REBUILD_C(ir, jit_flags_rebuild_c);
 }
 
 static inline int

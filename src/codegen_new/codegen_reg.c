@@ -906,6 +906,27 @@ codegen_reg_flush(UNUSED(ir_data_t *ir), codeblock_t *block)
     codegen_reg_flush_set(&host_fp_reg_set, block);
 }
 
+void
+codegen_reg_flush_flags(codeblock_t *block)
+{
+    for (int c = 0; c < host_reg_set.nr_regs; c++) {
+        if (ir_reg_is_invalid(host_reg_set.regs[c]))
+            continue;
+        int ir_reg = IREG_GET_REG(host_reg_set.regs[c].reg);
+        if (ir_reg == IREG_flags_op || ir_reg == IREG_flags_res ||
+            ir_reg == IREG_flags_op1 || ir_reg == IREG_flags_op2 ||
+            ir_reg == IREG_flagsx) {
+            if (host_reg_set.dirty[c])
+                codegen_reg_writeback(&host_reg_set, block, c, 0);
+            if (ir_reg == IREG_flagsx) {
+                host_reg_set.regs[c]      = invalid_ir_reg;
+                host_reg_set.dirty[c]     = 0;
+                host_reg_set.last_used[c] = 0;
+            }
+        }
+    }
+}
+
 #if defined __amd64__ || defined _M_X64
 static void
 codegen_reg_flush_set_mem_cold(host_reg_set_t *reg_set, codeblock_t *block, int dest_ir_reg)

@@ -20,6 +20,7 @@
 #    include "x86.h"
 #    include "x86seg_common.h"
 #    include "x86seg.h"
+#    include "x86_flags.h"
 
 #    if defined(__linux__) || defined(__APPLE__)
 #        include <sys/mman.h>
@@ -47,6 +48,7 @@ void *codegen_mem_store_double;
 void *codegen_gpf_rout;
 void *codegen_exit_rout;
 void *codegen_event_stub;
+void *codegen_rebuild_c_rout;
 int   host_has_sse41 = 0;
 
 host_reg_def_t codegen_host_reg_list[CODEGEN_HOST_REGS] = {
@@ -339,6 +341,112 @@ build_loadstore_routines(codeblock_t *block)
     build_store_routine(block, 4, 1);
     codegen_mem_store_double = &block_write_data[block_pos];
     build_store_routine(block, 8, 1);
+}
+
+static void
+jit_flags_rebuild_c_helper(void)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        flags_rebuild_c();
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+    } else {
+        flags_rebuild_c();
+    }
+}
+
+/* Shared CF materialization routine called directly from JIT blocks (RSP%16 == 8 on entry).
+   Preserves all allocatable host GPRs (EAX, EBX, EDX, R10, R11, R13, R15, R14, RBP, R12)
+   and all XMM registers; clobbers only scratch ECX, ESI, EDI (and falls back via
+   emit_slowpath_call_enter/leave for rare SHL/SHR/SAR/ROL/ROR/ADC/SBC/SHRD/IMUL). */
+static void
+build_rebuild_c_routine(codeblock_t *block)
+{
+    _Static_assert(FLAGS_UNKNOWN == 0, "FLAGS_UNKNOWN must be 0");
+    _Static_assert(FLAGS_ZN8 == 1 && FLAGS_ZN32 == 3, "FLAGS_ZN* range changed");
+    _Static_assert(FLAGS_ADD8 == 4 && FLAGS_ADD16 == 5 && FLAGS_ADD32 == 6, "FLAGS_ADD* range changed");
+    _Static_assert(FLAGS_SUB8 == 7 && FLAGS_SUB32 == 9, "FLAGS_SUB* range changed");
+    _Static_assert(FLAGS_DEC32 - FLAGS_INC8 == 5, "FLAGS_INC/DEC range changed");
+
+    int flags_op_disp  = (int) offsetof(cpu_state_t, flags_op) - 128;
+    int flags_res_disp = (int) offsetof(cpu_state_t, flags_res) - 128;
+    int flags_op1_disp = (int) offsetof(cpu_state_t, flags_op1) - 128;
+    int flags_op2_disp = (int) offsetof(cpu_state_t, flags_op2) - 128;
+    int flags_disp     = (int) offsetof(cpu_state_t, flags) - 128;
+
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_ECX, REG_RBP, flags_op_disp);
+    host_x86_TEST32_REG(block, REG_ECX, REG_ECX);
+    uint32_t *done_unk = host_x86_JZ_long(block);
+
+    host_x86_LEA_REG_IMM(block, REG_ESI, REG_ECX, (uint32_t) -FLAGS_INC8);
+    host_x86_CMP32_REG_IMM(block, REG_ESI, FLAGS_DEC32 - FLAGS_INC8);
+    uint32_t *done_incdec = host_x86_JBE_long(block);
+
+    host_x86_CMP32_REG_IMM(block, REG_ECX, FLAGS_ZN32);
+    uint32_t *to_clear_cf = host_x86_JBE_long(block);
+
+    host_x86_LEA_REG_IMM(block, REG_ESI, REG_ECX, (uint32_t) -FLAGS_SUB8);
+    host_x86_CMP32_REG_IMM(block, REG_ESI, FLAGS_SUB32 - FLAGS_SUB8);
+    uint32_t *to_sub_cf = host_x86_JBE_long(block);
+
+    host_x86_CMP32_REG_IMM(block, REG_ECX, FLAGS_ADD32);
+    uint32_t *to_slow = host_x86_JNBE_long(block);
+
+    /* Remaining: FLAGS_ADD8 (4), FLAGS_ADD16 (5), FLAGS_ADD32 (6). */
+    uint32_t *to_add32 = host_x86_JZ_long(block);
+
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_EDI, REG_RBP, flags_op1_disp);
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_ESI, REG_RBP, flags_op2_disp);
+    host_x86_ADD32_REG_REG(block, REG_EDI, REG_ESI);
+    host_x86_CMP32_REG_IMM(block, REG_ECX, FLAGS_ADD8);
+    uint32_t *to_add8 = host_x86_JZ_long(block);
+    host_x86_SHR32_IMM(block, REG_EDI, 16);
+    uint32_t *from_add16 = host_x86_JMP_long(block);
+
+    patch_disp32(to_add8, &block_write_data[block_pos]);
+    host_x86_SHR32_IMM(block, REG_EDI, 8);
+    patch_disp32(from_add16, &block_write_data[block_pos]);
+    host_x86_MOV32_REG_REG(block, REG_ECX, REG_EDI);
+    host_x86_AND32_REG_IMM(block, REG_ECX, 1);
+    uint32_t *to_update_cf_from_add = host_x86_JMP_long(block);
+
+    patch_disp32(to_add32, &block_write_data[block_pos]);
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_EDI, REG_RBP, flags_res_disp);
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_ESI, REG_RBP, flags_op1_disp);
+    host_x86_CMP32_REG_REG(block, REG_EDI, REG_ESI);
+    host_x86_SETcc_REG(block, COND_B, REG_ECX);
+    host_x86_MOVZX_REG_32_8(block, REG_ECX, REG_ECX);
+    uint32_t *to_update_cf_from_add32 = host_x86_JMP_long(block);
+
+    patch_disp32(to_sub_cf, &block_write_data[block_pos]);
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_EDI, REG_RBP, flags_op1_disp);
+    host_x86_MOV32_REG_BASE_OFFSET(block, REG_ESI, REG_RBP, flags_op2_disp);
+    host_x86_CMP32_REG_REG(block, REG_EDI, REG_ESI);
+    host_x86_SETcc_REG(block, COND_B, REG_ECX);
+    host_x86_MOVZX_REG_32_8(block, REG_ECX, REG_ECX);
+
+    patch_disp32(to_update_cf_from_add, &block_write_data[block_pos]);
+    patch_disp32(to_update_cf_from_add32, &block_write_data[block_pos]);
+    host_x86_MOV16_REG_BASE_OFFSET(block, REG_SI, REG_RBP, flags_disp);
+    host_x86_AND16_REG_IMM(block, REG_SI, (uint16_t) ~C_FLAG);
+    host_x86_OR16_REG_REG(block, REG_SI, REG_CX);
+    host_x86_MOV16_ABS_REG(block, &cpu_state.flags, REG_SI);
+    host_x86_RET(block);
+
+    patch_disp32(to_clear_cf, &block_write_data[block_pos]);
+    host_x86_MOV16_REG_BASE_OFFSET(block, REG_SI, REG_RBP, flags_disp);
+    host_x86_AND16_REG_IMM(block, REG_SI, (uint16_t) ~C_FLAG);
+    host_x86_MOV16_ABS_REG(block, &cpu_state.flags, REG_SI);
+
+    patch_disp32(done_unk, &block_write_data[block_pos]);
+    patch_disp32(done_incdec, &block_write_data[block_pos]);
+    host_x86_RET(block);
+
+    patch_disp32(to_slow, &block_write_data[block_pos]);
+    emit_slowpath_call_enter(block);
+    host_x86_CALL(block, (void *) jit_flags_rebuild_c_helper);
+    emit_slowpath_call_leave(block);
+    host_x86_RET(block);
 }
 
 void
@@ -655,12 +763,17 @@ codegen_backend_init(void)
     host_x86_JMP_REG(block, REG_RDI);
 #endif
 
+    codegen_alloc_bytes(block, 512);
+    codegen_rebuild_c_rout = &block_write_data[block_pos];
+    build_rebuild_c_routine(block);
+
     if (codegen_dump_perf_map_active()) {
         codegen_dump_perf_map_symbol((uintptr_t) codegen_gpf_rout, (uintptr_t) codegen_exit_rout - (uintptr_t) codegen_gpf_rout, "jit_gpf_rout");
         codegen_dump_perf_map_symbol((uintptr_t) codegen_exit_rout, (uintptr_t) codegen_event_stub - (uintptr_t) codegen_exit_rout, "jit_exit_rout");
         codegen_dump_perf_map_symbol((uintptr_t) codegen_event_stub, (uintptr_t) codegen_dispatch_stub - (uintptr_t) codegen_event_stub, "jit_event_stub");
         codegen_dump_perf_map_symbol((uintptr_t) codegen_dispatch_stub, (uintptr_t) codegen_enter_jit - (uintptr_t) codegen_dispatch_stub, "jit_dispatch_stub");
-        codegen_dump_perf_map_symbol((uintptr_t) codegen_enter_jit, (uintptr_t) &block_write_data[block_pos] - (uintptr_t) codegen_enter_jit, "jit_enter_trampoline");
+        codegen_dump_perf_map_symbol((uintptr_t) codegen_enter_jit, (uintptr_t) codegen_rebuild_c_rout - (uintptr_t) codegen_enter_jit, "jit_enter_trampoline");
+        codegen_dump_perf_map_symbol((uintptr_t) codegen_rebuild_c_rout, (uintptr_t) &block_write_data[block_pos] - (uintptr_t) codegen_rebuild_c_rout, "jit_rebuild_c_rout");
     }
 
     block_write_data = NULL;

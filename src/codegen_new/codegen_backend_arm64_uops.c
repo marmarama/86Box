@@ -2956,6 +2956,7 @@ codegen_CMOV(codeblock_t *block, uop_t *uop)
 
 const uOpFn uop_handlers[UOP_MAX] = {
     [UOP_CALL_FUNC & UOP_MASK] = codegen_CALL_FUNC,
+    [UOP_REBUILD_C & UOP_MASK] = codegen_CALL_FUNC,
     [UOP_CMOV & UOP_MASK]      = codegen_CMOV,
     [UOP_SETCC & UOP_MASK]     = codegen_SETCC,
     [UOP_CALL_FUNC_RESULT &

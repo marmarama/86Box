@@ -135,8 +135,15 @@ flags_op_live_reads(uint32_t fop)
     }
 }
 
+static int
+cf_preserve_op(uint32_t fop)
+{
+    return fop == FLAGS_UNKNOWN ||
+           (fop >= FLAGS_INC8 && fop <= FLAGS_DEC32);
+}
+
 static inline void
-liveness_mark_src_reg(ir_reg_t reg, int *flags_ir_live, int *oldpc_live, int *pc_live)
+liveness_mark_src_reg(ir_reg_t reg, int *flags_ir_live, int *oldpc_live, int *pc_live, int *cf_live)
 {
     if (reg.reg == IREG_INVALID)
         return;
@@ -150,6 +157,8 @@ liveness_mark_src_reg(ir_reg_t reg, int *flags_ir_live, int *oldpc_live, int *pc
         *flags_ir_live |= FLAG_LIVE_OP1;
     else if (sreg == IREG_flags_op2)
         *flags_ir_live |= FLAG_LIVE_OP2;
+    else if (sreg == IREG_flagsx)
+        *cf_live = 1;
     else if (sreg == IREG_oldpc)
         *oldpc_live = 1;
     else if (sreg == IREG_pc)
@@ -163,6 +172,7 @@ codegen_ir_optimize_liveness(ir_data_t *ir)
     int flags_ir_live      = 0;
     int pc_live            = 1;
     int oldpc_live         = 0;
+    int cf_live            = 1;
 
     for (int c = ir->wr_pos - 1; c >= 0; c--) {
         uop_t *uop = &ir->uops[c];
@@ -170,12 +180,22 @@ codegen_ir_optimize_liveness(ir_data_t *ir)
         if ((uop->type & UOP_MASK) == UOP_INVALID)
             continue;
 
+        if ((uop->type & UOP_MASK) == (UOP_REBUILD_C & UOP_MASK)) {
+            if (!cf_live) {
+                invalidate_dead_uop(uop);
+                continue;
+            }
+            flags_barrier_live = FLAGS_ALL_LIVE;
+            continue;
+        }
+
         /* Invalidate liveness optimizations across barriers, branches, and loop boundaries.
            At these points, architectural flags and PC states must be live unless the
            barrier is a fast-path memory access that materializes oldpc in its cold stub
            or a non-faulting control barrier. */
         if (uop->type & (UOP_TYPE_BARRIER | UOP_TYPE_ORDER_BARRIER | UOP_TYPE_JUMP_DEST | UOP_TYPE_JUMP)) {
             flags_barrier_live = FLAGS_ALL_LIVE;
+            cf_live            = 1;
 #if defined __amd64__ || defined _M_X64
             if (!uop_is_mem_access(uop->type) || (uop->type & UOP_TYPE_JUMP_DEST))
                 pc_live = 1;
@@ -195,6 +215,7 @@ codegen_ir_optimize_liveness(ir_data_t *ir)
             (uop->type & UOP_MASK) == (UOP_LOOP_JMP & UOP_MASK)) {
             flags_barrier_live = FLAGS_ALL_LIVE;
             pc_live            = 1;
+            cf_live            = 1;
             continue;
         }
 
@@ -213,8 +234,11 @@ codegen_ir_optimize_liveness(ir_data_t *ir)
                 }
                 flags_ir_live      &= ~FLAG_LIVE_OP;
                 flags_barrier_live &= ~FLAG_LIVE_OP;
-                if ((uop->type & UOP_MASK) == (UOP_MOV_IMM & UOP_MASK))
+                if ((uop->type & UOP_MASK) == (UOP_MOV_IMM & UOP_MASK)) {
                     flags_barrier_live &= flags_op_live_reads(uop->imm_data);
+                    if (!cf_preserve_op(uop->imm_data))
+                        cf_live = 0;
+                }
             } else if (dreg == IREG_flags_res) {
                 if (!(flags_live & FLAG_LIVE_RES) && refcount == 0) {
                     invalidate_dead_uop(uop);
@@ -252,9 +276,9 @@ codegen_ir_optimize_liveness(ir_data_t *ir)
         }
 
         /* Check source registers to mark inputs as live */
-        liveness_mark_src_reg(uop->src_reg_a, &flags_ir_live, &oldpc_live, &pc_live);
-        liveness_mark_src_reg(uop->src_reg_b, &flags_ir_live, &oldpc_live, &pc_live);
-        liveness_mark_src_reg(uop->src_reg_c, &flags_ir_live, &oldpc_live, &pc_live);
+        liveness_mark_src_reg(uop->src_reg_a, &flags_ir_live, &oldpc_live, &pc_live, &cf_live);
+        liveness_mark_src_reg(uop->src_reg_b, &flags_ir_live, &oldpc_live, &pc_live, &cf_live);
+        liveness_mark_src_reg(uop->src_reg_c, &flags_ir_live, &oldpc_live, &pc_live, &cf_live);
     }
 }
 
@@ -1230,6 +1254,13 @@ codegen_ir_compile(ir_data_t *ir, codeblock_t *block)
                 }
             }
 
+            if ((uop->type & UOP_MASK) == (UOP_REBUILD_C & UOP_MASK)) {
+#if defined __amd64__ || defined _M_X64
+                codegen_reg_flush_flags(block);
+#else
+                codegen_reg_flush_invalidate(ir, block);
+#endif
+            } else
 #if defined __amd64__ || defined _M_X64
             if ((uop->type & UOP_TYPE_ORDER_BARRIER) && uop_is_mem_access(uop->type))
                 codegen_reg_flush_mem_cold(ir, block, uop->dest_reg_a);

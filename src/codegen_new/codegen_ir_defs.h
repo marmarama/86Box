@@ -62,6 +62,7 @@ extern int codegen_last_flags_op;
 #define UOP_STORE_P_IMM_16 (UOP_TYPE_PARAMS_IMM | 0x19)
 #define UOP_EXIT_BLOCK     (UOP_TYPE_PARAMS_IMM | 0x1a | UOP_TYPE_BARRIER)
 #define UOP_EXIT_BLOCK_RET (UOP_TYPE_PARAMS_IMM | 0x1b | UOP_TYPE_BARRIER)
+#define UOP_REBUILD_C      (UOP_TYPE_PARAMS_POINTER | UOP_TYPE_ORDER_BARRIER | 0x1e)
 
 #ifdef DEBUG_EXTRA
 /*UOP_LOG_INSTR - log non-recompiled instruction in imm_data*/
@@ -488,7 +489,8 @@ uop_is_non_faulting_barrier(uint32_t uop_type)
     return m == (UOP_NOP_BARRIER & UOP_MASK) ||
            m == (UOP_EXIT_BLOCK & UOP_MASK) ||
            m == (UOP_EXIT_BLOCK_RET & UOP_MASK) ||
-           m == (UOP_LOOP_LABEL & UOP_MASK);
+           m == (UOP_LOOP_LABEL & UOP_MASK) ||
+           m == (UOP_REBUILD_C & UOP_MASK);
 }
 
 static inline void
@@ -502,6 +504,14 @@ uop_mark_barrier_dirty_regs(uint32_t uop_type)
 {
     if (uop_type & (UOP_TYPE_BARRIER | UOP_TYPE_ORDER_BARRIER | UOP_TYPE_JUMP_DEST)) {
         uint32_t m    = uop_type & UOP_MASK;
+        if (m == (UOP_REBUILD_C & UOP_MASK)) {
+            dirty_ir_regs[IREG_flags_op >> 6]  |= (1ULL << (IREG_flags_op & 63));
+            dirty_ir_regs[IREG_flags_res >> 6] |= (1ULL << (IREG_flags_res & 63));
+            dirty_ir_regs[IREG_flags_op1 >> 6] |= (1ULL << (IREG_flags_op1 & 63));
+            dirty_ir_regs[IREG_flags_op2 >> 6] |= (1ULL << (IREG_flags_op2 & 63));
+            dirty_ir_regs[IREG_flagsx >> 6]    |= (1ULL << (IREG_flagsx & 63));
+            return;
+        }
         uint64_t mask[2] = { ~0ULL, ~0ULL };
 
 #if defined __amd64__ || defined _M_X64
@@ -1039,6 +1049,7 @@ uop_EXIT_BLOCK_RET(ir_data_t *ir, int exit_idx)
 #define uop_MOV_INT_DOUBLE_64(ir, dst_reg, src_reg_d, src_reg_q, tag)    uop_gen_reg_dst_src3(UOP_MOV_INT_DOUBLE_64, ir, dst_reg, src_reg_d, src_reg_q, tag)
 
 #define uop_NOP_BARRIER(ir)                                              uop_gen(UOP_NOP_BARRIER, ir)
+#define uop_REBUILD_C(ir, p)                                             uop_gen_pointer(UOP_REBUILD_C, ir, p)
 
 static inline int
 uop_LOOP_LABEL(ir_data_t *ir)

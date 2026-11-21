@@ -2099,6 +2099,7 @@ const uOpFn uop_handlers[UOP_MAX] = {
     [0 ... UOP_MAX - 1] = codegen_UOP_UNIMPLEMENTED,
 
     [UOP_CALL_FUNC & UOP_MASK]         = codegen_CALL_FUNC,
+    [UOP_REBUILD_C & UOP_MASK]         = codegen_CALL_FUNC,
     [UOP_CMOV & UOP_MASK]              = codegen_CMOV,
     [UOP_SETCC & UOP_MASK]             = codegen_SETCC,
     [UOP_CALL_FUNC_RESULT & UOP_MASK]  = codegen_CALL_FUNC_RESULT,

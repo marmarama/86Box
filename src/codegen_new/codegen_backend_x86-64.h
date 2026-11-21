@@ -15,3 +15,5 @@
 #define BLOCK_MAX   0x3c0
 
 #define CODEGEN_BACKEND_HAS_MOV_IMM
+
+extern void *codegen_rebuild_c_rout;

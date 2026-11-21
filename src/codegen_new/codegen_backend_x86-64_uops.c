@@ -271,6 +271,14 @@ codegen_CALL_FUNC(codeblock_t *block, uop_t *uop)
 }
 
 static int
+codegen_REBUILD_C(codeblock_t *block, UNUSED(uop_t *uop))
+{
+    host_x86_CALL(block, codegen_rebuild_c_rout);
+
+    return 0;
+}
+
+static int
 codegen_CALL_FUNC_RESULT(codeblock_t *block, uop_t *uop)
 {
     int dest_reg    = HOST_REG_GET(uop->dest_reg_a_real);
@@ -3441,6 +3449,7 @@ codegen_CMOV(codeblock_t *block, uop_t *uop)
 
 const uOpFn uop_handlers[UOP_MAX] = {
     [UOP_CALL_FUNC & UOP_MASK] = codegen_CALL_FUNC,
+    [UOP_REBUILD_C & UOP_MASK] = codegen_REBUILD_C,
     [UOP_CMOV & UOP_MASK]      = codegen_CMOV,
     [UOP_SETCC & UOP_MASK]     = codegen_SETCC,
     [UOP_CALL_FUNC_RESULT &
