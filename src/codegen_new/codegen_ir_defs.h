@@ -247,6 +247,8 @@ extern int codegen_last_flags_op;
 #define UOP_FSQRT (UOP_TYPE_PARAMS_REGS | 0x89)
 /*UOP_FROUND_S - dest_reg = (double)(float)src_reg_a (x87 precision control = 24)*/
 #define UOP_FROUND_S (UOP_TYPE_PARAMS_REGS | 0x8a)
+/*UOP_FRNDINT - dest_reg = round_to_int(src_reg_a) per npxc RC*/
+#define UOP_FRNDINT (UOP_TYPE_PARAMS_REGS | 0x8b)
 
 /*UOP_MMX_ENTER - must be called before any MMX registers accessed*/
 #define UOP_MMX_ENTER (UOP_TYPE_PARAMS_IMM | 0x90 | UOP_TYPE_BARRIER)
@@ -936,6 +938,7 @@ extern int codegen_fp_enter(void);
 #define uop_FCHS(ir, dst_reg, src_reg)                           uop_gen_reg_dst_src1(UOP_FCHS, ir, dst_reg, src_reg)
 #define uop_FSQRT(ir, dst_reg, src_reg)                          uop_gen_reg_dst_src1(UOP_FSQRT, ir, dst_reg, src_reg)
 #define uop_FROUND_S(ir, dst_reg, src_reg)                       uop_gen_reg_dst_src1(UOP_FROUND_S, ir, dst_reg, src_reg)
+#define uop_FRNDINT(ir, dst_reg, src_reg)                        uop_gen_reg_dst_src1(UOP_FRNDINT, ir, dst_reg, src_reg)
 #define uop_FTST(ir, dst_reg, src_reg)                           uop_gen_reg_dst_src1(UOP_FTST, ir, dst_reg, src_reg)
 
 #if defined __ARM_EABI__ || defined _ARM_ || defined _M_ARM || defined __aarch64__ || defined _M_ARM64 || defined __loongarch_lp64

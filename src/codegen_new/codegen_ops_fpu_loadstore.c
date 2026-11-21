@@ -16,8 +16,73 @@
 #include "codegen_accumulate.h"
 #include "codegen_ir.h"
 #include "codegen_ops.h"
+#include "codegen_ops_fpu_loadstore.h"
 #include "codegen_ops_fpu_arith.h"
 #include "codegen_ops_helpers.h"
+#include "codegen_ops_jit_wrappers.h"
+#include "x87_ops_conv.h"
+
+static double jit_fpu_ld80_tmp;
+
+static inline int
+jit_fld80_body(uint32_t seg_base, uint32_t eaaddr)
+{
+    x87_conv_t test;
+
+    test.eind.ll = readmeml(seg_base, eaaddr);
+    if (cpu_state.abrt)
+        return 1;
+    test.eind.ll |= (uint64_t) readmeml(seg_base, eaaddr + 4) << 32;
+    if (cpu_state.abrt)
+        return 1;
+    test.begin = readmemw(seg_base, eaaddr + 8);
+    if (cpu_state.abrt)
+        return 1;
+    jit_fpu_ld80_tmp = x87_from80(&test);
+    return 0;
+}
+
+static JIT_WRAPPER int
+jit_fld80(uint32_t seg_base, uint32_t eaaddr)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        int ret = jit_fld80_body(seg_base, eaaddr);
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+        return ret;
+    } else {
+        return jit_fld80_body(seg_base, eaaddr);
+    }
+}
+
+static inline int
+jit_fstp80_body(uint32_t seg_base, uint32_t eaaddr)
+{
+    x87_conv_t test;
+
+    x87_to80(cpu_state.ST[cpu_state.TOP & 7], &test);
+    writememl(seg_base, eaaddr, test.eind.ll & 0xffffffff);
+    if (cpu_state.abrt)
+        return 1;
+    writememl(seg_base, eaaddr + 4, test.eind.ll >> 32);
+    if (cpu_state.abrt)
+        return 1;
+    writememw(seg_base, eaaddr + 8, test.begin);
+    return cpu_state.abrt ? 1 : 0;
+}
+
+static JIT_WRAPPER int
+jit_fstp80(uint32_t seg_base, uint32_t eaaddr)
+{
+    if (codegen_profile_active) {
+        uint64_t t0 = host_rdtsc();
+        int ret = jit_fstp80_body(seg_base, eaaddr);
+        codegen_profile_record_helper_tsc(host_rdtsc() - t0);
+        return ret;
+    } else {
+        return jit_fstp80_body(seg_base, eaaddr);
+    }
+}
 
 uint32_t
 ropFLDs(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
@@ -257,4 +322,47 @@ ropFISTPq(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fetchdat, 
     /* On the HP Vectra 486N, the generated store cannot report an empty-stack exception or suppress
        the store/pop. Use the common FISTP m64 handler to preserve exception behavior. */
     return 0;
+}
+
+uint32_t
+ropFLDe(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
+{
+    x86seg *target_seg;
+
+    uop_FP_ENTER(ir);
+    uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
+    op_pc--;
+    target_seg = codegen_generate_ea(ir, op_ea_seg, fetchdat, op_ssegs, &op_pc, op_32, 0);
+    codegen_check_seg_read(block, ir, target_seg);
+    CHECK_SEG_LIMITS(block, ir, target_seg, IREG_eaaddr, 9);
+    uop_LOAD_FUNC_ARG_REG(ir, 0, ireg_seg_base(target_seg));
+    uop_LOAD_FUNC_ARG_REG(ir, 1, IREG_eaaddr);
+    uop_CALL_FUNC_RESULT(ir, IREG_temp0, jit_fld80);
+    uop_CMP_IMM_JZ(ir, IREG_temp0, 1, codegen_exit_rout);
+    uop_MOV_REG_PTR(ir, IREG_ST(-1), &jit_fpu_ld80_tmp);
+    uop_MOV_IMM(ir, IREG_tag(-1), TAG_VALID);
+    fpu_PUSH(block, ir);
+
+    return op_pc + 1;
+}
+
+uint32_t
+ropFSTPe(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
+{
+    x86seg *target_seg;
+
+    uop_FP_ENTER(ir);
+    uop_MOV_IMM(ir, IREG_oldpc, cpu_state.oldpc);
+    op_pc--;
+    target_seg = codegen_generate_ea(ir, op_ea_seg, fetchdat, op_ssegs, &op_pc, op_32, 0);
+    codegen_check_seg_write(block, ir, target_seg);
+    CHECK_SEG_LIMITS(block, ir, target_seg, IREG_eaaddr, 9);
+    uop_LOAD_FUNC_ARG_REG(ir, 0, ireg_seg_base(target_seg));
+    uop_LOAD_FUNC_ARG_REG(ir, 1, IREG_eaaddr);
+    uop_CALL_FUNC_RESULT(ir, IREG_temp0, jit_fstp80);
+    uop_CMP_IMM_JZ(ir, IREG_temp0, 1, codegen_exit_rout);
+    uop_MOV_IMM(ir, IREG_tag(0), TAG_EMPTY);
+    fpu_POP(block, ir);
+
+    return op_pc + 1;
 }

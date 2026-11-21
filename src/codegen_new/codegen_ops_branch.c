@@ -65,6 +65,12 @@ codegen_cond_jump_false(ir_data_t *ir, int cond)
                 case COND_NP: /* PF == 0 -> jump false if PF == 1 */
                     uop_AND_IMM(ir, IREG_temp0_W, IREG_flags, P_FLAG);
                     return uop_CMP_IMM_JNZ_DEST(ir, IREG_temp0_W, 0);
+                case COND_BE: /* (CF | ZF) != 0 -> jump false if (CF | ZF) == 0 */
+                    uop_AND_IMM(ir, IREG_temp0_W, IREG_flags, C_FLAG | Z_FLAG);
+                    return uop_CMP_IMM_JZ_DEST(ir, IREG_temp0_W, 0);
+                case COND_NBE: /* (CF | ZF) == 0 -> jump false if (CF | ZF) != 0 */
+                    uop_AND_IMM(ir, IREG_temp0_W, IREG_flags, C_FLAG | Z_FLAG);
+                    return uop_CMP_IMM_JNZ_DEST(ir, IREG_temp0_W, 0);
                 default:
                     break;
             }
@@ -201,6 +207,44 @@ codegen_cond_jump_false(ir_data_t *ir, int cond)
 
     uop_CALL_FUNC_RESULT(ir, IREG_temp0, jit_cond_helpers[cond & 0xf]);
     return uop_CMP_IMM_JZ_DEST(ir, IREG_temp0, 0);
+}
+
+void
+codegen_eval_cond_to_reg(ir_data_t *ir, int cond, int dst_reg)
+{
+    int cond_base    = cond & 0xf;
+    int fastpath_op1 = -1, fastpath_op2 = -1;
+
+    if (codegen_get_condition_fastpath(cond, &fastpath_op1, &fastpath_op2)) {
+        if (fastpath_op2 == -1) {
+            uop_MOV_IMM(ir, IREG_temp0, 0);
+            fastpath_op2 = IREG_temp0;
+        }
+        uop_SETCC(ir, dst_reg, fastpath_op1, fastpath_op2, cond);
+        return;
+    }
+
+    if (codegen_flags_changed && codegen_last_flags_op == FLAGS_UNKNOWN) {
+        int mask = 0;
+
+        switch (cond_base) {
+            case COND_O:  case COND_NO:  mask = V_FLAG; break;
+            case COND_B:  case COND_NB:  mask = C_FLAG; break;
+            case COND_E:  case COND_NE:  mask = Z_FLAG; break;
+            case COND_BE: case COND_NBE: mask = C_FLAG | Z_FLAG; break;
+            case COND_S:  case COND_NS:  mask = N_FLAG; break;
+            case COND_P:  case COND_NP:  mask = P_FLAG; break;
+            default: break;
+        }
+        if (mask) {
+            uop_AND_IMM(ir, IREG_temp0_W, IREG_flags, mask);
+            uop_MOV_IMM(ir, IREG_temp2_W, 0);
+            uop_SETCC(ir, dst_reg, IREG_temp0_W, IREG_temp2_W, (cond_base & 1) ? COND_E : COND_NE);
+            return;
+        }
+    }
+
+    uop_CALL_FUNC_RESULT(ir, dst_reg, jit_cond_helpers[cond_base]);
 }
 
 #define ropJ(cond, cond_enum)                                           \

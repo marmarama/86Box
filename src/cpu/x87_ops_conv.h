@@ -1,3 +1,6 @@
+#ifndef _X87_OPS_CONV_H_
+#define _X87_OPS_CONV_H_
+
 #define BIAS80 16383
 #define BIAS64 1023
 
@@ -122,3 +125,5 @@ x87_to80(double d, x87_conv_t *test)
         test->eind.ll = 0x8000000000000000ULL | (mant << 11);
     }
 }
+
+#endif /* _X87_OPS_CONV_H_ */

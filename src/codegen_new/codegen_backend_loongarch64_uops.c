@@ -995,6 +995,8 @@ codegen_MOV_REG_PTR(codeblock_t *block, uop_t *uop)
     host_loong64_MOVX_IMM(block, REG_TEMP, (uint64_t) (uintptr_t) uop->p);
     if (REG_IS_L(dest_size)) {
         host_loong64_LDR_W_IMM(block, dest_reg, REG_TEMP, 0);
+    } else if (REG_IS_D(dest_size)) {
+        host_loong64_FLD_D_IMM(block, dest_reg, REG_TEMP, 0);
     } else
         fatal("MOV_REG_PTR %02x\n", uop->dest_reg_a_real);
 
@@ -1464,6 +1466,35 @@ codegen_FROUND_S(codeblock_t *block, uop_t *uop)
         host_loong64_FCVT_D_S(block, dest_reg, REG_V_TEMP);
     } else
         fatal("codegen_FROUND_S %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
+
+    return 0;
+}
+static int
+codegen_FRNDINT(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg   = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_reg_a  = HOST_REG_GET(uop->src_reg_a_real);
+    int dest_size  = IREG_GET_SIZE(uop->dest_reg_a_real);
+    int src_size_a = IREG_GET_SIZE(uop->src_reg_a_real);
+
+    if (REG_IS_D(dest_size) && REG_IS_D(src_size_a)) {
+        switch ((cpu_state.npxc >> 10) & 3) {
+            case 0:
+                host_loong64_FTINTRNE_L_D(block, REG_V_TEMP, src_reg_a);
+                break;
+            case 1:
+                host_loong64_FTINTRM_L_D(block, REG_V_TEMP, src_reg_a);
+                break;
+            case 2:
+                host_loong64_FTINTRP_L_D(block, REG_V_TEMP, src_reg_a);
+                break;
+            case 3:
+                host_loong64_FTINTRZ_L_D(block, REG_V_TEMP, src_reg_a);
+                break;
+        }
+        host_loong64_FFINT_D_L(block, dest_reg, REG_V_TEMP);
+    } else
+        fatal("codegen_FRNDINT %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
 
     return 0;
 }
@@ -1984,15 +2015,26 @@ codegen_CMOV(codeblock_t *block, uop_t *uop)
     int dest_size = IREG_GET_SIZE(uop->dest_reg_a_real);
     int cond_size = IREG_GET_SIZE(uop->src_reg_c_real);
 
-    if (!REG_IS_L(dest_size) || !REG_IS_L(cond_size))
+    if ((!REG_IS_L(dest_size) && !REG_IS_D(dest_size) && !REG_IS_Q(dest_size)) || !REG_IS_L(cond_size))
         fatal("CMOV %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_c_real);
 
-    if (dest_reg != src_old)
-        host_loong64_MOV_REG(block, dest_reg, src_old);
+    if (REG_IS_L(dest_size)) {
+        if (dest_reg != src_old)
+            host_loong64_MOV_REG(block, dest_reg, src_old);
 
-    uint32_t *skip = host_loong64_BEQ_(block, cond_reg, REG_ZERO);
-    host_loong64_MOV_REG(block, dest_reg, src_new);
-    host_loong64_branch_set_offset(skip, &block_write_data[block_pos]);
+        uint32_t *skip = host_loong64_BEQ_(block, cond_reg, REG_ZERO);
+        host_loong64_MOV_REG(block, dest_reg, src_new);
+        host_loong64_branch_set_offset(skip, &block_write_data[block_pos]);
+    } else {
+        if (dest_reg != src_old)
+            host_loong64_VMOV_F(block, dest_reg, src_old);
+
+        if (dest_reg != src_new) {
+            uint32_t *skip = host_loong64_BEQ_(block, cond_reg, REG_ZERO);
+            host_loong64_VMOV_F(block, dest_reg, src_new);
+            host_loong64_branch_set_offset(skip, &block_write_data[block_pos]);
+        }
+    }
 
     return 0;
 }
@@ -2067,6 +2109,7 @@ const uOpFn uop_handlers[UOP_MAX] = {
     [UOP_FTST & UOP_MASK]  = codegen_FTST,
     [UOP_FSQRT & UOP_MASK] = codegen_FSQRT,
     [UOP_FROUND_S & UOP_MASK] = codegen_FROUND_S,
+    [UOP_FRNDINT & UOP_MASK]  = codegen_FRNDINT,
 
     [UOP_PADDB & UOP_MASK] = codegen_MMX_BINOP,
     [UOP_PADDW & UOP_MASK] = codegen_MMX_BINOP,

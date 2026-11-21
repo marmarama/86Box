@@ -610,6 +610,24 @@ codegen_FROUND_S(codeblock_t *block, uop_t *uop)
 #    endif
     return 0;
 }
+static int
+codegen_FRNDINT(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg   = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_reg_a  = HOST_REG_GET(uop->src_reg_a_real);
+    int dest_size  = IREG_GET_SIZE(uop->dest_reg_a_real);
+    int src_size_a = IREG_GET_SIZE(uop->src_reg_a_real);
+
+    if (REG_IS_D(dest_size) && REG_IS_D(src_size_a) && host_has_sse41) {
+        int rc = (cpu_state.npxc >> 10) & 3;
+        host_x86_ROUNDSD_XREG_XREG(block, dest_reg, src_reg_a, rc | 0x08);
+    }
+#    ifdef RECOMPILER_DEBUG
+    else
+        fatal("codegen_FRNDINT %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
+#    endif
+    return 0;
+}
 static void
 emit_fcom_flags(codeblock_t *block, int dest_reg, int src_reg_a, int src_reg_b)
 {
@@ -1609,6 +1627,9 @@ codegen_MOV_REG_PTR(codeblock_t *block, uop_t *uop)
 
     if (REG_IS_L(dest_size)) {
         host_x86_MOV32_REG_ABS(block, dest_reg, uop->p);
+    } else if (REG_IS_D(dest_size)) {
+        host_x86_MOV64_REG_IMM(block, REG_RCX, (uint64_t) (uintptr_t) uop->p);
+        host_x86_MOVQ_XREG_BASE_OFFSET(block, dest_reg, REG_RCX, 0);
     } else
         fatal("MOV_REG_PTR %02x\n", uop->dest_reg_a_real);
 
@@ -3345,17 +3366,29 @@ codegen_CMOV(codeblock_t *block, uop_t *uop)
     int src_new  = HOST_REG_GET(uop->src_reg_b_real);
     int cond_reg = HOST_REG_GET(uop->src_reg_c_real);
 
-#    ifdef RECOMPILER_DEBUG
     int dest_size = IREG_GET_SIZE(uop->dest_reg_a_real);
+#    ifdef RECOMPILER_DEBUG
     int cond_size = IREG_GET_SIZE(uop->src_reg_c_real);
-    if (!REG_IS_L(dest_size) || !REG_IS_L(cond_size))
+    if ((!REG_IS_L(dest_size) && !REG_IS_D(dest_size) && !REG_IS_Q(dest_size)) || !REG_IS_L(cond_size))
         fatal("CMOV %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_c_real);
 #    endif
-    if (dest_reg != src_old)
-        host_x86_MOV32_REG_REG(block, dest_reg, src_old);
+    if (REG_IS_L(dest_size)) {
+        if (dest_reg != src_old)
+            host_x86_MOV32_REG_REG(block, dest_reg, src_old);
 
-    host_x86_TEST32_REG(block, cond_reg, cond_reg);
-    host_x86_CMOVcc32_REG_REG(block, COND_NE, dest_reg, src_new);
+        host_x86_TEST32_REG(block, cond_reg, cond_reg);
+        host_x86_CMOVcc32_REG_REG(block, COND_NE, dest_reg, src_new);
+    } else if (REG_IS_D(dest_size) || REG_IS_Q(dest_size)) {
+        if (dest_reg != src_old)
+            host_x86_MOVQ_XREG_XREG(block, dest_reg, src_old);
+
+        if (dest_reg != src_new) {
+            host_x86_TEST32_REG(block, cond_reg, cond_reg);
+            uint8_t *skip = host_x86_JZ_short(block);
+            host_x86_MOVQ_XREG_XREG(block, dest_reg, src_new);
+            *skip = (uint8_t) ((uintptr_t) &block_write_data[block_pos] - (uintptr_t) (skip + 1));
+        }
+    }
 
     return 0;
 }
@@ -3678,6 +3711,9 @@ const uOpFn uop_handlers[UOP_MAX] = {
     [UOP_FROUND_S &
         UOP_MASK]
     = codegen_FROUND_S,
+    [UOP_FRNDINT &
+        UOP_MASK]
+    = codegen_FRNDINT,
     [UOP_FTST &
         UOP_MASK]
     = codegen_FTST,

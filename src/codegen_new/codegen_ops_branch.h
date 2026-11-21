@@ -72,4 +72,5 @@ typedef int (*jit_cond_fn_t)(void);
 extern const jit_cond_fn_t jit_cond_helpers[16];
 
 int codegen_cond_jump_false(ir_data_t *ir, int cond);
+void codegen_eval_cond_to_reg(ir_data_t *ir, int cond, int dst_reg);
 

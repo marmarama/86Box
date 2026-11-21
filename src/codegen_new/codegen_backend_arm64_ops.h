@@ -121,6 +121,7 @@ void host_arm64_FMOV_S_ONE(codeblock_t *block, int dst_reg);
 
 void host_arm64_FNEG_D(codeblock_t *block, int dst_reg, int src_reg);
 
+void host_arm64_FRINT_D(codeblock_t *block, int dst_reg, int src_reg, int mode);
 void host_arm64_FRINTX_D(codeblock_t *block, int dst_reg, int src_reg);
 
 void host_arm64_FSQRT_D(codeblock_t *block, int dst_reg, int src_reg);

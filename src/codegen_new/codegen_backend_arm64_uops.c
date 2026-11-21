@@ -561,6 +561,21 @@ codegen_FROUND_S(codeblock_t *block, uop_t *uop)
     return 0;
 }
 static int
+codegen_FRNDINT(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg   = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_reg_a  = HOST_REG_GET(uop->src_reg_a_real);
+    int dest_size  = IREG_GET_SIZE(uop->dest_reg_a_real);
+    int src_size_a = IREG_GET_SIZE(uop->src_reg_a_real);
+
+    if (REG_IS_D(dest_size) && REG_IS_D(src_size_a)) {
+        host_arm64_FRINT_D(block, dest_reg, src_reg_a, (cpu_state.npxc >> 10) & 3);
+    } else
+        fatal("codegen_FRNDINT %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real);
+
+    return 0;
+}
+static int
 codegen_FTST(codeblock_t *block, uop_t *uop)
 {
     int dest_reg   = HOST_REG_GET(uop->dest_reg_a_real);
@@ -1264,6 +1279,8 @@ codegen_MOV_REG_PTR(codeblock_t *block, uop_t *uop)
     host_arm64_MOVX_IMM(block, REG_TEMP, (uint64_t) uop->p);
     if (REG_IS_L(dest_size)) {
         host_arm64_LDR_IMM_W(block, dest_reg, REG_TEMP, 0);
+    } else if (REG_IS_D(dest_size)) {
+        host_arm64_LDR_IMM_F64(block, dest_reg, REG_TEMP, 0);
     } else
         fatal("MOV_REG_PTR %02x\n", uop->dest_reg_a_real);
 
@@ -2862,11 +2879,22 @@ codegen_CMOV(codeblock_t *block, uop_t *uop)
     int cond_size = IREG_GET_SIZE(uop->src_reg_c_real);
     int dest_size = IREG_GET_SIZE(uop->dest_reg_a_real);
 
-    if (!REG_IS_L(dest_size) || !REG_IS_L(cond_size))
+    if ((!REG_IS_L(dest_size) && !REG_IS_D(dest_size) && !REG_IS_Q(dest_size)) || !REG_IS_L(cond_size))
         fatal("CMOV %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_c_real);
 
-    host_arm64_CMP_IMM(block, cond_reg, 0);
-    host_arm64_CSEL_NE(block, dest_reg, src_new, src_old);
+    if (REG_IS_L(dest_size)) {
+        host_arm64_CMP_IMM(block, cond_reg, 0);
+        host_arm64_CSEL_NE(block, dest_reg, src_new, src_old);
+    } else {
+        if (dest_reg != src_old)
+            host_arm64_FMOV_D_D(block, dest_reg, src_old);
+        if (dest_reg != src_new) {
+            host_arm64_CMP_IMM(block, cond_reg, 0);
+            uint32_t *skip = host_arm64_BEQ_(block);
+            host_arm64_FMOV_D_D(block, dest_reg, src_new);
+            host_arm64_branch_set_offset(skip, &block_write_data[block_pos]);
+        }
+    }
     return 0;
 }
 
@@ -3182,6 +3210,9 @@ const uOpFn uop_handlers[UOP_MAX] = {
     [UOP_FROUND_S &
         UOP_MASK]
     = codegen_FROUND_S,
+    [UOP_FRNDINT &
+        UOP_MASK]
+    = codegen_FRNDINT,
     [UOP_FTST &
         UOP_MASK]
     = codegen_FTST,

@@ -760,16 +760,7 @@ ropCMOVcc_common(codeblock_t *block, ir_data_t *ir, uint8_t opcode, uint32_t fet
     /* 1. Evaluate condition:
      * Fast-path: if flags were updated in this block, evaluate the condition inline.
      * Fallback: invoke helper barrier call. */
-    int fastpath_op1 = -1, fastpath_op2 = -1;
-    if (codegen_get_condition_fastpath(cond, &fastpath_op1, &fastpath_op2)) {
-        if (fastpath_op2 == -1) {
-            uop_MOV_IMM(ir, IREG_temp0, 0);
-            fastpath_op2 = IREG_temp0;
-        }
-        uop_SETCC(ir, IREG_temp1, fastpath_op1, fastpath_op2, cond);
-    } else {
-        uop_CALL_FUNC_RESULT(ir, IREG_temp1, jit_cond_helpers[cond & 0xf]);
-    }
+    codegen_eval_cond_to_reg(ir, cond, IREG_temp1);
 
     /* 2. Resolve source operand (register or memory) */
     if ((fetchdat & 0xc0) == 0xc0) {

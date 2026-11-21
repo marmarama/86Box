@@ -159,6 +159,10 @@
 #    define OPCODE_FMUL_D             (0x1e600800)
 #    define OPCODE_FMUL_V2S           (0x2e20dc00)
 #    define OPCODE_FNEG_D             (0x1e614000)
+#    define OPCODE_FRINTN_D           (0x1e644000)
+#    define OPCODE_FRINTP_D           (0x1e64c000)
+#    define OPCODE_FRINTM_D           (0x1e654000)
+#    define OPCODE_FRINTZ_D           (0x1e65c000)
 #    define OPCODE_FRINTX_D           (0x1e674000)
 #    define OPCODE_FSQRT_D            (0x1e61c000)
 #    define OPCODE_FSQRT_S            (0x1e21c000)
@@ -1069,6 +1073,18 @@ void
 host_arm64_FNEG_D(codeblock_t *block, int dst_reg, int src_reg)
 {
     codegen_addlong(block, OPCODE_FNEG_D | Rd(dst_reg) | Rn(src_reg));
+}
+
+void
+host_arm64_FRINT_D(codeblock_t *block, int dst_reg, int src_reg, int mode)
+{
+    static const uint32_t opcodes[4] = {
+        OPCODE_FRINTN_D,
+        OPCODE_FRINTM_D,
+        OPCODE_FRINTP_D,
+        OPCODE_FRINTZ_D
+    };
+    codegen_addlong(block, opcodes[mode & 3] | Rd(dst_reg) | Rn(src_reg));
 }
 
 void

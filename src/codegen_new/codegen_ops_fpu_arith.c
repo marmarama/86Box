@@ -27,6 +27,53 @@
             uop_FROUND_S(ir, reg, reg);       \
     } while (0)
 
+static uint32_t
+ropFCOMI_common(codeblock_t *block, ir_data_t *ir, uint32_t fetchdat, uint32_t op_pc, int is_pop)
+{
+    const OpFn *op_tbl = is_pop ? x86_dynarec_opcodes_df_a16 : x86_dynarec_opcodes_db_a16;
+    if (op_tbl[fetchdat & 0xff] == op_tbl[0xff])
+        return 0;
+
+    uop_FP_ENTER(ir);
+    uop_FCOM(ir, IREG_temp0_W, IREG_ST(0), IREG_ST(fetchdat & 7));
+    /* C0/C2/C3 bits (bits 8/10/14) align 1:1 with CF/PF/ZF after >> 8. */
+    uop_SHR_IMM(ir, IREG_temp0_W, IREG_temp0_W, 8);
+    uop_AND_IMM(ir, IREG_flags, IREG_flags, ~(V_FLAG | N_FLAG | A_FLAG | Z_FLAG | P_FLAG | C_FLAG));
+    uop_OR(ir, IREG_flags, IREG_flags, IREG_temp0_W);
+    uop_MOV_IMM(ir, IREG_flags_op, FLAGS_UNKNOWN);
+    codegen_last_flags_op = FLAGS_UNKNOWN;
+    codegen_flags_changed = 1;
+    if (is_pop) {
+        uop_MOV_IMM(ir, IREG_tag(0), TAG_EMPTY);
+        fpu_POP(block, ir);
+    }
+    return op_pc;
+}
+
+uint32_t
+ropFCOMI(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchdat, UNUSED(uint32_t op_32), uint32_t op_pc)
+{
+    return ropFCOMI_common(block, ir, fetchdat, op_pc, 0);
+}
+
+uint32_t
+ropFCOMIP(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchdat, UNUSED(uint32_t op_32), uint32_t op_pc)
+{
+    return ropFCOMI_common(block, ir, fetchdat, op_pc, 1);
+}
+
+uint32_t
+ropFUCOMI(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchdat, UNUSED(uint32_t op_32), uint32_t op_pc)
+{
+    return ropFCOMI_common(block, ir, fetchdat, op_pc, 0);
+}
+
+uint32_t
+ropFUCOMIP(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchdat, UNUSED(uint32_t op_32), uint32_t op_pc)
+{
+    return ropFCOMI_common(block, ir, fetchdat, op_pc, 1);
+}
+
 uint32_t
 ropFADD(UNUSED(codeblock_t *block), ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchdat, UNUSED(uint32_t op_32), uint32_t op_pc)
 {
