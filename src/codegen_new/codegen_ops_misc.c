@@ -48,6 +48,20 @@ ropLEA_32(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fe
     return op_pc + 1;
 }
 
+static void
+emit_mul_cf_vf_from_nonzero(ir_data_t *ir, int nonzero_reg)
+{
+    if (!codegen_flags_changed || codegen_last_flags_op != FLAGS_UNKNOWN)
+        uop_CALL_FUNC(ir, jit_flags_rebuild);
+    uop_AND_IMM(ir, IREG_flags, IREG_flags, ~(C_FLAG | V_FLAG));
+    uop_MOV_IMM(ir, IREG_temp0_W, 0);
+    uop_MOV_IMM(ir, IREG_temp1_W, C_FLAG | V_FLAG);
+    uop_CMOV(ir, IREG_temp0_W, IREG_temp0_W, IREG_temp1_W, nonzero_reg);
+    uop_OR(ir, IREG_flags, IREG_flags, IREG_temp0_W);
+    uop_MOV_IMM(ir, IREG_flags_op, FLAGS_UNKNOWN);
+    codegen_last_flags_op = FLAGS_UNKNOWN;
+}
+
 uint32_t
 ropF6(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchdat, uint32_t op_32, uint32_t op_pc)
 {
@@ -119,14 +133,19 @@ ropF6(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fetchd
             uop_IMUL(ir, IREG_temp2, IREG_temp0, IREG_temp1);
             uop_MOV(ir, IREG_AX, IREG_temp2_W);
             uop_SHR_IMM(ir, IREG_temp3, IREG_temp2, 8);
-            uop_CALL_FUNC(ir, jit_flags_rebuild);
-            uop_AND_IMM(ir, IREG_flags, IREG_flags, ~(C_FLAG | V_FLAG));
-            uop_MOV_IMM(ir, IREG_temp0_W, 0);
-            uop_MOV_IMM(ir, IREG_temp1_W, C_FLAG | V_FLAG);
-            uop_CMOV(ir, IREG_temp0_W, IREG_temp0_W, IREG_temp1_W, IREG_temp3_W);
-            uop_OR(ir, IREG_flags, IREG_flags, IREG_temp0_W);
-            uop_MOV_IMM(ir, IREG_flags_op, FLAGS_UNKNOWN);
-            codegen_last_flags_op = FLAGS_UNKNOWN;
+            emit_mul_cf_vf_from_nonzero(ir, IREG_temp3);
+
+            codegen_flags_changed = 1;
+            return op_pc + 1;
+
+        case 0x28: /*IMUL AL, rm8*/
+            uop_MOVSX(ir, IREG_temp1, reg);
+            uop_MOVSX(ir, IREG_temp0, IREG_AL);
+            uop_IMUL(ir, IREG_temp2, IREG_temp0, IREG_temp1);
+            uop_MOV(ir, IREG_AX, IREG_temp2_W);
+            uop_MOVSX(ir, IREG_temp3, IREG_temp2_B);
+            uop_XOR(ir, IREG_temp3, IREG_temp3, IREG_temp2);
+            emit_mul_cf_vf_from_nonzero(ir, IREG_temp3);
 
             codegen_flags_changed = 1;
             return op_pc + 1;
@@ -218,14 +237,24 @@ ropF7_16(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fet
             uop_MOV(ir, IREG_AX, IREG_temp2_W);
             uop_SHR_IMM(ir, IREG_temp2, IREG_temp2, 16);
             uop_MOV(ir, IREG_DX, IREG_temp2_W);
-            uop_CALL_FUNC(ir, jit_flags_rebuild);
-            uop_AND_IMM(ir, IREG_flags, IREG_flags, ~(C_FLAG | V_FLAG));
-            uop_MOV_IMM(ir, IREG_temp0_W, 0);
-            uop_MOV_IMM(ir, IREG_temp1_W, C_FLAG | V_FLAG);
-            uop_CMOV(ir, IREG_temp0_W, IREG_temp0_W, IREG_temp1_W, IREG_DX);
-            uop_OR(ir, IREG_flags, IREG_flags, IREG_temp0_W);
-            uop_MOV_IMM(ir, IREG_flags_op, FLAGS_UNKNOWN);
-            codegen_last_flags_op = FLAGS_UNKNOWN;
+            emit_mul_cf_vf_from_nonzero(ir, IREG_temp2);
+
+            codegen_flags_changed = 1;
+            return op_pc + 1;
+
+        case 0x28: /*IMUL AX, rm16*/
+            emit_flags_rebuild_zpna(ir);
+            uop_MOVZX(ir, IREG_flags_op1, IREG_AX);
+            uop_MOVZX(ir, IREG_flags_op2, reg);
+            uop_MOVSX(ir, IREG_temp1, reg);
+            uop_MOVSX(ir, IREG_temp0, IREG_AX);
+            uop_IMUL(ir, IREG_temp2, IREG_temp0, IREG_temp1);
+            uop_MOV(ir, IREG_AX, IREG_temp2_W);
+            uop_SHR_IMM(ir, IREG_temp3, IREG_temp2, 16);
+            uop_MOV(ir, IREG_DX, IREG_temp3_W);
+            uop_MOV_IMM(ir, IREG_flags_op, FLAGS_IMUL16);
+            uop_MOVZX(ir, IREG_flags_res, IREG_temp2_W);
+            codegen_last_flags_op = FLAGS_IMUL16;
 
             codegen_flags_changed = 1;
             return op_pc + 1;
@@ -305,6 +334,29 @@ ropF7_32(codeblock_t *block, ir_data_t *ir, UNUSED(uint8_t opcode), uint32_t fet
             }
             uop_MOV_IMM(ir, IREG_flags_op, FLAGS_SUB32);
             uop_MOV_IMM(ir, IREG_flags_op1, 0);
+
+            codegen_flags_changed = 1;
+            return op_pc + 1;
+
+        case 0x20: /*MUL EAX, rm32*/
+            uop_MULUH(ir, IREG_temp2, IREG_EAX, reg);
+            uop_IMUL(ir, IREG_EAX, IREG_EAX, reg);
+            uop_MOV(ir, IREG_EDX, IREG_temp2);
+            emit_mul_cf_vf_from_nonzero(ir, IREG_EDX);
+
+            codegen_flags_changed = 1;
+            return op_pc + 1;
+
+        case 0x28: /*IMUL EAX, rm32*/
+            emit_flags_rebuild_zpna(ir);
+            uop_MOV(ir, IREG_flags_op1, IREG_EAX);
+            uop_MOV(ir, IREG_flags_op2, reg);
+            uop_MULSH(ir, IREG_temp2, IREG_EAX, reg);
+            uop_IMUL(ir, IREG_EAX, IREG_EAX, reg);
+            uop_MOV(ir, IREG_EDX, IREG_temp2);
+            uop_MOV_IMM(ir, IREG_flags_op, FLAGS_IMUL32);
+            uop_MOV(ir, IREG_flags_res, IREG_EAX);
+            codegen_last_flags_op = FLAGS_IMUL32;
 
             codegen_flags_changed = 1;
             return op_pc + 1;

@@ -77,6 +77,9 @@
 #    define OPCODE_SRA_D             0x00198000
 #    define OPCODE_ROTR_W            0x001b0000
 #    define OPCODE_ROTR_D            0x001b8000
+#    define OPCODE_MUL_W             0x001c0000
+#    define OPCODE_MULH_W            0x001c8000
+#    define OPCODE_MULH_WU           0x001d0000
 #    define OPCODE_ALSL_D            0x002c0000
 
 /*Register formats with only two operands.*/
@@ -356,6 +359,21 @@ void
 host_loong64_SUBX_REG(codeblock_t *block, int dst_reg, int src_a_reg, int src_b_reg)
 {
     codegen_addlong(block, OPCODE_SUB_D | Rd(dst_reg) | Rj(src_a_reg) | Rk(src_b_reg));
+}
+void
+host_loong64_MUL_W_REG(codeblock_t *block, int dst_reg, int src_a_reg, int src_b_reg)
+{
+    codegen_addlong(block, OPCODE_MUL_W | Rd(dst_reg) | Rj(src_a_reg) | Rk(src_b_reg));
+}
+void
+host_loong64_MULH_W_REG(codeblock_t *block, int dst_reg, int src_a_reg, int src_b_reg)
+{
+    codegen_addlong(block, OPCODE_MULH_W | Rd(dst_reg) | Rj(src_a_reg) | Rk(src_b_reg));
+}
+void
+host_loong64_MULH_WU_REG(codeblock_t *block, int dst_reg, int src_a_reg, int src_b_reg)
+{
+    codegen_addlong(block, OPCODE_MULH_WU | Rd(dst_reg) | Rj(src_a_reg) | Rk(src_b_reg));
 }
 void
 host_loong64_ALSL_D(codeblock_t *block, int dst_reg, int src_a_reg, int src_b_reg, int shift)

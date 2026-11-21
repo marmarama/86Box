@@ -85,6 +85,60 @@ codegen_ANDN(codeblock_t *block, uop_t *uop)
 }
 
 static int
+codegen_IMUL(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg   = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_reg_a  = HOST_REG_GET(uop->src_reg_a_real);
+    int src_reg_b  = HOST_REG_GET(uop->src_reg_b_real);
+    int dest_size  = IREG_GET_SIZE(uop->dest_reg_a_real);
+    int src_size_a = IREG_GET_SIZE(uop->src_reg_a_real);
+    int src_size_b = IREG_GET_SIZE(uop->src_reg_b_real);
+
+    if (REG_IS_L(dest_size) && REG_IS_L(src_size_a) && REG_IS_L(src_size_b)) {
+        host_loong64_MUL_W_REG(block, dest_reg, src_reg_a, src_reg_b);
+    } else
+        fatal("IMUL %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
+
+    return 0;
+}
+
+static int
+codegen_MULUH(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg   = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_reg_a  = HOST_REG_GET(uop->src_reg_a_real);
+    int src_reg_b  = HOST_REG_GET(uop->src_reg_b_real);
+    int dest_size  = IREG_GET_SIZE(uop->dest_reg_a_real);
+    int src_size_a = IREG_GET_SIZE(uop->src_reg_a_real);
+    int src_size_b = IREG_GET_SIZE(uop->src_reg_b_real);
+
+    if (REG_IS_L(dest_size) && REG_IS_L(src_size_a) && REG_IS_L(src_size_b)) {
+        host_loong64_MULH_WU_REG(block, dest_reg, src_reg_a, src_reg_b);
+    } else
+        fatal("MULUH %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
+
+    return 0;
+}
+
+static int
+codegen_MULSH(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg   = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_reg_a  = HOST_REG_GET(uop->src_reg_a_real);
+    int src_reg_b  = HOST_REG_GET(uop->src_reg_b_real);
+    int dest_size  = IREG_GET_SIZE(uop->dest_reg_a_real);
+    int src_size_a = IREG_GET_SIZE(uop->src_reg_a_real);
+    int src_size_b = IREG_GET_SIZE(uop->src_reg_b_real);
+
+    if (REG_IS_L(dest_size) && REG_IS_L(src_size_a) && REG_IS_L(src_size_b)) {
+        host_loong64_MULH_W_REG(block, dest_reg, src_reg_a, src_reg_b);
+    } else
+        fatal("MULSH %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
+
+    return 0;
+}
+
+static int
 codegen_ADD_IMM(codeblock_t *block, uop_t *uop)
 {
     int dest_reg  = HOST_REG_GET(uop->dest_reg_a_real);
@@ -2086,6 +2140,9 @@ const uOpFn uop_handlers[UOP_MAX] = {
     [UOP_ADD_LSHIFT & UOP_MASK] = codegen_ADD_LSHIFT,
     [UOP_AND & UOP_MASK]       = codegen_AND,
     [UOP_ANDN & UOP_MASK]      = codegen_ANDN,
+    [UOP_IMUL & UOP_MASK]      = codegen_IMUL,
+    [UOP_MULUH & UOP_MASK]     = codegen_MULUH,
+    [UOP_MULSH & UOP_MASK]     = codegen_MULSH,
     [UOP_AND_IMM & UOP_MASK]   = codegen_AND_IMM,
     [UOP_OR & UOP_MASK]        = codegen_OR,
     [UOP_OR_IMM & UOP_MASK]    = codegen_OR_IMM,

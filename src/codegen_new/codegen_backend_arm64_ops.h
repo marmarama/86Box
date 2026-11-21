@@ -149,6 +149,7 @@ void host_arm64_LDRX_REG_LSL3(codeblock_t *block, int dest_reg, int base_reg, in
 
 void host_arm64_LSL(codeblock_t *block, int dst_reg, int src_n_reg, int shift_reg);
 void host_arm64_LSR(codeblock_t *block, int dst_reg, int src_n_reg, int shift_reg);
+void host_arm64_LSRX_IMM(codeblock_t *block, int dst_reg, int src_reg, int shift);
 
 void host_arm64_MOV_REG_ASR(codeblock_t *block, int dst_reg, int src_m_reg, int shift);
 void host_arm64_MOV_REG(codeblock_t *block, int dst_reg, int src_m_reg, int shift);
@@ -163,7 +164,10 @@ void host_arm64_MOVK_IMM(codeblock_t *block, int reg, uint32_t imm_data);
 
 void host_arm64_MSR_FPCR(codeblock_t *block, int src_reg);
 
+void host_arm64_MUL(codeblock_t *block, int dst_reg, int src_n_reg, int src_m_reg);
 void host_arm64_MUL_V4H(codeblock_t *block, int dst_reg, int src_n_reg, int src_m_reg);
+void host_arm64_UMULL(codeblock_t *block, int dst_reg, int src_n_reg, int src_m_reg);
+void host_arm64_SMULL(codeblock_t *block, int dst_reg, int src_n_reg, int src_m_reg);
 
 void host_arm64_NOP(codeblock_t *block);
 

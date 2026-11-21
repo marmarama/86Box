@@ -213,6 +213,7 @@ These uOps marshal arguments and invoke C runtime functions. They always trigger
 | `UOP_ADD` / `UOP_ADD_IMM` | `0x30` / `0x31` | `REGS` / `REGS, IMM` | `dest = src_a + src_b` / `dest = src_a + imm` |
 | `UOP_SUB` / `UOP_SUB_IMM` | `0x37` / `0x38` | `REGS` / `REGS, IMM` | `dest = src_a - src_b` / `dest = src_a - imm` |
 | `UOP_IMUL` / `UOP_IMUL_IMM` | `0x3c` / `0x3d` | `REGS` / `REGS, IMM` | Signed multiply: `dest = src_a * src_b` / `dest = src_a * imm` |
+| `UOP_MULUH` / `UOP_MULSH` | `0x3e` / `0x3f` | `REGS` | Widening 32×32 high multiply: `dest = ((uint64_t)(uint32_t)src_a * src_b) >> 32` / signed `((int64_t)(int32_t)src_a * src_b) >> 32` |
 | `UOP_AND` / `UOP_AND_IMM` | `0x32` / `0x33` | `REGS` / `REGS, IMM` | Bitwise AND: `dest = src_a & src_b` / `dest = src_a & imm` |
 | `UOP_OR` / `UOP_OR_IMM` | `0x35` / `0x36` | `REGS` / `REGS, IMM` | Bitwise OR: `dest = src_a \| src_b` / `dest = src_a \| imm` |
 | `UOP_XOR` / `UOP_XOR_IMM` | `0x39` / `0x3a` | `REGS` / `REGS, IMM` | Bitwise XOR: `dest = src_a ^ src_b` / `dest = src_a ^ imm` |

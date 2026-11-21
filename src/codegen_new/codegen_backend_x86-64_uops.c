@@ -148,6 +148,52 @@ codegen_IMUL_IMM(codeblock_t *block, uop_t *uop)
 }
 
 static int
+codegen_MULUH(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg   = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_reg_a  = HOST_REG_GET(uop->src_reg_a_real);
+    int src_reg_b  = HOST_REG_GET(uop->src_reg_b_real);
+#    ifdef RECOMPILER_DEBUG
+    int dest_size  = IREG_GET_SIZE(uop->dest_reg_a_real);
+    int src_size_a = IREG_GET_SIZE(uop->src_reg_a_real);
+    int src_size_b = IREG_GET_SIZE(uop->src_reg_b_real);
+
+    if (!REG_IS_L(dest_size) || !REG_IS_L(src_size_a) || !REG_IS_L(src_size_b))
+        fatal("MULUH %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
+#    endif
+
+    host_x86_MOV32_REG_REG(block, REG_ECX, src_reg_a);
+    host_x86_MOV32_REG_REG(block, REG_R8, src_reg_b);
+    host_x86_IMUL64_REG_REG(block, REG_RCX, REG_R8);
+    host_x86_SHR64_IMM(block, REG_RCX, 32);
+    host_x86_MOV32_REG_REG(block, dest_reg, REG_ECX);
+    return 0;
+}
+
+static int
+codegen_MULSH(codeblock_t *block, uop_t *uop)
+{
+    int dest_reg   = HOST_REG_GET(uop->dest_reg_a_real);
+    int src_reg_a  = HOST_REG_GET(uop->src_reg_a_real);
+    int src_reg_b  = HOST_REG_GET(uop->src_reg_b_real);
+#    ifdef RECOMPILER_DEBUG
+    int dest_size  = IREG_GET_SIZE(uop->dest_reg_a_real);
+    int src_size_a = IREG_GET_SIZE(uop->src_reg_a_real);
+    int src_size_b = IREG_GET_SIZE(uop->src_reg_b_real);
+
+    if (!REG_IS_L(dest_size) || !REG_IS_L(src_size_a) || !REG_IS_L(src_size_b))
+        fatal("MULSH %02x %02x %02x\n", uop->dest_reg_a_real, uop->src_reg_a_real, uop->src_reg_b_real);
+#    endif
+
+    host_x86_MOVSXD_REG64_REG32(block, REG_RCX, src_reg_a);
+    host_x86_MOVSXD_REG64_REG32(block, REG_R8, src_reg_b);
+    host_x86_IMUL64_REG_REG(block, REG_RCX, REG_R8);
+    host_x86_SHR64_IMM(block, REG_RCX, 32);
+    host_x86_MOV32_REG_REG(block, dest_reg, REG_ECX);
+    return 0;
+}
+
+static int
 codegen_AND(codeblock_t *block, uop_t *uop)
 {
     int dest_reg   = HOST_REG_GET(uop->dest_reg_a_real);
@@ -3538,6 +3584,12 @@ const uOpFn uop_handlers[UOP_MAX] = {
     [UOP_IMUL_IMM &
         UOP_MASK]
     = codegen_IMUL_IMM,
+    [UOP_MULUH &
+        UOP_MASK]
+    = codegen_MULUH,
+    [UOP_MULSH &
+        UOP_MASK]
+    = codegen_MULSH,
     [UOP_AND &
         UOP_MASK]
     = codegen_AND,

@@ -106,6 +106,9 @@ void host_loong64_SUB_W_IMM(codeblock_t *block, int dst_reg, int src_reg, uint32
 /*64-bit forms (add.d/sub.d).*/
 void host_loong64_ADDX_REG(codeblock_t *block, int dst_reg, int src_a_reg, int src_b_reg);
 void host_loong64_SUBX_REG(codeblock_t *block, int dst_reg, int src_a_reg, int src_b_reg);
+void host_loong64_MUL_W_REG(codeblock_t *block, int dst_reg, int src_a_reg, int src_b_reg);
+void host_loong64_MULH_W_REG(codeblock_t *block, int dst_reg, int src_a_reg, int src_b_reg);
+void host_loong64_MULH_WU_REG(codeblock_t *block, int dst_reg, int src_a_reg, int src_b_reg);
 void host_loong64_ADDX_IMM(codeblock_t *block, int dst_reg, int src_reg, uint64_t imm_data);
 void host_loong64_SUBX_IMM(codeblock_t *block, int dst_reg, int src_reg, uint64_t imm_data);
 /*dst = a + (b << shift), shift in 1..4 (alsl.d; shift 0 degenerates to add.d).*/

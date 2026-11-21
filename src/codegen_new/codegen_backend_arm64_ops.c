@@ -179,7 +179,11 @@
 #    define OPCODE_LSL                (0x1ac02000)
 #    define OPCODE_LSR                (0x1ac02400)
 #    define OPCODE_MSR_FPCR           (0xd51b4400)
+#    define OPCODE_MUL                (0x1b007c00)
 #    define OPCODE_MUL_V4H            (0x0e609c00)
+#    define OPCODE_SMULL              (0x9b207c00)
+#    define OPCODE_UMULL              (0x9ba07c00)
+#    define OPCODE_LSRX_IMM           (0xd340fc00)
 #    define OPCODE_NOP                (0xd503201f)
 #    define OPCODE_ORR_V              (0x0ea01c00)
 #    define OPCODE_RET                (0xd65f0000)
@@ -1202,6 +1206,11 @@ host_arm64_LSR(codeblock_t *block, int dst_reg, int src_n_reg, int shift_reg)
 {
     codegen_addlong(block, OPCODE_LSR | Rd(dst_reg) | Rn(src_n_reg) | Rm(shift_reg));
 }
+void
+host_arm64_LSRX_IMM(codeblock_t *block, int dst_reg, int src_reg, int shift)
+{
+    codegen_addlong(block, OPCODE_LSRX_IMM | Rd(dst_reg) | Rn(src_reg) | IMMR(shift));
+}
 
 void
 host_arm64_MOV_REG_ASR(codeblock_t *block, int dst_reg, int src_m_reg, int shift)
@@ -1282,9 +1291,24 @@ host_arm64_MSR_FPCR(codeblock_t *block, int src_reg)
 }
 
 void
+host_arm64_MUL(codeblock_t *block, int dst_reg, int src_n_reg, int src_m_reg)
+{
+    codegen_addlong(block, OPCODE_MUL | Rd(dst_reg) | Rn(src_n_reg) | Rm(src_m_reg));
+}
+void
 host_arm64_MUL_V4H(codeblock_t *block, int dst_reg, int src_n_reg, int src_m_reg)
 {
     codegen_addlong(block, OPCODE_MUL_V4H | Rd(dst_reg) | Rn(src_n_reg) | Rm(src_m_reg));
+}
+void
+host_arm64_UMULL(codeblock_t *block, int dst_reg, int src_n_reg, int src_m_reg)
+{
+    codegen_addlong(block, OPCODE_UMULL | Rd(dst_reg) | Rn(src_n_reg) | Rm(src_m_reg));
+}
+void
+host_arm64_SMULL(codeblock_t *block, int dst_reg, int src_n_reg, int src_m_reg)
+{
+    codegen_addlong(block, OPCODE_SMULL | Rd(dst_reg) | Rn(src_n_reg) | Rm(src_m_reg));
 }
 
 void
